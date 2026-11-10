@@ -57,12 +57,18 @@ const ids = new Map<string, string>(); // slug -> id
 
 async function cleanup() {
   await prisma.product.deleteMany({ where: { slug: { startsWith: PREFIX } } });
-  await prisma.category.deleteMany({ where: { slug: { startsWith: PREFIX }, NOT: { parentId: null } } });
+  await prisma.category.deleteMany({
+    where: { slug: { startsWith: PREFIX }, NOT: { parentId: null } },
+  });
   await prisma.category.deleteMany({ where: { slug: { startsWith: PREFIX } } });
   await prisma.brand.deleteMany({ where: { slug: { startsWith: PREFIX } } });
 }
 
-async function createProduct(fx: ProductFx, categoryIds: Map<string, string>, brandIds: Map<string, string>) {
+async function createProduct(
+  fx: ProductFx,
+  categoryIds: Map<string, string>,
+  brandIds: Map<string, string>,
+) {
   const product = await prisma.product.create({
     data: {
       slug: fx.slug,
@@ -86,7 +92,12 @@ async function createProduct(fx: ProductFx, categoryIds: Map<string, string>, br
           : {
               create: [
                 { url: `/uploads/seed/phu.svg`, alt: 'Ảnh phụ', sortOrder: 0, isPrimary: false },
-                { url: `/uploads/seed/chinh.svg`, alt: `Ảnh chính ${fx.name}`, sortOrder: 1, isPrimary: true },
+                {
+                  url: `/uploads/seed/chinh.svg`,
+                  alt: `Ảnh chính ${fx.name}`,
+                  sortOrder: 1,
+                  isPrimary: true,
+                },
               ],
             },
       variants: {
@@ -119,17 +130,37 @@ const slugsOf = (res: request.Response): string[] =>
 beforeAll(async () => {
   await cleanup();
 
-  const root = await prisma.category.create({ data: { slug: 't2-cf', name: 'T2 Cà phê', sortOrder: 9001 } });
-  const tool = await prisma.category.create({ data: { slug: 't2-tool', name: 'T2 Dụng cụ', sortOrder: 9002 } });
-  const bulk = await prisma.category.create({ data: { slug: 't2-bulk', name: 'T2 Hàng loạt', sortOrder: 9003 } });
-  await prisma.category.create({ data: { slug: 't2-off', name: 'T2 Gốc ẩn', sortOrder: 9004, isActive: false } });
-  const a = await prisma.category.create({ data: { slug: 't2-cf-a', name: 'T2 Chuyên Biệt', parentId: root.id, sortOrder: 1 } });
-  const b = await prisma.category.create({ data: { slug: 't2-cf-b', name: 'T2 Pha Trộn', parentId: root.id, sortOrder: 2 } });
+  const root = await prisma.category.create({
+    data: { slug: 't2-cf', name: 'T2 Cà phê', sortOrder: 9001 },
+  });
+  const tool = await prisma.category.create({
+    data: { slug: 't2-tool', name: 'T2 Dụng cụ', sortOrder: 9002 },
+  });
+  const bulk = await prisma.category.create({
+    data: { slug: 't2-bulk', name: 'T2 Hàng loạt', sortOrder: 9003 },
+  });
+  await prisma.category.create({
+    data: { slug: 't2-off', name: 'T2 Gốc ẩn', sortOrder: 9004, isActive: false },
+  });
+  const a = await prisma.category.create({
+    data: { slug: 't2-cf-a', name: 'T2 Chuyên Biệt', parentId: root.id, sortOrder: 1 },
+  });
+  const b = await prisma.category.create({
+    data: { slug: 't2-cf-b', name: 'T2 Pha Trộn', parentId: root.id, sortOrder: 2 },
+  });
   const cfOff = await prisma.category.create({
-    data: { slug: 't2-cf-off', name: 'T2 Chuyên Ẩn', parentId: root.id, sortOrder: 3, isActive: false },
+    data: {
+      slug: 't2-cf-off',
+      name: 'T2 Chuyên Ẩn',
+      parentId: root.id,
+      sortOrder: 3,
+      isActive: false,
+    },
   });
   const offParent = await prisma.category.findUniqueOrThrow({ where: { slug: 't2-off' } });
-  await prisma.category.create({ data: { slug: 't2-off-child', name: 'T2 Con của gốc ẩn', parentId: offParent.id } });
+  await prisma.category.create({
+    data: { slug: 't2-off-child', name: 'T2 Con của gốc ẩn', parentId: offParent.id },
+  });
 
   const categoryIds = new Map([
     ['t2-cf', root.id],
@@ -159,7 +190,12 @@ beforeAll(async () => {
       soldCount: 10,
       ratingAvg: 4.57,
       ratingCount: 18,
-      coffee: { originCountry: 'Ethiopia', roastLevel: 'LIGHT', process: 'WASHED', brewMethods: ['POUR_OVER', 'AEROPRESS'] },
+      coffee: {
+        originCountry: 'Ethiopia',
+        roastLevel: 'LIGHT',
+        process: 'WASHED',
+        brewMethods: ['POUR_OVER', 'AEROPRESS'],
+      },
       variants: [
         {
           sku: 'T2-P1-A',
@@ -186,7 +222,12 @@ beforeAll(async () => {
       soldCount: 30,
       ratingAvg: 4.9,
       ratingCount: 12,
-      coffee: { originCountry: 'Việt Nam', roastLevel: 'MEDIUM', process: 'NATURAL', brewMethods: ['PHIN', 'ESPRESSO'] },
+      coffee: {
+        originCountry: 'Việt Nam',
+        roastLevel: 'MEDIUM',
+        process: 'NATURAL',
+        brewMethods: ['PHIN', 'ESPRESSO'],
+      },
       variants: [{ sku: 'T2-P2-A', price: 120000, stock: 3 }],
     },
     {
@@ -200,7 +241,12 @@ beforeAll(async () => {
       ratingCount: 30,
       tags: ['t2tagzz'],
       shortDesc: 'Đậm đà, hậu vị béo',
-      coffee: { originCountry: 'Việt Nam', roastLevel: 'DARK', process: 'OTHER', brewMethods: ['PHIN'] },
+      coffee: {
+        originCountry: 'Việt Nam',
+        roastLevel: 'DARK',
+        process: 'OTHER',
+        brewMethods: ['PHIN'],
+      },
       variants: [
         {
           sku: 'T2-P3-A',
@@ -220,12 +266,42 @@ beforeAll(async () => {
       isFeatured: true,
       createdAt: ago(6),
       variants: [
-        { sku: 'T2-P4-A', price: 250000, stock: 10, salePrice: 200000, saleStart: later(3), saleEnd: later(9) },
+        {
+          sku: 'T2-P4-A',
+          price: 250000,
+          stock: 10,
+          salePrice: 200000,
+          saleStart: later(3),
+          saleEnd: later(9),
+        },
       ],
     },
-    { slug: 't2-p5', name: 'Zorro Bản nháp', category: 't2-cf-a', brand: 't2-brand-a', status: 'DRAFT', createdAt: ago(7), variants: [{ sku: 'T2-P5-A', price: 10000, stock: 5 }] },
-    { slug: 't2-p6', name: 'Zorro Đã lưu trữ', category: 't2-cf-a', brand: 't2-brand-b', status: 'ARCHIVED', createdAt: ago(7), variants: [{ sku: 'T2-P6-A', price: 10000, stock: 5 }] },
-    { slug: 't2-p7', name: 'Zorro Đã xóa', category: 't2-cf-a', deletedAt: ago(1), createdAt: ago(7), variants: [{ sku: 'T2-P7-A', price: 10000, stock: 5 }] },
+    {
+      slug: 't2-p5',
+      name: 'Zorro Bản nháp',
+      category: 't2-cf-a',
+      brand: 't2-brand-a',
+      status: 'DRAFT',
+      createdAt: ago(7),
+      variants: [{ sku: 'T2-P5-A', price: 10000, stock: 5 }],
+    },
+    {
+      slug: 't2-p6',
+      name: 'Zorro Đã lưu trữ',
+      category: 't2-cf-a',
+      brand: 't2-brand-b',
+      status: 'ARCHIVED',
+      createdAt: ago(7),
+      variants: [{ sku: 'T2-P6-A', price: 10000, stock: 5 }],
+    },
+    {
+      slug: 't2-p7',
+      name: 'Zorro Đã xóa',
+      category: 't2-cf-a',
+      deletedAt: ago(1),
+      createdAt: ago(7),
+      variants: [{ sku: 'T2-P7-A', price: 10000, stock: 5 }],
+    },
     {
       slug: 't2-p8',
       name: 'Hộp Zorro Mini',
@@ -234,11 +310,35 @@ beforeAll(async () => {
       withImages: false,
       variants: [{ sku: 'T2-P8-A', price: 50000, stock: 5 }], // đúng ngưỡng -> LOW_STOCK
     },
-    { slug: 't2-p9', name: 'Hộp Zorro Danh mục ẩn', category: 't2-cf-off', createdAt: ago(2), variants: [{ sku: 'T2-P9-A', price: 60000, stock: 20 }] },
-    { slug: 't2-p10', name: 'Hết Hàng Zorro', category: 't2-cf-b', createdAt: ago(5), variants: [{ sku: 'T2-P10-A', price: 70000, stock: 0 }] },
+    {
+      slug: 't2-p9',
+      name: 'Hộp Zorro Danh mục ẩn',
+      category: 't2-cf-off',
+      createdAt: ago(2),
+      variants: [{ sku: 'T2-P9-A', price: 60000, stock: 20 }],
+    },
+    {
+      slug: 't2-p10',
+      name: 'Hết Hàng Zorro',
+      category: 't2-cf-b',
+      createdAt: ago(5),
+      variants: [{ sku: 'T2-P10-A', price: 70000, stock: 0 }],
+    },
     // Để kiểm tra xếp hạng relevance khác với thứ tự thời gian
-    { slug: 't2-rel-exact', name: 'Kili Zorro', category: 't2-tool', createdAt: ago(20), variants: [{ sku: 'T2-REL-A', price: 30000, stock: 20 }] },
-    { slug: 't2-rel-prefix', name: 'Kilimanjaro Zorro', category: 't2-tool', createdAt: ago(10), variants: [{ sku: 'T2-REL-B', price: 31000, stock: 20 }] },
+    {
+      slug: 't2-rel-exact',
+      name: 'Kili Zorro',
+      category: 't2-tool',
+      createdAt: ago(20),
+      variants: [{ sku: 'T2-REL-A', price: 30000, stock: 20 }],
+    },
+    {
+      slug: 't2-rel-prefix',
+      name: 'Kilimanjaro Zorro',
+      category: 't2-tool',
+      createdAt: ago(10),
+      variants: [{ sku: 'T2-REL-B', price: 31000, stock: 20 }],
+    },
   ];
   for (const fx of fixtures) await createProduct(fx, categoryIds, brandIds);
 
@@ -293,9 +393,9 @@ describe('GET /brands', () => {
   it('kèm productCount (chỉ ACTIVE chưa xóa), sắp theo tên', async () => {
     const res = await request(app).get(`${API}/brands`);
     expect(res.status).toBe(200);
-    const brands = (res.body.data as { slug: string; name: string; productCount: number; logoUrl: null }[]).filter(
-      (b) => b.slug.startsWith(PREFIX),
-    );
+    const brands = (
+      res.body.data as { slug: string; name: string; productCount: number; logoUrl: null }[]
+    ).filter((b) => b.slug.startsWith(PREFIX));
     expect(brands.map((b) => b.slug)).toEqual(['t2-brand-a', 't2-brand-b', 't2-brand-empty']);
     const count = (s: string) => brands.find((b) => b.slug === s)!.productCount;
     expect(count('t2-brand-a')).toBe(2); // p1, p4 (p5 DRAFT loại)
@@ -334,7 +434,13 @@ describe('GET /products – bộ lọc', () => {
   it('coffee null, brand null, primaryImage null, compareAtPrice null khi không có', async () => {
     const res = await list('category=t2-cf');
     const p8 = (res.body.data as Record<string, unknown>[]).find((p) => p.slug === 't2-p8')!;
-    expect(p8).toMatchObject({ coffee: null, brand: null, primaryImage: null, compareAtPrice: null, minPrice: 50000 });
+    expect(p8).toMatchObject({
+      coffee: null,
+      brand: null,
+      primaryImage: null,
+      compareAtPrice: null,
+      minPrice: 50000,
+    });
   });
 
   it('giá sale chưa bắt đầu / đã hết hạn không làm giảm minPrice, compareAtPrice null', async () => {
@@ -371,15 +477,26 @@ describe('GET /products – bộ lọc', () => {
 
   it('brand (nhiều giá trị = OR)', async () => {
     expect((await list('brand=t2-brand-a&category=t2-cf')).body.meta.total).toBe(1);
-    expect(slugsOf(await list('brand=t2-brand-a&sort=newest&pageSize=100'))).toEqual(['t2-p1', 't2-p4']);
+    expect(slugsOf(await list('brand=t2-brand-a&sort=newest&pageSize=100'))).toEqual([
+      't2-p1',
+      't2-p4',
+    ]);
     const both = await list('brand=t2-brand-a,%20t2-brand-b&pageSize=100&sort=price_asc');
     expect(slugsOf(both)).toEqual(['t2-p3', 't2-p2', 't2-p1', 't2-p4']);
   });
 
   it('minPrice/maxPrice (biên bao gồm hai đầu)', async () => {
-    expect(slugsOf(await list('category=t2-cf&minPrice=100000&sort=price_asc'))).toEqual(['t2-p2', 't2-p1']);
-    expect(slugsOf(await list('category=t2-cf&maxPrice=70000&sort=price_asc'))).toEqual(['t2-p8', 't2-p10']);
-    expect(slugsOf(await list('category=t2-cf&minPrice=90000&maxPrice=120000&sort=price_asc'))).toEqual(['t2-p3', 't2-p2']);
+    expect(slugsOf(await list('category=t2-cf&minPrice=100000&sort=price_asc'))).toEqual([
+      't2-p2',
+      't2-p1',
+    ]);
+    expect(slugsOf(await list('category=t2-cf&maxPrice=70000&sort=price_asc'))).toEqual([
+      't2-p8',
+      't2-p10',
+    ]);
+    expect(
+      slugsOf(await list('category=t2-cf&minPrice=90000&maxPrice=120000&sort=price_asc')),
+    ).toEqual(['t2-p3', 't2-p2']);
   });
 
   it('inStock=true loại sản phẩm hết hàng', async () => {
@@ -396,8 +513,13 @@ describe('GET /products – bộ lọc', () => {
 
   it('origin: khớp chính xác, không phân biệt hoa thường, nhiều giá trị = OR', async () => {
     expect(slugsOf(await list('origin=ETHIOPIA&category=t2-cf'))).toEqual(['t2-p1']);
-    expect(slugsOf(await list(`origin=${encodeURIComponent('việt nam')}&category=t2-cf&sort=price_asc`))).toEqual(['t2-p3', 't2-p2']);
-    expect((await list(`origin=${encodeURIComponent('Ethiopia,Việt Nam')}&category=t2-cf`)).body.meta.total).toBe(3);
+    expect(
+      slugsOf(await list(`origin=${encodeURIComponent('việt nam')}&category=t2-cf&sort=price_asc`)),
+    ).toEqual(['t2-p3', 't2-p2']);
+    expect(
+      (await list(`origin=${encodeURIComponent('Ethiopia,Việt Nam')}&category=t2-cf`)).body.meta
+        .total,
+    ).toBe(3);
     expect((await list('origin=Ethiop&category=t2-cf')).body.meta.total).toBe(0); // không khớp một phần
     expect((await list('origin=%25&category=t2-cf')).body.meta.total).toBe(0); // % không phải ký tự đại diện
   });
@@ -411,7 +533,9 @@ describe('GET /products – bộ lọc', () => {
     expect((await list('brew=ESPRESSO,AEROPRESS&category=t2-cf')).body.meta.total).toBe(2); // p1 (AEROPRESS), p2 (ESPRESSO)
     expect((await list('brew=COLD_BREW&category=t2-cf')).body.meta.total).toBe(0);
     // Kết hợp: AND giữa các trường
-    expect(slugsOf(await list('roast=LIGHT,MEDIUM&origin=Ethiopia&brew=POUR_OVER&category=t2-cf'))).toEqual(['t2-p1']);
+    expect(
+      slugsOf(await list('roast=LIGHT,MEDIUM&origin=Ethiopia&brew=POUR_OVER&category=t2-cf')),
+    ).toEqual(['t2-p1']);
   });
 });
 
@@ -441,11 +565,13 @@ describe('GET /products – tìm kiếm', () => {
   });
 
   it('input kiểu SQL injection không phá truy vấn relevance', async () => {
-    const res = await list(`q=${encodeURIComponent("zorro'; DROP TABLE \"Product\"; --")}`);
+    const res = await list(`q=${encodeURIComponent('zorro\'; DROP TABLE "Product"; --')}`);
     expect(res.status).toBe(200);
     expect(res.body.data).toEqual([]);
     expect((await list('q=zorro&category=t2-cf')).status).toBe(200);
-    expect(await prisma.product.count({ where: { slug: { startsWith: PREFIX } } })).toBeGreaterThan(0);
+    expect(await prisma.product.count({ where: { slug: { startsWith: PREFIX } } })).toBeGreaterThan(
+      0,
+    );
   });
 
   it('relevance là mặc định khi có q, xếp theo word_similarity rồi createdAt DESC', async () => {
@@ -475,7 +601,10 @@ describe('GET /products – tìm kiếm', () => {
   });
 
   it('q kết hợp bộ lọc khác', async () => {
-    expect(slugsOf(await list('q=zorro&category=t2-cf&inStock=true&maxPrice=100000'))).toEqual(['t2-p8', 't2-p3']);
+    expect(slugsOf(await list('q=zorro&category=t2-cf&inStock=true&maxPrice=100000'))).toEqual([
+      't2-p8',
+      't2-p3',
+    ]);
   });
 });
 
@@ -485,17 +614,47 @@ describe('GET /products – sắp xếp & phân trang', () => {
 
   it('newest (mặc định)', async () => {
     expect(slugsOf(await list(base))).toEqual(['t2-p2', 't2-p8', 't2-p1', 't2-p3', 't2-p10']);
-    expect(slugsOf(await list(`${base}&sort=newest`))).toEqual(['t2-p2', 't2-p8', 't2-p1', 't2-p3', 't2-p10']);
+    expect(slugsOf(await list(`${base}&sort=newest`))).toEqual([
+      't2-p2',
+      't2-p8',
+      't2-p1',
+      't2-p3',
+      't2-p10',
+    ]);
   });
   it('price_asc / price_desc', async () => {
-    expect(slugsOf(await list(`${base}&sort=price_asc`))).toEqual(['t2-p8', 't2-p10', 't2-p3', 't2-p2', 't2-p1']);
-    expect(slugsOf(await list(`${base}&sort=price_desc`))).toEqual(['t2-p1', 't2-p2', 't2-p3', 't2-p10', 't2-p8']);
+    expect(slugsOf(await list(`${base}&sort=price_asc`))).toEqual([
+      't2-p8',
+      't2-p10',
+      't2-p3',
+      't2-p2',
+      't2-p1',
+    ]);
+    expect(slugsOf(await list(`${base}&sort=price_desc`))).toEqual([
+      't2-p1',
+      't2-p2',
+      't2-p3',
+      't2-p10',
+      't2-p8',
+    ]);
   });
   it('bestseller (đồng hạng -> mới hơn trước)', async () => {
-    expect(slugsOf(await list(`${base}&sort=bestseller`))).toEqual(['t2-p3', 't2-p2', 't2-p1', 't2-p8', 't2-p10']);
+    expect(slugsOf(await list(`${base}&sort=bestseller`))).toEqual([
+      't2-p3',
+      't2-p2',
+      't2-p1',
+      't2-p8',
+      't2-p10',
+    ]);
   });
   it('rating', async () => {
-    expect(slugsOf(await list(`${base}&sort=rating`))).toEqual(['t2-p2', 't2-p1', 't2-p3', 't2-p8', 't2-p10']);
+    expect(slugsOf(await list(`${base}&sort=rating`))).toEqual([
+      't2-p2',
+      't2-p1',
+      't2-p3',
+      't2-p8',
+      't2-p10',
+    ]);
   });
 
   it('phân trang + meta; page vượt tổng -> data rỗng', async () => {
@@ -622,9 +781,20 @@ describe('GET /products/:slug', () => {
 
   it('sale hết hạn / chưa bắt đầu: giá hiệu lực = giá niêm yết, ẩn salePrice', async () => {
     const expired = (await request(app).get(`${API}/products/t2-p3`)).body.data.variants[0];
-    expect(expired).toMatchObject({ price: 90000, salePrice: null, effectivePrice: 90000, isOnSale: false, saleEndsAt: null });
+    expect(expired).toMatchObject({
+      price: 90000,
+      salePrice: null,
+      effectivePrice: 90000,
+      isOnSale: false,
+      saleEndsAt: null,
+    });
     const upcoming = (await request(app).get(`${API}/products/t2-p4`)).body.data.variants[0];
-    expect(upcoming).toMatchObject({ price: 250000, salePrice: null, effectivePrice: 250000, isOnSale: false });
+    expect(upcoming).toMatchObject({
+      price: 250000,
+      salePrice: null,
+      effectivePrice: 250000,
+      isOnSale: false,
+    });
     expect(expired.stockStatus).toBe('IN_STOCK');
   });
 
@@ -641,27 +811,38 @@ describe('GET /products/:slug', () => {
     expect(d.related.map((r: { slug: string }) => r.slug)).not.toContain('t2-bulk-1');
   });
 
-  it.each([['t2-p5'], ['t2-p6'], ['t2-p7'], ['khong-ton-tai'], ['Bad_Slug'], ['a--b'], ['%20'], ['a'.repeat(201)]])(
-    '%s -> 404 NOT_FOUND',
-    async (slug) => {
-      const res = await request(app).get(`${API}/products/${slug}`);
-      expect(res.status).toBe(404);
-      expect(res.body.error.code).toBe('NOT_FOUND');
-    },
-  );
+  it.each([
+    ['t2-p5'],
+    ['t2-p6'],
+    ['t2-p7'],
+    ['khong-ton-tai'],
+    ['Bad_Slug'],
+    ['a--b'],
+    ['%20'],
+    ['a'.repeat(201)],
+  ])('%s -> 404 NOT_FOUND', async (slug) => {
+    const res = await request(app).get(`${API}/products/${slug}`);
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe('NOT_FOUND');
+  });
 });
 
 describe('GET /search/suggest', () => {
   const suggest = (query: string) => request(app).get(`${API}/search/suggest?${query}`);
 
-  it.each([['q=a'], ['q='], [''], [`q=${'a'.repeat(51)}`], ['q=ca&limit=0'], ['q=ca&limit=11'], ['q=ca&limit=abc']])(
-    '%s -> 400',
-    async (query) => {
-      const res = await suggest(query);
-      expect(res.status).toBe(400);
-      expect(res.body.error.code).toBe('VALIDATION_ERROR');
-    },
-  );
+  it.each([
+    ['q=a'],
+    ['q='],
+    [''],
+    [`q=${'a'.repeat(51)}`],
+    ['q=ca&limit=0'],
+    ['q=ca&limit=11'],
+    ['q=ca&limit=abc'],
+  ])('%s -> 400', async (query) => {
+    const res = await suggest(query);
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+  });
 
   it('ưu tiên tên bắt đầu bằng query, rồi mới tới chứa query; đúng shape', async () => {
     const res = await suggest('q=Zorro&limit=10');
@@ -690,7 +871,10 @@ describe('GET /search/suggest', () => {
   it('khớp không dấu và tôn trọng limit mặc định', async () => {
     const res = await suggest('q=ca%20phe%20da');
     expect(res.body.data.products.map((p: { slug: string }) => p.slug)).toEqual(['t2-p2']);
-    expect(res.body.data.products[0]).toMatchObject({ minPrice: 120000, imageUrl: '/uploads/seed/chinh.svg' });
+    expect(res.body.data.products[0]).toMatchObject({
+      minPrice: 120000,
+      imageUrl: '/uploads/seed/chinh.svg',
+    });
     const many = await suggest('q=hang');
     expect(many.body.data.products.length).toBeLessThanOrEqual(6);
     expect(many.body.data.products.length).toBeGreaterThan(0);

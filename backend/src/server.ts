@@ -4,8 +4,8 @@ import { logger } from './lib/logger.js';
 import { prisma } from './lib/prisma.js';
 
 const app = createApp();
-const server = app.listen(env.PORT, () => {
-  logger.info(`BeanBox API lắng nghe tại cổng ${env.PORT}`);
+const server = app.listen(env.PORT, env.HOST, () => {
+  logger.info(`BeanBox API lắng nghe tại ${env.HOST}:${env.PORT}`);
 });
 
 async function shutdown(signal: string) {

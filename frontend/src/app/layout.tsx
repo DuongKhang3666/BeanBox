@@ -3,6 +3,7 @@ import { Be_Vietnam_Pro, Lora } from "next/font/google";
 import "./globals.css";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
+import { AuthProvider } from "@/features/auth/AuthProvider";
 import { SITE_DESCRIPTION, SITE_NAME, SITE_URL } from "@/lib/site";
 
 const beVietnam = Be_Vietnam_Pro({
@@ -51,11 +52,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         >
           Bỏ qua điều hướng, đến nội dung chính
         </a>
-        <Header />
-        <main id="main-content" className="flex-1">
-          {children}
-        </main>
-        <Footer />
+        <AuthProvider>
+          <Header />
+          <main id="main-content" className="flex-1">
+            {children}
+          </main>
+          <Footer />
+        </AuthProvider>
       </body>
     </html>
   );

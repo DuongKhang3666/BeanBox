@@ -1,3 +1,4 @@
+import "server-only";
 import { ApiError } from "./errors";
 import type { ApiSuccess } from "@/types/api";
 
@@ -24,10 +25,15 @@ export async function serverGet<T, M = unknown>(
   const qs = params.toString();
   const url = `${apiBase()}${path.startsWith("/") ? path : `/${path}`}${qs ? `?${qs}` : ""}`;
 
+  // D-009: bí mật nội bộ để backend miễn rate limit chung cho SSR. Không bao giờ NEXT_PUBLIC_.
+  const headers: Record<string, string> = { Accept: "application/json" };
+  const internalSecret = process.env.INTERNAL_API_SECRET;
+  if (internalSecret) headers["X-Internal-Secret"] = internalSecret;
+
   let res: Response;
   try {
     res = await fetch(url, {
-      headers: { Accept: "application/json" },
+      headers,
       signal: opts.signal,
       next: { revalidate: opts.revalidate, tags: opts.tags },
     });

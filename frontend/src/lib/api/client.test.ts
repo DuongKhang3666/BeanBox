@@ -1,4 +1,11 @@
-import { ApiClient, ApiError, tokenStore } from "./client";
+import {
+  ApiClient,
+  ApiError,
+  SESSION_FLAG_KEY,
+  clearSession,
+  setSession,
+  tokenStore,
+} from "./client";
 
 function json(status: number, body?: unknown): Response {
   return new Response(body === undefined ? null : JSON.stringify(body), {
@@ -10,7 +17,13 @@ function json(status: number, body?: unknown): Response {
 const unauthorized = () =>
   json(401, { error: { code: "UNAUTHORIZED", message: "Hết hạn", details: null } });
 
-beforeEach(() => tokenStore.clear());
+beforeEach(() => {
+  tokenStore.clear();
+  window.localStorage.clear();
+});
+
+const fakeUser = { id: "u1", email: "an@example.com", fullName: "An" };
+const sessionBody = { user: fakeUser, accessToken: "new", expiresIn: 900 };
 
 describe("ApiClient", () => {
   it("parse {data, meta} và gắn Bearer + X-Cart-Token", async () => {
@@ -124,6 +137,90 @@ describe("ApiClient", () => {
     expect(err.code).toBe("INVALID_REFRESH_TOKEN");
     expect(tokenStore.get()).toBeNull();
     expect(onLogout).toHaveBeenCalledTimes(1);
+  });
+
+  it("refresh trả toàn bộ phiên, lưu token ở memory và đặt cờ localStorage", async () => {
+    const fetchImpl = vi.fn(async () => json(200, { data: sessionBody }));
+    const client = new ApiClient({
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      getCartToken: () => null,
+    });
+    const session = await client.refresh();
+    expect(session).toEqual(sessionBody);
+    expect(tokenStore.get()).toBe("new");
+    expect(window.localStorage.getItem(SESSION_FLAG_KEY)).toBe("1");
+    // token tuyệt đối không nằm trong storage
+    expect(JSON.stringify({ ...window.localStorage })).not.toContain("new");
+  });
+
+  it("refresh đồng thời chỉ gọi /auth/refresh 1 lần", async () => {
+    const fetchImpl = vi.fn(async () => {
+      await new Promise((r) => setTimeout(r, 5));
+      return json(200, { data: sessionBody });
+    });
+    const client = new ApiClient({
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      getCartToken: () => null,
+    });
+    const [a, b] = await Promise.all([client.refresh(), client.refresh()]);
+    expect(a).toBe(b);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("refresh thất bại 401: xóa token + cờ, phát sự kiện đăng xuất", async () => {
+    window.localStorage.setItem(SESSION_FLAG_KEY, "1");
+    tokenStore.set("old");
+    const onLogout = vi.fn();
+    const client = new ApiClient({
+      fetchImpl: (async () =>
+        json(401, {
+          error: { code: "INVALID_REFRESH_TOKEN", message: "x" },
+        })) as unknown as typeof fetch,
+      getCartToken: () => null,
+      onLogout,
+    });
+    await expect(client.refresh()).rejects.toMatchObject({ code: "INVALID_REFRESH_TOKEN" });
+    expect(tokenStore.get()).toBeNull();
+    expect(window.localStorage.getItem(SESSION_FLAG_KEY)).toBeNull();
+    expect(onLogout).toHaveBeenCalledTimes(1);
+  });
+
+  it("refresh gặp lỗi mạng: giữ cờ để lần tải sau thử lại", async () => {
+    window.localStorage.setItem(SESSION_FLAG_KEY, "1");
+    const client = new ApiClient({
+      fetchImpl: (async () => {
+        throw new TypeError("offline");
+      }) as unknown as typeof fetch,
+      getCartToken: () => null,
+      onLogout: vi.fn(),
+    });
+    await expect(client.refresh()).rejects.toMatchObject({ code: "NETWORK_ERROR" });
+    expect(window.localStorage.getItem(SESSION_FLAG_KEY)).toBe("1");
+  });
+
+  it("dùng navigator.locks (Web Locks) khi có", async () => {
+    const request = vi.fn(async (_name: string, cb: () => Promise<unknown>) => cb());
+    Object.defineProperty(navigator, "locks", { value: { request }, configurable: true });
+    try {
+      const client = new ApiClient({
+        fetchImpl: (async () => json(200, { data: sessionBody })) as unknown as typeof fetch,
+        getCartToken: () => null,
+      });
+      await client.refresh();
+      expect(request).toHaveBeenCalledTimes(1);
+      expect(request.mock.calls[0]?.[0]).toBe("bb-auth-refresh");
+    } finally {
+      delete (navigator as unknown as { locks?: unknown }).locks;
+    }
+  });
+
+  it("setSession / clearSession", () => {
+    setSession({ accessToken: "abc" });
+    expect(tokenStore.get()).toBe("abc");
+    expect(window.localStorage.getItem(SESSION_FLAG_KEY)).toBe("1");
+    clearSession();
+    expect(tokenStore.get()).toBeNull();
+    expect(window.localStorage.getItem(SESSION_FLAG_KEY)).toBeNull();
   });
 
   it("không refresh với 401 INVALID_CREDENTIALS", async () => {

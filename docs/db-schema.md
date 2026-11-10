@@ -1,6 +1,7 @@
 # BeanBox – Thiết kế cơ sở dữ liệu
 
-> Phiên bản 0.2 · 2026-11-10 · PostgreSQL + Prisma 6.x.
+> Phiên bản 0.3 · 2026-11-10 · PostgreSQL + Prisma 6.x.
+> Thay đổi 0.3: không đổi Prisma schema; chốt đồng bộ `Order.contactEmail/contactPhone` với requirements §7 (§3, §7 mục 1); seed chưa tạo địa chỉ mẫu cho customer cho tới khi có file hành chính (D-008, §6).
 > Thay đổi 0.2: không đổi Prisma schema; cập nhật giải thích `Coupon`/`CouponRedemption` (giữ lượt khi tạo đơn, D-004), SĐT lưu dạng chuẩn hóa (D-007), dữ liệu hành chính do chủ dự án cung cấp (D-006). Xem [`decisions.md`](decisions.md).
 >  Khối schema ở §2 sẽ được copy gần như nguyên văn vào `backend/prisma/schema.prisma`.
 > Quy ước: id `String @default(cuid())`; tiền là `Int` VND; mọi bảng có `createdAt` (và `updatedAt` nếu có sửa); thời gian lưu UTC.
@@ -667,7 +668,7 @@ model AuditLog {
 | `InventoryMovement` | Sổ cái kho bất biến: mọi thay đổi `stock` đều ghi 1 dòng (`stockAfter` để đối soát). `ORDER_RESERVE` khi đặt, `ORDER_RELEASE` khi hủy/hết hạn |
 | `Cart`, `CartItem` | Giỏ server-side. Giỏ user: `userId`; giỏ guest: `tokenHash`. `couponCode` lưu mã đang áp. `unique(cartId, variantId)`: thêm trùng thì cộng dồn |
 | `Wishlist` | Khóa phức hợp (userId, productId) |
-| `Order` | `userId` null = khách vãng lai. `contactEmail/contactPhone` luôn có (khác requirements §7 chỉ có `guestEmail?/guestPhone?`, xem §7). `shippingAddress` là snapshot JSON. Tách `discountTotal` (giảm hàng) và `shippingDiscount` (giảm ship) để `grandTotal = subtotal - discountTotal + shippingFee - shippingDiscount`. `expiresAt` chỉ dùng cho `PENDING_PAYMENT`. `idempotencyKey` unique; `requestFingerprint` phát hiện cùng key khác payload |
+| `Order` | `userId` null = khách vãng lai. `contactEmail/contactPhone` luôn có (đã đồng bộ requirements §7). `shippingAddress` là snapshot JSON. Tách `discountTotal` (giảm hàng) và `shippingDiscount` (giảm ship) để `grandTotal = subtotal - discountTotal + shippingFee - shippingDiscount`. `expiresAt` chỉ dùng cho `PENDING_PAYMENT`. `idempotencyKey` unique; `requestFingerprint` phát hiện cùng key khác payload |
 | `OrderItem` | Snapshot dòng hàng; `productId` kèm theo để review/báo cáo không cần join qua variant |
 | `OrderStatusHistory` | Mỗi lần đổi trạng thái 1 dòng (kể cả lúc tạo, `fromStatus=null`), có ai/khi nào/ghi chú |
 | `Payment` | Mỗi lần thử thanh toán online 1 dòng. COD không tạo Payment (trạng thái nằm ở `Order.paymentStatus`, chuyển `PAID` khi giao thành công). `unique(provider, providerTxnId)` chống xử lý IPN trùng |
@@ -764,7 +765,9 @@ Mã đơn: `BB-` + `YYMMDD` (giờ Việt Nam, UTC+7) + `-` + 4 ký tự ngẫu 
 |---|---|---|
 | `admin@beanbox.local` | ADMIN | `SEED_ADMIN_PASSWORD` |
 | `staff@beanbox.local` | STAFF | `SEED_STAFF_PASSWORD` |
-| `customer@beanbox.local` | CUSTOMER (kèm 2 địa chỉ, 1 mặc định) | `SEED_CUSTOMER_PASSWORD` |
+| `customer@beanbox.local` | CUSTOMER (dự kiến kèm 2 địa chỉ, 1 mặc định – xem ghi chú dưới) | `SEED_CUSTOMER_PASSWORD` |
+
+Ghi chú (D-008): customer **chưa có 2 địa chỉ mẫu** cho tới khi có file dữ liệu hành chính của chủ dự án (cần mã/tên tỉnh, phường thật; không bịa). Khi có file, bổ sung vào seed.
 
 Cả ba đã `emailVerifiedAt = now`. Mật khẩu dev phải thỏa chính sách (>= 8 ký tự, chữ + số); không dùng lại ở môi trường thật.
 
@@ -821,7 +824,7 @@ Dữ liệu địa chỉ **không** nằm trong DB: `backend/prisma/data/provinc
 
 ## 7. Câu hỏi mở / Giả định
 
-1. **`Order.contactEmail/contactPhone` luôn bắt buộc** thay cho `guestEmail?/guestPhone?` trong requirements §7: cần email để gửi xác nhận cho cả user lẫn guest, và SĐT (dạng chuẩn hóa) để tra cứu/hủy đơn guest (D-005, D-007). Cần xác nhận.
+1. **`Order.contactEmail/contactPhone` luôn bắt buộc** thay cho `guestEmail?/guestPhone?` trong requirements §7: cần email để gửi xác nhận cho cả user lẫn guest, và SĐT (dạng chuẩn hóa) để tra cứu/hủy đơn guest (D-005, D-007). **Đã chốt / đã đồng bộ** requirements §7 (2026-11-10).
 2. **Phân biệt giảm hàng vs. giảm ship:** thêm `Order.shippingDiscount` (requirements chỉ có `discountTotal`, `shippingFee`). Công thức `grandTotal` ghi rõ ở trên.
 3. **`ProductStatus` không có trạng thái "hết hàng"** – hết hàng suy ra từ tồn kho (`inStock`).
 4. **Đã chốt D-006 – Mã tỉnh / vùng nội thành:** "nội thành" = toàn bộ Hà Nội (`"01"`) và TP.HCM (`"79"`) qua `shipping.innerCityProvinceCodes`; task nạp dữ liệu (M2) đối chiếu mã với file nguồn chủ dự án cung cấp và cập nhật setting nếu khác.

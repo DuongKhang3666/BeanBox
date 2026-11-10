@@ -2,6 +2,7 @@
 
 > Phiên bản: 0.2 · Ngày: 2026-11-10
 > Thay đổi 0.2: ghi nhận 7 quyết định D-001..D-007 ([`decisions.md`](decisions.md)): thanh toán thất bại, giao lại, phụ phí ship, giữ lượt mã khi tạo đơn, tra cứu đơn bằng SĐT, dữ liệu hành chính.
+> Cập nhật M2 (không đổi số phiên bản): D-007 đã duyệt; thêm D-008, D-009; đồng bộ §7 (Order, RefreshToken), §9, §11, §12.
 > Trạng thái: Draft – cần review trước khi chốt `docs/api-contract.md`
 
 ---
@@ -335,7 +336,7 @@ FAILED_DELIVERY ──(chỉ staff)───────────────
 ```
 User(id, email, passwordHash, fullName, phone, role, status, emailVerifiedAt, createdAt)
 Address(id, userId, fullName, phone, provinceCode, provinceName, wardCode, wardName, line1, isDefault)
-RefreshToken(id, userId, tokenHash, expiresAt, revokedAt)
+RefreshToken(id, userId, familyId, tokenHash, expiresAt, revokedAt, replacedById?)
 
 Category(id, parentId?, name, slug, sortOrder)
 Brand(id, name, slug, logoUrl)
@@ -353,10 +354,12 @@ Cart(id, userId? , token?, updatedAt)
 CartItem(id, cartId, variantId, quantity)
 Wishlist(userId, productId)
 
-Order(id, code, userId?, guestEmail?, guestPhone?, status, paymentStatus,
+Order(id, code, userId?, contactEmail, contactPhone, status, paymentStatus,
       paymentMethod, shippingMethod, shippingAddress(JSON snapshot),
-      subtotal, discountTotal, shippingFee, grandTotal, couponCode?, note,
+      subtotal, discountTotal, shippingFee, shippingDiscount, grandTotal, couponCode?, note,
       idempotencyKey, createdAt)
+-- Ghi chú: contactEmail/contactPhone luôn bắt buộc (guest nhập, user lấy từ tài khoản/form);
+-- SĐT lưu dạng chuẩn hóa (D-007). Schema chi tiết: db-schema.md.
 OrderItem(id, orderId, variantId, productName, variantName, sku, imageUrl,
           unitPrice, quantity, lineTotal)
 OrderStatusHistory(id, orderId, fromStatus, toStatus, note, actorId?, createdAt)
@@ -398,7 +401,7 @@ Base: `/api/v1` · JSON · lỗi thống nhất `{ "error": { "code", "message",
 - `/san-pham/[slug]` Chi tiết sản phẩm
 - `/gio-hang` Giỏ hàng · `/thanh-toan` Checkout · `/dat-hang-thanh-cong/[code]`
 - `/tra-cuu-don-hang`
-- `/dang-nhap`, `/dang-ky`, `/quen-mat-khau`, `/dat-lai-mat-khau`
+- `/dang-nhap`, `/dang-ky`, `/quen-mat-khau`, `/dat-lai-mat-khau`, `/xac-thuc-email`
 - `/tai-khoan` (hồ sơ), `/tai-khoan/dia-chi`, `/tai-khoan/don-hang`, `/tai-khoan/don-hang/[code]`, `/tai-khoan/yeu-thich`
 - `/gioi-thieu`, `/lien-he`, `/chinh-sach/[slug]`, `/blog`, `/blog/[slug]` (v2)
 
@@ -422,7 +425,7 @@ Base: `/api/v1` · JSON · lỗi thống nhất `{ "error": { "code", "message",
 |---|---|---|
 | **M0 – Nền tảng** | Khởi tạo repo (`frontend/`, `backend/`), Docker Compose (Postgres), Prisma schema, seed, CI lint/test, `api-contract.md` | Chạy được `docker compose up` |
 | **M1 – Catalog** | API + UI danh mục, danh sách, lọc, tìm kiếm, chi tiết sản phẩm | Duyệt sản phẩm được |
-| **M2 – Auth & Tài khoản** | Đăng ký/đăng nhập/refresh, hồ sơ, sổ địa chỉ, nạp dữ liệu tỉnh/phường từ file nguồn do chủ dự án cung cấp | Khách có tài khoản |
+| **M2 – Auth & Tài khoản** | Đăng ký/đăng nhập/refresh, hồ sơ, sổ địa chỉ, nạp dữ liệu tỉnh/phường từ file nguồn do chủ dự án cung cấp (nạp dữ liệu tỉnh/phường: bị chặn chờ file – D-008) | Khách có tài khoản |
 | **M3 – Giỏ hàng & Checkout COD** | Giỏ (guest + merge), quote, tạo đơn, tồn kho, email | **MVP mua hàng end-to-end** |
 | **M4 – Admin cơ bản** | CRUD sản phẩm/biến thể/ảnh, danh mục, tồn kho, xử lý đơn | Vận hành được cửa hàng |
 | **M5 – Thanh toán online & Khuyến mãi** | VNPay sandbox/Stripe test, IPN/webhook, mã giảm giá | v1 |
@@ -460,7 +463,9 @@ Base: `/api/v1` · JSON · lỗi thống nhất `{ "error": { "code", "message",
 | 10 | Lượt mã giảm giá (D-004) | Giữ lượt ngay khi tạo đơn bằng UPDATE có điều kiện; hoàn lượt khi `CANCELLED` |
 | 11 | Khách vãng lai xem đơn (D-005) | Trang `/tra-cuu-don-hang` (mã đơn + SĐT); không `viewToken`; đơn guest không tự gắn vào tài khoản |
 | 12 | Vùng ship & dữ liệu hành chính (D-006) | Nội thành = toàn bộ Hà Nội (`01`) + TP.HCM (`79`); dữ liệu tỉnh/phường do chủ dự án cung cấp, nạp ở M2 |
-| 13 | Chuẩn hóa SĐT (D-007, Tech Lead đề xuất) | Lưu dạng `0xxxxxxxxx`; hủy đơn guest xác minh bằng SĐT; FR-CHK-10 lên mức M |
+| 13 | Chuẩn hóa SĐT (D-007, đã duyệt) | Lưu dạng `0xxxxxxxxx`; hủy đơn guest xác minh bằng SĐT; FR-CHK-10 lên mức M |
+| 14 | Sổ địa chỉ khi chưa có file hành chính (D-008) | Tạm thời: client nhập tên tỉnh/phường, server chỉ kiểm định dạng mã; `/locations` bị chặn chờ file |
+| 15 | IP client cho rate limit (D-009) | `TRUST_PROXY` cấu hình được, backend bind `127.0.0.1`, SSR dùng `X-Internal-Secret` để được miễn rate limit chung |
 
 ---
 

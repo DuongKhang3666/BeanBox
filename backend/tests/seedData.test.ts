@@ -23,7 +23,9 @@ describe('dữ liệu seed sản phẩm', () => {
   });
 
   it('danh mục và thương hiệu tồn tại trong dữ liệu dùng chung', () => {
-    const categorySlugs = new Set(CATEGORIES.flatMap((c) => [c.slug, ...(c.children ?? []).map((x) => x.slug)]));
+    const categorySlugs = new Set(
+      CATEGORIES.flatMap((c) => [c.slug, ...(c.children ?? []).map((x) => x.slug)]),
+    );
     const brandSlugs = new Set(BRANDS.map((b) => b.slug));
     for (const p of SEED_PRODUCTS) {
       expect(categorySlugs.has(p.categorySlug), p.slug).toBe(true);

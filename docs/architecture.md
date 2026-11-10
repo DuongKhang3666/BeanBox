@@ -1,6 +1,7 @@
 # BeanBox – Kiến trúc hệ thống
 
-> Phiên bản 0.2 · 2026-11-10 · Nguồn: `docs/requirements.md` + quyết định của Tech Lead.
+> Phiên bản 0.3 · 2026-11-10 · Nguồn: `docs/requirements.md` + quyết định của Tech Lead.
+> Thay đổi 0.3: xác định IP client & rate limit sau proxy (D-009, §3, §8, ADR 10); chi tiết hóa phiên/token và RBAC cho M2 (§4).
 > Thay đổi 0.2: giữ lượt mã giảm giá khi tạo đơn và hoàn lượt khi hủy/hết hạn (D-004), ADR 9, ghi chú nguồn dữ liệu hành chính (D-006). Xem [`decisions.md`](decisions.md).
 > Tài liệu liên quan: `docs/db-schema.md` (Prisma schema), `docs/api-contract.md` (nguồn sự thật cho API).
 
@@ -63,22 +64,23 @@ Quy tắc phân lớp backend: `routes` (khai báo + middleware) -> `controller`
 - **Trình duyệt** luôn gọi đường dẫn tương đối `/api/v1/...` (same-origin). `next.config` có `rewrites`: `/api/v1/:path*` -> `http://localhost:4000/api/v1/:path*` (hoặc biến môi trường khi chạy Docker). Nhờ đó cookie refresh là first-party, không cần `credentials: include` cross-site.
 - **SSR / Server Components** (trang danh mục, chi tiết sản phẩm, SEO) gọi thẳng `${API_INTERNAL_URL}/api/v1/...`, chỉ cho dữ liệu công khai (catalog). Dữ liệu cần đăng nhập (giỏ, tài khoản, đơn) lấy ở client component.
 - Backend **vẫn bật CORS** với whitelist origin (`FRONTEND_ORIGINS`) để phòng khi gọi trực tiếp (test, Postman, tương lai tách domain).
-- Backend đặt `trust proxy` đúng để rate limit theo IP thật khi đứng sau Next rewrites/reverse proxy.
+- **IP client & rate limit (D-009).** Backend lắng nghe `HOST` (mặc định `127.0.0.1`; docker-compose bind cổng 4000, 5432, 1025, 8025 vào `127.0.0.1`). `trust proxy` đọc từ env `TRUST_PROXY` (mặc định `loopback`, Docker dùng `uniquelocal`; cấm giá trị `true`). Next rewrites tự thêm `X-Forwarded-For` nên IP thật của trình duyệt đi qua được tới backend. Request SSR gửi header `X-Internal-Secret` (= `INTERNAL_API_SECRET`) để được MIỄN rate limit chung (không miễn nhóm nhạy cảm auth); không chuyển tiếp IP client từ SSR vì làm trang thành dynamic và phân mảnh cache fetch của Next. Rủi ro còn lại: lưu lượng SSR không bị giới hạn ở backend nên khi deploy (M7) phải đặt rate limit ở reverse proxy/edge trước Next; lộ `INTERNAL_API_SECRET` cho phép lách rate limit chung (không lách được nhóm auth).
 
 ## 4. Xác thực & phiên
 
 | Thành phần | Quyết định |
 |---|---|
 | Mật khẩu | argon2id; chính sách >= 8 ký tự, có chữ và số; tối đa 72 ký tự |
-| Access token | JWT 15 phút, claims `sub`, `role`, `iat`, `exp`; gửi `Authorization: Bearer`; FE giữ **trong memory** (không localStorage). Mất khi reload -> FE gọi `POST /auth/refresh` lúc khởi động |
-| Refresh token | Chuỗi ngẫu nhiên 32 byte (base64url), **không phải JWT**; DB lưu SHA-256 hash; hạn 7 ngày |
+| Access token | JWT 15 phút, thuật toán cố định HS256, claims `sub`, `role`, `sid` (= `familyId` của phiên refresh), `iat`, `exp`, `iss=beanbox-api`, `aud=beanbox-web`; gửi `Authorization: Bearer`; FE giữ **trong memory** (không localStorage). Mất khi reload -> FE gọi `POST /auth/refresh` lúc khởi động, nhưng chỉ khi từng đăng nhập: FE lưu cờ không nhạy cảm `bb_has_session` trong localStorage để quyết định |
+| Refresh token | Chuỗi ngẫu nhiên 32 byte (base64url), **không phải JWT**; DB lưu SHA-256 hash; hạn trượt 7 ngày (mỗi lần refresh cấp token mới hạn 7 ngày từ lúc refresh) |
 | Cookie | `bb_rt`: httpOnly, `Secure` (prod), `SameSite=Strict`, `Path=/api/v1/auth` |
 | Rotation | Mỗi lần refresh: thu hồi token cũ (`revokedAt`, `replacedById`), cấp token mới cùng `familyId` |
 | Reuse detection | Dùng lại token đã thu hồi -> thu hồi **toàn bộ family** (đăng xuất thiết bị đó), trả 401 |
 | CSRF | Endpoint dùng cookie (`/auth/refresh`, `/auth/logout`): `SameSite=Strict` + kiểm tra header `Origin` thuộc whitelist (thiếu hoặc sai -> 403) |
 | Khóa tài khoản | 5 lần sai liên tiếp trong 15 phút -> `lockedUntil = now + 15 phút` (FR-AUTH-08) |
-| RBAC | `CUSTOMER`, `STAFF`, `ADMIN`; middleware `requireRole`. Role lấy từ DB mỗi request admin (không tin hoàn toàn claim cũ) |
-| Frontend | Fetch wrapper tự gắn Bearer; gặp 401 -> refresh **single-flight** (nhiều request chờ chung 1 lần refresh) -> retry 1 lần |
+| RBAC | `CUSTOMER`, `STAFF`, `ADMIN`; middleware `requireAuth` đọc lại `role/status` từ DB MỌI request đã xác thực (không chỉ admin), `requireRole` dùng role đó. User không tồn tại -> 401; `DISABLED` -> 403 |
+| Frontend | Fetch wrapper tự gắn Bearer; gặp 401 -> refresh **single-flight** trong tab (nhiều request chờ chung 1 lần refresh) -> retry 1 lần. Giữa các tab: khóa bằng Web Locks API (`navigator.locks`) nếu trình duyệt hỗ trợ |
+| Hạn chế đã chấp nhận | Đổi/đặt lại mật khẩu không vô hiệu access token đang sống (tối đa 15 phút); refresh token thì bị thu hồi ngay |
 
 ## 5. Giỏ hàng, giá, đơn hàng
 
@@ -113,6 +115,11 @@ Quy tắc phân lớp backend: `routes` (khai báo + middleware) -> `controller`
 | `DATABASE_URL` | `postgresql://beanbox:beanbox@localhost:5432/beanbox` |
 | `PORT` | `4000` |
 | `FRONTEND_ORIGINS` | `http://localhost:3000` (phân tách dấu phẩy; dùng cho CORS + kiểm tra Origin) |
+| `HOST` | `127.0.0.1` (mặc định; địa chỉ backend lắng nghe, D-009) |
+| `TRUST_PROXY` | mặc định `loopback`; Docker dùng `uniquelocal`; cấm `true` (D-009) |
+| `INTERNAL_API_SECRET` (backend + frontend server, tùy chọn) | chuỗi >= 32 ký tự; SSR gửi qua `X-Internal-Secret`; chỉ ở server, không bao giờ `NEXT_PUBLIC_` (D-009) |
+| `WEB_APP_URL` | gốc link trong email, mặc định `http://localhost:3000`; không dựng link từ header Host/Origin |
+| `COOKIE_SECURE` | mặc định `true` khi production |
 | `JWT_ACCESS_SECRET` | chuỗi >= 32 ký tự ngẫu nhiên |
 | `ACCESS_TOKEN_TTL` / `REFRESH_TOKEN_TTL_DAYS` | `15m` / `7` |
 | `API_INTERNAL_URL` (frontend) | `http://localhost:4000` (Docker: `http://backend:4000`) |
@@ -136,6 +143,7 @@ Backend validate toàn bộ env bằng zod khi khởi động, thiếu/sai thì 
 | 7 | Trừ kho khi tạo đơn, hết hạn thì hoàn | Theo requirements §5.2 |
 | 8 | Hai project độc lập, không monorepo | Đơn giản CI/Docker; chấp nhận không chia sẻ type (type API viết tay ở FE theo contract) |
 | 9 | Giữ lượt mã khi tạo đơn bằng UPDATE có điều kiện | Không bao giờ vượt `usageLimit`/`perUserLimit` kể cả khi đồng thời; hoàn lượt idempotent khi `CANCELLED` (D-004) |
+| 10 | IP client & rate limit sau proxy (D-009) | `TRUST_PROXY` cấu hình được thay cho `trust proxy = 1`, backend bind `127.0.0.1`, SSR dùng `X-Internal-Secret` để không dồn chung một IP; chấp nhận rủi ro rate limit SSR phải đặt ở edge khi deploy |
 
 ## 10. Câu hỏi mở / Giả định
 

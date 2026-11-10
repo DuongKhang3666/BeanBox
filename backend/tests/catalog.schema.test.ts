@@ -20,7 +20,11 @@ describe('productListQuerySchema', () => {
   });
 
   it('danh sách phân tách dấu phẩy: trim, bỏ rỗng, bỏ trùng', () => {
-    const r = parse({ brand: ' hario , kalita,, hario ', roast: 'LIGHT, MEDIUM', brew: 'PHIN,MOKA' });
+    const r = parse({
+      brand: ' hario , kalita,, hario ',
+      roast: 'LIGHT, MEDIUM',
+      brew: 'PHIN,MOKA',
+    });
     expect(r.data?.brand).toEqual(['hario', 'kalita']);
     expect(r.data?.roast).toEqual(['LIGHT', 'MEDIUM']);
     expect(r.data?.brew).toEqual(['PHIN', 'MOKA']);

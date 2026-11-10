@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { effectivePrice, isOnSale, summarizePrices, type PricedVariant } from '../src/lib/pricing.js';
+import {
+  effectivePrice,
+  isOnSale,
+  summarizePrices,
+  type PricedVariant,
+} from '../src/lib/pricing.js';
 
 const now = new Date('2026-11-10T08:00:00.000Z');
 const at = (iso: string) => new Date(iso);

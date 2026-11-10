@@ -9,7 +9,8 @@ services:
       POSTGRES_PASSWORD: beanbox
       POSTGRES_DB: beanbox
     ports:
-      - '5432:5432'
+      # Chỉ bind loopback: không lộ Postgres ra mạng ngoài
+      - '127.0.0.1:5432:5432'
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./docker/db-init:/docker-entrypoint-initdb.d:ro
@@ -23,8 +24,8 @@ services:
     image: axllent/mailpit:latest
     restart: unless-stopped
     ports:
-      - '1025:1025' # SMTP
-      - '8025:8025' # Web UI
+      - '127.0.0.1:1025:1025' # SMTP
+      - '127.0.0.1:8025:8025' # Web UI
 
   backend:
     profiles: ['app']
@@ -41,10 +42,15 @@ services:
       FRONTEND_ORIGINS: ${FRONTEND_ORIGINS:-http://localhost:3000}
       # Phải đặt (>= 32 ký tự) khi chạy profile app, nếu không backend sẽ dừng ngay khi khởi động
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-}
+      HOST: 0.0.0.0
+      TRUST_PROXY: uniquelocal
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:-}
+      WEB_APP_URL: ${WEB_APP_URL:-http://localhost:3000}
       SMTP_HOST: mailpit
       SMTP_PORT: '1025'
     ports:
-      - '4000:4000'
+      # Bind 127.0.0.1: máy khác không gọi thẳng cổng 4000 để giả X-Forwarded-For / vượt rate limit
+      - '127.0.0.1:4000:4000'
     healthcheck:
       test:
         - CMD

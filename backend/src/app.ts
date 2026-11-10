@@ -2,17 +2,18 @@ import path from 'node:path';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import express, { type Express } from 'express';
-import { rateLimit } from 'express-rate-limit';
 import helmet from 'helmet';
 import { pinoHttp } from 'pino-http';
 import { env } from './config/env.js';
-import { AppError } from './lib/errors.js';
 import { logger } from './lib/logger.js';
 import { errorHandler } from './middlewares/errorHandler.js';
+import { createRateLimiter, isTrustedInternalRequest } from './middlewares/rateLimit.js';
 import { notFound } from './middlewares/notFound.js';
 import { requestId } from './middlewares/requestId.js';
+import { createAuthRouter } from './modules/auth/auth.routes.js';
 import { catalogRouter } from './modules/catalog/catalog.routes.js';
 import { healthRouter } from './modules/health/health.routes.js';
+import { meRouter } from './modules/me/me.routes.js';
 
 const API_PREFIX = '/api/v1';
 /** backend/uploads: src/ và dist/ đều nằm ngay dưới thư mục backend. */
@@ -21,12 +22,19 @@ const UPLOADS_DIR = path.resolve(import.meta.dirname, '..', 'uploads');
 export interface AppOptions {
   /** Số request/phút/IP của rate limit chung (mặc định 100). Chỉ đổi trong test. */
   generalRateLimit?: number;
+  /** Số request/phút/IP của limiter nhạy cảm (login, đăng ký, quên mật khẩu...). Mặc định 5. */
+  authRateLimit?: number;
 }
 
 export function createApp(options: AppOptions = {}): Express {
   const app = express();
   app.disable('x-powered-by');
-  app.set('trust proxy', 1);
+  app.set('trust proxy', env.TRUST_PROXY);
+
+  // Limiter nhạy cảm: KHÔNG bỏ qua request nội bộ; store riêng mỗi app.
+  const limiters = {
+    sensitive: createRateLimiter({ windowMs: 60_000, limit: options.authRateLimit ?? 5 }),
+  };
 
   app.use(requestId);
   app.use(
@@ -67,27 +75,18 @@ export function createApp(options: AppOptions = {}): Express {
     }),
   );
   app.use(
-    rateLimit({
+    createRateLimiter({
       windowMs: 60_000,
       limit: options.generalRateLimit ?? 100,
-      standardHeaders: 'draft-6',
-      legacyHeaders: false,
-      skip: (req) => req.path === `${API_PREFIX}/health`,
-      handler: (_req, res, next) => {
-        const retryAfter = Number(res.getHeader('Retry-After')) || 60;
-        res.setHeader('Retry-After', String(retryAfter));
-        next(
-          new AppError(429, 'RATE_LIMITED', 'Bạn thao tác quá nhanh, vui lòng thử lại sau', {
-            retryAfterSec: retryAfter,
-          }),
-        );
-      },
+      skip: (req) => req.path === `${API_PREFIX}/health` || isTrustedInternalRequest(req),
     }),
   );
   app.use(express.json({ limit: '100kb' }));
   app.use(cookieParser());
 
   app.use(API_PREFIX, healthRouter);
+  app.use(API_PREFIX, createAuthRouter({ sensitiveLimiter: limiters.sensitive }));
+  app.use(API_PREFIX, meRouter);
   app.use(API_PREFIX, catalogRouter);
 
   app.use(notFound);

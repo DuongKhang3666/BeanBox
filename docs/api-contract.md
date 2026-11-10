@@ -1,8 +1,9 @@
 # BeanBox – API Contract
 
-> Phiên bản 0.2 · 2026-11-10 · **Nguồn sự thật cho FE và BE.** Đổi contract phải sửa file này trước và nêu trong báo cáo.
+> Phiên bản 0.3 · 2026-11-10 · **Nguồn sự thật cho FE và BE.** Đổi contract phải sửa file này trước và nêu trong báo cáo.
 > Thay đổi 0.2: áp dụng D-001..D-007 ([`decisions.md`](decisions.md)): giữ lượt mã khi tạo đơn, tra cứu/hủy đơn guest bằng SĐT chuẩn hóa, chuẩn hóa SĐT, chốt các mục §13.1–8.
 > Thay đổi 0.2.1: làm rõ §4 sau khi triển khai M1 (không đổi shape).
+> Thay đổi 0.3: chi tiết hóa M2 Auth & Tài khoản, D-008, D-009.
 > Base URL: `/api/v1` (trình duyệt: same-origin qua Next rewrites; backend: `http://localhost:4000/api/v1`).
 > Chi tiết đầy đủ cho M1–M3; M4–M6 chỉ liệt kê endpoint (§12).
 
@@ -42,7 +43,9 @@ Phân trang: query `page` (>= 1, mặc định 1), `pageSize` (1–100, mặc đ
 `details` tùy lỗi (mảng lỗi field cho `VALIDATION_ERROR`, object ngữ cảnh cho lỗi nghiệp vụ). Không lộ stack trace.
 
 **Xác thực**
-- `Authorization: Bearer <accessToken>` (JWT 15 phút). Thiếu/hết hạn/sai -> 401 `UNAUTHORIZED` (FE gọi refresh rồi thử lại).
+- `Authorization: Bearer <accessToken>` (JWT HS256, 15 phút; claims `sub`, `role`, `sid` (= `familyId` của phiên refresh), `iat`, `exp`, `iss`, `aud`). Thiếu/hết hạn/sai -> 401 `UNAUTHORIZED` (FE gọi refresh rồi thử lại).
+- Với endpoint **Auth/Optional**: nếu CÓ header `Authorization` mà token sai/hết hạn -> 401 `UNAUTHORIZED` (không âm thầm coi là guest).
+- User không còn tồn tại -> 401 `UNAUTHORIZED`; user `DISABLED` -> 403 `ACCOUNT_DISABLED`. `role` luôn đọc lại từ DB mỗi request đã xác thực (không tin claim).
 - Refresh token ở cookie `bb_rt` (httpOnly, SameSite=Strict, Path=/api/v1/auth), FE không đọc được.
 - Ký hiệu quyền: **Public** (không cần), **Optional** (có token thì là user, không thì guest; kèm `X-Cart-Token` nếu có), **Auth** (mọi user đăng nhập), **Staff** (STAFF hoặc ADMIN), **Admin** (chỉ ADMIN).
 
@@ -50,9 +53,9 @@ Phân trang: query `page` (>= 1, mặc định 1), `pageSize` (1–100, mặc đ
 
 **Idempotency.** `POST /orders` bắt buộc `Idempotency-Key: <UUID v4>`. Thiếu/sai định dạng -> 400 `VALIDATION_ERROR` (`details[0].field = "Idempotency-Key"`).
 
-**Rate limit.** Chung 100 req/phút/IP. Nhóm nhạy cảm 5 req/phút/IP: `POST /auth/login`, `/auth/register`, `/auth/forgot-password`, `/auth/reset-password`, `POST /orders/:code/cancel` (guest), `GET /orders/track` (10/phút). Vượt -> 429 `RATE_LIMITED` + header `Retry-After` (giây). Response có `RateLimit-Limit/Remaining/Reset`.
+**Rate limit.** Chung 100 req/phút/IP. Nhóm nhạy cảm 5 req/phút/IP: `POST /auth/login`, `/auth/register`, `/auth/forgot-password`, `/auth/reset-password`, `/auth/change-password`, `POST /orders/:code/cancel` (guest), `GET /orders/track` (10/phút). Vượt -> 429 `RATE_LIMITED` + header `Retry-After` (giây) và `error.details: { "retryAfterSec": <int> }` (cùng giá trị với header). Response có `RateLimit-Limit/Remaining/Reset`. IP client xác định theo `TRUST_PROXY` (D-009); request SSR nội bộ có `X-Internal-Secret` hợp lệ được miễn rate limit chung, không miễn nhóm nhạy cảm (xem `architecture.md` §3).
 
-**CORS / CSRF.** CORS chỉ cho origin trong `FRONTEND_ORIGINS`, `credentials: true`. `POST /auth/refresh` và `POST /auth/logout` dùng cookie nên bắt buộc header `Origin` thuộc whitelist, nếu không -> 403 `INVALID_ORIGIN`.
+**CORS / CSRF.** CORS chỉ cho origin trong `FRONTEND_ORIGINS`, `credentials: true`. `POST /auth/refresh` và `POST /auth/logout` dùng cookie nên bắt buộc header `Origin` khớp CHÍNH XÁC một giá trị trong `FRONTEND_ORIGINS`; thiếu hoặc `null` -> 403 `INVALID_ORIGIN`.
 
 **Chuẩn hóa input.** Chuỗi được `trim`; email lowercase; SĐT được chuẩn hóa (D-007): bỏ khoảng trắng, dấu chấm, gạch ngang; `+84` đầu -> `0`; sau đó phải khớp `^0(3|5|7|8|9)\d{8}$`, sai -> 400 `VALIDATION_ERROR`. Mọi nơi lưu SĐT (`User.phone`, `Address.phone`, `Order.contactPhone`, `shippingAddress.phone`) lưu dạng chuẩn hóa `0xxxxxxxxx`; response trả đúng dạng đã lưu. Trường lạ trong body bị bỏ qua.
 
@@ -214,20 +217,26 @@ Lược đồ User trả ra (không bao giờ có `passwordHash`):
   "role": "CUSTOMER", "emailVerified": false, "createdAt": "2026-11-10T08:30:00.000Z" }
 ```
 Ràng buộc mật khẩu: 8–72 ký tự, có ít nhất 1 chữ và 1 số.
-Các endpoint cấp phiên trả `{ "data": { "user": {..}, "accessToken": "<jwt>", "expiresIn": 900 } }` và `Set-Cookie: bb_rt=...`.
+Các endpoint cấp phiên trả `{ "data": { "user": {..}, "accessToken": "<jwt>", "expiresIn": 900 } }` và `Set-Cookie: bb_rt=...`. Cookie `bb_rt` có `Max-Age` 7 ngày; mỗi lần refresh cấp token mới hạn 7 ngày tính từ lúc refresh (hạn trượt). Đăng ký/đăng nhập tạo family mới.
 
 ### 5.1 `POST /auth/register` – Public (5/phút/IP)
 Body: `fullName` string 2–100 (bắt buộc), `email` email <= 254 (bắt buộc), `password` (bắt buộc), `phone` string tùy chọn.
-201: phiên như trên (đăng ký xong đăng nhập luôn) và gửi email xác thực. Lỗi: 400 `VALIDATION_ERROR`, 409 `EMAIL_TAKEN` ("Email đã được sử dụng"), 429.
+`phone` được chuẩn hóa theo §1 (sai định dạng -> 400 `VALIDATION_ERROR`).
+201: phiên như trên (đăng ký xong đăng nhập luôn) và gửi email xác thực có link `/xac-thuc-email?token=...` (token hạn 24 giờ, dùng 1 lần). Email được gửi sau commit; lỗi gửi mail không làm hỏng đăng ký. Lỗi: 400 `VALIDATION_ERROR`, 409 `EMAIL_TAKEN` ("Email đã được sử dụng"), 429.
 
 ### 5.2 `POST /auth/login` – Public (5/phút/IP)
 Body: `{ "email": "an@example.com", "password": "Matkhau123" }`.
 200: phiên như trên. FE sau đó gọi `POST /cart/merge` nếu có cart token.
 Lỗi: 400; 401 `INVALID_CREDENTIALS` (tăng `failedLoginCount`); 403 `ACCOUNT_LOCKED` (`details: { "lockedUntil": "..." }`) khi đã khóa, kể cả nhập đúng mật khẩu trong lúc khóa; 403 `ACCOUNT_DISABLED`; 429.
+Quy tắc:
+- **Chống dò email:** email không tồn tại và sai mật khẩu trả CÙNG 401 `INVALID_CREDENTIALS` với cùng message ("Email hoặc mật khẩu không đúng"); server vẫn chạy verify băm giả khi không có user để thời gian phản hồi tương đương.
+- **Khóa tạm:** sai liên tiếp 5 lần; nếu lần sai cách lần sai trước > 15 phút thì đếm lại từ 1; lần sai thứ 5 đặt `lockedUntil = now + 15 phút` và vẫn trả 401. Mọi lần đăng nhập trong thời gian khóa trả 403 `ACCOUNT_LOCKED` (kể cả đúng mật khẩu).
+- `ACCOUNT_DISABLED` chỉ trả khi mật khẩu đúng.
+- Đăng nhập đúng: reset `failedLoginCount`, `lockedUntil` và cập nhật `lastLoginAt`.
 
 ### 5.3 `POST /auth/refresh` – Cookie `bb_rt` (kiểm tra Origin)
 Không body. Xoay vòng refresh token. 200: `{ "data": { "user": {..}, "accessToken": "...", "expiresIn": 900 } }` + cookie mới.
-Lỗi: 403 `INVALID_ORIGIN`; 401 `INVALID_REFRESH_TOKEN` (thiếu/sai/hết hạn/đã thu hồi; dùng lại token đã thu hồi -> thu hồi cả family; cookie bị xóa). FE phải gọi tuần tự (single-flight) vì token cũ bị vô hiệu ngay.
+Lỗi: 403 `INVALID_ORIGIN`; 401 `INVALID_REFRESH_TOKEN` (thiếu/sai/hết hạn/đã thu hồi; cookie bị xóa). Token đã thu hồi bị dùng lại, hoặc hai request dùng cùng một token đồng thời (bên thua) -> thu hồi cả family, 401. User `DISABLED` -> thu hồi family, 401 `INVALID_REFRESH_TOKEN`. FE phải gọi tuần tự (single-flight) vì token cũ bị vô hiệu ngay.
 
 ### 5.4 `POST /auth/logout` – Cookie (kiểm tra Origin)
 Không body. Thu hồi token hiện tại (cả family), xóa cookie. Idempotent: luôn 204 (kể cả không có cookie), trừ 403 `INVALID_ORIGIN`.
@@ -237,17 +246,17 @@ Body: `{ "email": "an@example.com" }`. Luôn 200 (không lộ email có tồn t�
 ```json
 { "data": { "message": "Nếu email tồn tại, chúng tôi đã gửi hướng dẫn đặt lại mật khẩu." } }
 ```
-Token hết hạn 30 phút, dùng 1 lần; link trỏ `/dat-lai-mat-khau?token=...`. Lỗi: 400, 429.
+Token hết hạn 30 phút, dùng 1 lần; link trỏ `/dat-lai-mat-khau?token=...`. Email không tồn tại hoặc tài khoản `DISABLED`: không gửi mail, vẫn 200 cùng message. Tạo token mới thì vô hiệu các token reset cũ chưa dùng. Email gửi bất đồng bộ (không chờ) để thời gian phản hồi không lộ email có tồn tại. Lỗi: 400, 429.
 
 ### 5.6 `POST /auth/reset-password` – Public (5/phút/IP)
-Body: `{ "token": "...", "newPassword": "Matkhau456" }`. 200 `{ "data": { "message": "Đã đặt lại mật khẩu." } }`; thu hồi mọi refresh token của user, reset `failedLoginCount/lockedUntil`. Lỗi: 400 `VALIDATION_ERROR`, 400 `TOKEN_INVALID`.
+Body: `{ "token": "...", "newPassword": "Matkhau456" }`. 200 `{ "data": { "message": "Đã đặt lại mật khẩu." } }`; đánh dấu token đã dùng và vô hiệu mọi token reset khác của user; thu hồi mọi refresh token của user, reset `failedLoginCount/lockedUntil`. Lỗi: 400 `VALIDATION_ERROR`, 400 `TOKEN_INVALID`.
 
 ### 5.7 `POST /auth/verify-email` – Public
 Body: `{ "token": "..." }` (từ link email, FE trang xác thực gọi API). 200 `{ "data": { "emailVerified": true } }`. Token đã dùng nhưng email đã xác thực: vẫn 200 (idempotent). Lỗi: 400 `TOKEN_INVALID`.
-Bổ sung: `POST /auth/resend-verification` – Auth, không body, 204; 409 `CONFLICT` nếu đã xác thực; giới hạn 1 lần/60 giây.
+Bổ sung: `POST /auth/resend-verification` – Auth, không body, 204; 409 `CONFLICT` nếu đã xác thực; gửi lại trong 60 giây -> 429 `RATE_LIMITED` + header `Retry-After` và `error.details: { "retryAfterSec": <int> }` (cùng giá trị). Tạo token mới vô hiệu token xác thực cũ chưa dùng.
 
 ### 5.8 `POST /auth/change-password` – Auth
-Body: `{ "currentPassword": "...", "newPassword": "..." }` (khác mật khẩu cũ). 204; thu hồi mọi refresh token **trừ family hiện tại**. Lỗi: 400 `VALIDATION_ERROR`, 400 `INVALID_PASSWORD`, 401.
+Body: `{ "currentPassword": "...", "newPassword": "..." }` (khác mật khẩu cũ). 204; thu hồi mọi refresh token **trừ family hiện tại** (xác định bằng claim `sid` của access token). `newPassword` trùng `currentPassword` -> 400 `VALIDATION_ERROR` (field `newPassword`). Rate limit 5/phút/IP. Lỗi: 400 `VALIDATION_ERROR`, 400 `INVALID_PASSWORD`, 401, 429.
 
 ## 6. Me (hồ sơ & địa chỉ)
 
@@ -255,7 +264,7 @@ Body: `{ "currentPassword": "...", "newPassword": "..." }` (khác mật khẩu c
 200: `{ "data": { ...User } }`.
 
 ### 6.2 `PATCH /me` – Auth
-Body (ít nhất 1 trường): `fullName` string 2–100; `phone` string \| null; `birthDate` `YYYY-MM-DD` \| null (không ở tương lai, năm >= 1900); `avatarUrl` string URL http(s) <= 500 \| null. Không đổi được `email`, `role`. 200 `{ "data": User }`. Lỗi: 400, 401.
+Body (ít nhất 1 trường hợp lệ, nếu không -> 400): `fullName` string 2–100; `phone` string \| null (chuẩn hóa theo §1 / D-007; `null` để xóa); `birthDate` `YYYY-MM-DD` \| null (không ở tương lai, năm >= 1900); `avatarUrl` string URL http(s) <= 500 \| null. Không đổi được `email`, `role`. 200 `{ "data": User }`. Lỗi: 400, 401.
 
 ### 6.3 Địa chỉ
 Kiểu:
@@ -263,13 +272,21 @@ Kiểu:
 { "id": "cka1", "fullName": "Nguyễn Văn An", "phone": "0901234567", "provinceCode": "79", "provinceName": "Thành phố Hồ Chí Minh",
   "wardCode": "26734", "wardName": "Phường Bến Nghé", "line1": "12 Lê Lợi", "isDefault": true, "createdAt": "..." }
 ```
-Body tạo/sửa: `fullName` 2–100, `phone` (regex §1), `provinceCode` (mã hợp lệ trong §7), `wardCode` (phải thuộc `provinceCode`), `line1` 5–200, `isDefault` boolean tùy chọn. Server tự điền `provinceName/wardName` từ dữ liệu tĩnh.
+Body tạo/sửa (đích cuối, khi đã có dữ liệu hành chính): `fullName` 2–100, `phone` (regex §1), `provinceCode` (mã hợp lệ trong §7), `wardCode` (phải thuộc `provinceCode`), `line1` 5–200, `isDefault` boolean tùy chọn. Server tự điền `provinceName/wardName` từ dữ liệu tĩnh.
+
+**Tạm thời (D-008) – chưa có dữ liệu hành chính** (áp dụng cho tới khi chủ dự án cung cấp file nguồn, D-006):
+- Body tạo bắt buộc thêm `provinceName` và `wardName` (2–100 ký tự, do client nhập).
+- `provinceCode` khớp `^\d{2}$`, `wardCode` khớp `^\d{5}$` (chỉ là định dạng tạm, sẽ đối chiếu lại khi có file). Server CHƯA đối chiếu mã/tên với danh mục.
+- PATCH: gửi `provinceCode` thì phải gửi kèm `provinceName`, `wardCode`, `wardName`; gửi `wardCode` thì phải kèm `wardName` (và ngược lại, tên đi kèm mã); thiếu -> 400 `VALIDATION_ERROR`.
+- Khi có file: server tự điền tên, bỏ qua `provinceName/wardName` từ client, bật đối chiếu (mã không tồn tại hoặc phường không thuộc tỉnh -> 400).
+
+Làm rõ: danh sách sắp theo `isDefault DESC, createdAt DESC`; `isDefault:false` gửi lên chỉ bị bỏ qua (muốn đổi mặc định thì đặt địa chỉ khác làm mặc định); địa chỉ đầu tiên luôn là mặc định; tối đa 10 địa chỉ.
 
 | Endpoint | Mô tả | Thành công | Lỗi |
 |---|---|---|---|
-| `GET /me/addresses` | Danh sách, mặc định lên đầu | 200 `{ data: [Address] }` | 401 |
+| `GET /me/addresses` | Danh sách, sắp `isDefault DESC, createdAt DESC` | 200 `{ data: [Address] }` | 401 |
 | `POST /me/addresses` | Tạo; địa chỉ đầu tiên tự là mặc định; `isDefault:true` bỏ mặc định cũ | 201 `{ data: Address }` | 400, 401, 409 `ADDRESS_LIMIT_REACHED` |
-| `PATCH /me/addresses/:id` | Sửa một phần (>= 1 trường); nếu đổi `provinceCode` thì phải gửi lại `wardCode` | 200 `{ data: Address }` | 400, 401, 404 |
+| `PATCH /me/addresses/:id` | Sửa một phần (>= 1 trường); ràng buộc mã đi kèm tên (tạm thời) và đổi `provinceCode` kéo theo `wardCode`: xem khối D-008 ở trên | 200 `{ data: Address }` | 400, 401, 404 |
 | `DELETE /me/addresses/:id` | Xóa; nếu là mặc định thì địa chỉ tạo gần nhất còn lại thành mặc định | 204 | 401, 404 |
 | `POST /me/addresses/:id/default` | Đặt làm mặc định | 200 `{ data: Address }` | 401, 404 |
 
@@ -286,6 +303,8 @@ Query: `status` (OrderStatus, nhiều giá trị cách dấu phẩy), `page`, `p
 `items` tối đa 3 dòng đầu. Chi tiết dùng `GET /orders/:code`. Đơn guest đặt trước khi đăng ký **không** tự gắn vào tài khoản (D-005, xem §13 mục 2).
 
 ## 7. Locations
+
+**BỊ CHẶN (D-006, D-008): chưa triển khai, chờ file nguồn của chủ dự án.**
 
 **Public**, dữ liệu tĩnh 2 cấp, header `Cache-Control: public, max-age=86400`.
 Dữ liệu chỉ nạp ở M2, từ file nguồn do chủ dự án cung cấp (D-006); developer không tự tạo dữ liệu. Chưa có file thì các endpoint này và việc validate địa chỉ (`provinceCode`/`wardCode`) chưa làm. Mã và tên trong các ví dụ dưới đây chỉ để minh họa.
@@ -568,6 +587,6 @@ Chi tiết các endpoint trên sẽ chốt ở milestone tương ứng. Quy ư�
 7. **Đã chốt – xem decisions.md D-003.** Phụ phí `5.000 × ceil(max(0, g − 2000) / 1000)`; freeship Tiêu chuẩn miễn cả phụ phí, Nhanh không.
 8. **Đã chốt – xem decisions.md D-006.** Nội thành = toàn bộ Hà Nội (`01`) + TP.HCM (`79`); dữ liệu tỉnh/phường do chủ dự án cung cấp, nạp ở M2; mã/tên trong ví dụ chỉ minh họa.
 9. **Không có `facets` (đếm theo bộ lọc)** trong `GET /products`; FE lấy thương hiệu từ `/brands`, các giá trị enum cố định. Thêm `GET /products/filters` nếu UI cần số đếm.
-10. **Concurrent refresh:** không có grace window; FE bắt buộc single-flight. Nếu multi-tab gây đăng xuất ngoài ý muốn, cân nhắc grace 10 giây cho token vừa xoay.
-11. **Trang FE xác thực email** (`/xac-thuc-email`) chưa có trong sitemap requirements §9; cần thêm. Đăng nhập Google, loyalty, subscription, blog, đổi/trả: v2, ngoài contract này.
+10. **Concurrent refresh:** không có grace window; FE bắt buộc single-flight trong tab và khóa giữa các tab bằng Web Locks API (`architecture.md` §4). Hai request đồng thời cùng token thì bên thua bị thu hồi cả family (§5.3). Nếu vẫn gây đăng xuất ngoài ý muốn, cân nhắc grace 10 giây cho token vừa xoay.
+11. **Đã chốt ở M2:** đã thêm trang FE xác thực email `/xac-thuc-email` vào sitemap (requirements §9). Đăng nhập Google, loyalty, subscription, blog, đổi/trả: v2, ngoài contract này.
 12. **`GET /health`** nằm dưới `/api/v1` theo chỉ đạo; Docker healthcheck gọi `/api/v1/health` trực tiếp ở cổng 4000.

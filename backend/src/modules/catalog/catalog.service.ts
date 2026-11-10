@@ -141,7 +141,9 @@ function buildWhere(q: ProductListQuery, categoryIds: string[] | null): Prisma.P
     and.push({
       coffee: {
         is: {
-          OR: q.origin.map((o) => ({ originCountry: { equals: escapeLike(o), mode: 'insensitive' as const } })),
+          OR: q.origin.map((o) => ({
+            originCountry: { equals: escapeLike(o), mode: 'insensitive' as const },
+          })),
         },
       },
     });

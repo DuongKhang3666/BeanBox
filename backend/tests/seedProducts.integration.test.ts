@@ -57,7 +57,9 @@ describe('seedProducts (DB test)', () => {
       where: { product: { slug: { in: slugs } }, isPrimary: true },
     });
     expect(images).toBe(SEED_PRODUCTS.length);
-    const profiles = await prisma.coffeeProfile.count({ where: { product: { slug: { in: slugs } } } });
+    const profiles = await prisma.coffeeProfile.count({
+      where: { product: { slug: { in: slugs } } },
+    });
     expect(profiles).toBe(SEED_PRODUCTS.filter((p) => p.coffee).length);
   });
 
@@ -80,7 +82,10 @@ describe('seedProducts (DB test)', () => {
 
   it('trạng thái ẩn và ngày rang trong 30 ngày', async () => {
     const hidden = await prisma.product.findMany({
-      where: { slug: { in: slugs }, OR: [{ status: { not: 'ACTIVE' } }, { deletedAt: { not: null } }] },
+      where: {
+        slug: { in: slugs },
+        OR: [{ status: { not: 'ACTIVE' } }, { deletedAt: { not: null } }],
+      },
     });
     expect(hidden).toHaveLength(3);
     const beans = await prisma.productVariant.findMany({

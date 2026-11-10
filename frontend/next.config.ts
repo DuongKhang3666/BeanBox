@@ -27,6 +27,19 @@ const nextConfig: NextConfig = {
       { source: "/uploads/:path*", destination: `${apiInternalUrl}/uploads/:path*` },
     ];
   },
+  async headers() {
+    // Token reset/verify nằm trên URL: không gửi Referer sang trang khác.
+    return [
+      {
+        source: "/dat-lai-mat-khau",
+        headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
+      },
+      {
+        source: "/xac-thuc-email",
+        headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
+      },
+    ];
+  },
   images: {
     remotePatterns: backendPattern ? [backendPattern] : [],
     // Ảnh tải lên cũng truy cập được same-origin qua /uploads (rewrites)

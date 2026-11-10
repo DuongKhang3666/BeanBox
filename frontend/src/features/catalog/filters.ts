@@ -4,6 +4,8 @@ import { BREW_VALUES, PROCESS_VALUES, ROAST_VALUES, SORT_VALUES } from "./labels
 export const PAGE_SIZES = [12, 24] as const;
 export const DEFAULT_PAGE_SIZE = 12;
 export const MAX_QUERY_LENGTH = 100;
+/** Trùng MAX_LIST_ITEMS của backend: mỗi bộ lọc danh sách tối đa 30 giá trị. */
+export const MAX_FILTER_VALUES = 30;
 
 export interface ProductFilters {
   q?: string;
@@ -52,7 +54,9 @@ function list(v: string | string[] | undefined): string[] {
 }
 
 function enumList<T extends string>(v: string | string[] | undefined, allowed: readonly T[]): T[] {
-  return list(v).filter((x): x is T => (allowed as readonly string[]).includes(x));
+  return list(v)
+    .filter((x): x is T => (allowed as readonly string[]).includes(x))
+    .slice(0, MAX_FILTER_VALUES);
 }
 
 function nonNegInt(v: string | string[] | undefined): number | undefined {
@@ -82,8 +86,12 @@ export function parseFilters(sp: RawSearchParams): ProductFilters {
 
   return {
     q: q || undefined,
-    brand: list(sp.brand).filter((s) => /^[a-z0-9-]{1,100}$/.test(s)),
-    origin: list(sp.origin).filter((s) => s.length <= 60),
+    brand: list(sp.brand)
+      .filter((s) => /^[a-z0-9-]{1,100}$/.test(s))
+      .slice(0, MAX_FILTER_VALUES),
+    origin: list(sp.origin)
+      .filter((s) => s.length <= 60)
+      .slice(0, MAX_FILTER_VALUES),
     roast: enumList(sp.roast, ROAST_VALUES),
     process: enumList(sp.process, PROCESS_VALUES),
     brew: enumList(sp.brew, BREW_VALUES),

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Container } from "@/components/ui/Container";
 import { MAIN_NAV } from "@/lib/site";
+import { HeaderAccount } from "./HeaderAccount";
 
 function CartIcon() {
   return (
@@ -19,22 +20,6 @@ function CartIcon() {
       />
       <circle cx="9" cy="20" r="1.2" />
       <circle cx="17" cy="20" r="1.2" />
-    </svg>
-  );
-}
-
-function UserIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className="h-6 w-6"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      aria-hidden="true"
-    >
-      <circle cx="12" cy="8" r="4" />
-      <path d="M4 20c1.4-3.6 4.4-5 8-5s6.6 1.4 8 5" strokeLinecap="round" />
     </svg>
   );
 }
@@ -95,9 +80,7 @@ export function Header() {
           <Link href="/gio-hang" className={iconLink} aria-label="Giỏ hàng">
             <CartIcon />
           </Link>
-          <Link href="/dang-nhap" className={iconLink} aria-label="Tài khoản">
-            <UserIcon />
-          </Link>
+          <HeaderAccount />
         </div>
       </Container>
     </header>

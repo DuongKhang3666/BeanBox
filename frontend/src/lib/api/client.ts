@@ -1,10 +1,14 @@
 import { ApiError } from "./errors";
 import type { ApiSuccess } from "@/types/api";
+import type { Session } from "@/types/auth";
 
 export { ApiError };
 
 export const CART_TOKEN_KEY = "bb_cart_token";
 export const AUTH_LOGOUT_EVENT = "bb:auth:logout";
+/** Cờ không nhạy cảm: trình duyệt này có thể còn phiên (cookie refresh httpOnly). Không chứa token. */
+export const SESSION_FLAG_KEY = "bb_has_session";
+export const REFRESH_LOCK_NAME = "bb-auth-refresh";
 
 /** Access token chỉ giữ trong memory (module-level), không lưu localStorage. */
 let accessToken: string | null = null;
@@ -17,6 +21,42 @@ export const tokenStore = {
     accessToken = null;
   },
 };
+
+export const sessionFlag = {
+  has(): boolean {
+    try {
+      return typeof window !== "undefined" && window.localStorage.getItem(SESSION_FLAG_KEY) === "1";
+    } catch {
+      return false;
+    }
+  },
+  set() {
+    try {
+      if (typeof window !== "undefined") window.localStorage.setItem(SESSION_FLAG_KEY, "1");
+    } catch {
+      /* localStorage không khả dụng: bỏ qua */
+    }
+  },
+  clear() {
+    try {
+      if (typeof window !== "undefined") window.localStorage.removeItem(SESSION_FLAG_KEY);
+    } catch {
+      /* bỏ qua */
+    }
+  },
+};
+
+/** Gọi sau register/login (và refresh thành công): token vào memory, đặt cờ phiên. */
+export function setSession(session: Pick<Session, "accessToken">) {
+  tokenStore.set(session.accessToken);
+  sessionFlag.set();
+}
+
+/** Gọi khi đăng xuất / phiên hết hạn. */
+export function clearSession() {
+  tokenStore.clear();
+  sessionFlag.clear();
+}
 
 type Query = Record<string, string | number | boolean | undefined | null>;
 
@@ -62,7 +102,7 @@ export class ApiClient {
   private readonly customFetch?: typeof fetch;
   private readonly getCartToken: () => string | null;
   private readonly onLogout: () => void;
-  private refreshPromise: Promise<string> | null = null;
+  private refreshPromise: Promise<Session> | null = null;
 
   constructor(config: ApiClientConfig = {}) {
     this.baseUrl = (config.baseUrl ?? "/api/v1").replace(/\/$/, "");
@@ -130,20 +170,34 @@ export class ApiClient {
     return { data: body.data as T, meta: body.meta };
   }
 
-  /** Single-flight: nhiều request 401 đồng thời dùng chung 1 lần refresh. */
-  refresh(): Promise<string> {
+  private async callRefresh(): Promise<Session> {
+    const res = await this.send("/auth/refresh", { method: "POST", skipAuth: true });
+    const { data } = await this.parse<Session, unknown>(res);
+    if (!data?.accessToken) {
+      throw new ApiError(401, "INVALID_REFRESH_TOKEN", "Phiên đăng nhập đã hết hạn.");
+    }
+    return data;
+  }
+
+  /**
+   * Single-flight trong tab: nhiều request 401 đồng thời dùng chung 1 lần refresh.
+   * Giữa các tab dùng Web Locks (nếu có) để không xoay vòng refresh token cùng lúc.
+   * Trả toàn bộ phiên `{ user, accessToken, expiresIn }`.
+   */
+  refresh(): Promise<Session> {
     if (!this.refreshPromise) {
       this.refreshPromise = (async () => {
         try {
-          const res = await this.send("/auth/refresh", { method: "POST", skipAuth: true });
-          const { data } = await this.parse<{ accessToken: string }, unknown>(res);
-          if (!data?.accessToken) {
-            throw new ApiError(401, "INVALID_REFRESH_TOKEN", "Phiên đăng nhập đã hết hạn.");
-          }
-          tokenStore.set(data.accessToken);
-          return data.accessToken;
+          const locks = typeof navigator !== "undefined" ? navigator.locks : undefined;
+          const session = locks
+            ? await locks.request(REFRESH_LOCK_NAME, () => this.callRefresh())
+            : await this.callRefresh();
+          setSession(session);
+          return session;
         } catch (e) {
           tokenStore.clear();
+          // Chỉ xóa cờ khi server xác nhận phiên không còn; lỗi mạng/5xx giữ cờ để lần tải sau thử lại.
+          if (!(e instanceof ApiError) || e.status === 401 || e.status === 403) sessionFlag.clear();
           this.onLogout();
           throw e;
         } finally {
