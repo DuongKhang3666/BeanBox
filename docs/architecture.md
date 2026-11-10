@@ -1,6 +1,7 @@
 # BeanBox – Kiến trúc hệ thống
 
-> Phiên bản 0.1 · 2026-11-10 · Nguồn: `docs/requirements.md` + quyết định của Tech Lead.
+> Phiên bản 0.2 · 2026-11-10 · Nguồn: `docs/requirements.md` + quyết định của Tech Lead.
+> Thay đổi 0.2: giữ lượt mã giảm giá khi tạo đơn và hoàn lượt khi hủy/hết hạn (D-004), ADR 9, ghi chú nguồn dữ liệu hành chính (D-006). Xem [`decisions.md`](decisions.md).
 > Tài liệu liên quan: `docs/db-schema.md` (Prisma schema), `docs/api-contract.md` (nguồn sự thật cho API).
 
 ## Mục lục
@@ -44,7 +45,7 @@ BeanBox/
 │     ├─ features/      # theo nghiệp vụ: catalog, cart, checkout, account, admin (component + hook + api calls)
 │     └─ lib/           # api client (fetch wrapper, refresh single-flight), format tiền/ngày, utils
 ├─ backend/
-│  ├─ prisma/           # schema.prisma, migrations/, seed.ts, data/ (provinces-wards.json)
+│  ├─ prisma/           # schema.prisma, migrations/, seed.ts, data/ (provinces-wards.json – M2, file nguồn do chủ dự án cung cấp)
 │  ├─ src/
 │  │  ├─ config/        # env (zod-validated), constants
 │  │  ├─ lib/           # prisma client, logger (pino), errors (AppError), mailer, tokens, money, text (bỏ dấu)
@@ -84,7 +85,7 @@ Quy tắc phân lớp backend: `routes` (khai báo + middleware) -> `controller`
 - **Giỏ luôn ở server.** Khách vãng lai nhận `cartToken` ngẫu nhiên (32 byte) khi tạo giỏ lần đầu; FE lưu localStorage và gửi header `X-Cart-Token`; DB chỉ lưu SHA-256. Đăng nhập xong FE gọi `POST /cart/merge` (cộng dồn, cắt theo tồn kho và 20/dòng), xóa token local.
 - **Server là nguồn giá duy nhất.** Checkout không nhận giá từ client; lấy item từ giỏ server, tính lại giá hiệu lực (giá sale theo khung giờ), mã giảm giá, phí ship. Quy tắc chi tiết: `api-contract.md` §Quy tắc tính giá.
 - **Tiền** là `Int` VND ở DB và API. Làm tròn xuống (floor) cho phần trăm. Không float.
-- **Tạo đơn** trong 1 transaction: validate -> tạo Order + OrderItem (snapshot) -> trừ kho `updateMany({ where: { id, stock: { gte: qty } } })` (count = 0 -> rollback `OUT_OF_STOCK`) -> ghi `InventoryMovement` -> xóa item giỏ. Sắp xếp variantId tăng dần khi trừ kho để tránh deadlock.
+- **Tạo đơn** trong 1 transaction: validate -> tạo Order + OrderItem (snapshot) -> trừ kho `updateMany({ where: { id, stock: { gte: qty } } })` (count = 0 -> rollback `OUT_OF_STOCK`) -> ghi `InventoryMovement` -> giữ lượt mã nếu có (UPDATE có điều kiện `usedCount < usageLimit`, đếm `perUserLimit`, tạo `CouponRedemption`; D-004) -> xóa item giỏ. Mọi chuyển sang `CANCELLED` hoàn kho và hoàn lượt mã trong cùng transaction. Sắp xếp variantId tăng dần khi trừ kho để tránh deadlock.
 - **Idempotency:** header `Idempotency-Key` (UUID) bắt buộc; `Order.idempotencyKey` unique + `requestFingerprint` (hash payload) để phân biệt replay (200, trả lại đơn) và xung đột (409).
 - **Mã đơn** `BB-YYMMDD-XXXX` (alphabet bỏ `0 O 1 I L`), unique, retry tối đa 5 lần khi trùng.
 - **Máy trạng thái** đơn hàng: bảng ở `api-contract.md`; code gồm 1 hàm thuần `canTransition(from, to, actorRole)`; cập nhật dùng optimistic check `updateMany where status = from`.
@@ -100,7 +101,7 @@ Quy tắc phân lớp backend: `routes` (khai báo + middleware) -> `controller`
 
 - COD: đơn `PENDING`; admin xác nhận. `paymentStatus` chuyển `PAID` khi `DELIVERED`.
 - Online (M5): đơn `PENDING_PAYMENT` + `expiresAt = now + 15 phút`; tạo link thanh toán; **chỉ IPN/webhook đã xác thực chữ ký + khớp số tiền** mới chuyển `CONFIRMED`/`PAID`. Trang return chỉ hiển thị.
-- Tác vụ nền (trong tiến trình backend, `setInterval` 60 giây hoặc `node-cron`, dùng `pg_try_advisory_lock` để chỉ 1 instance chạy): (1) hủy đơn `PENDING_PAYMENT` quá `expiresAt` + hoàn kho; (2) xóa giỏ guest không hoạt động > 30 ngày; (3) xóa token hết hạn.
+- Tác vụ nền (trong tiến trình backend, `setInterval` 60 giây hoặc `node-cron`, dùng `pg_try_advisory_lock` để chỉ 1 instance chạy): (1) hủy đơn `PENDING_PAYMENT` quá `expiresAt` (kể cả đơn `paymentStatus=FAILED`) + hoàn kho + hoàn lượt mã; (2) xóa giỏ guest không hoạt động > 30 ngày; (3) xóa token hết hạn.
 - Email: Nodemailer (Mailpit khi dev); gửi sau commit, lỗi gửi mail không làm hỏng đơn (log + retry đơn giản).
 
 ## 8. Cấu hình môi trường
@@ -134,6 +135,7 @@ Backend validate toàn bộ env bằng zod khi khởi động, thiếu/sai thì 
 | 6 | Trừ kho bằng điều kiện `stock >= qty` trong transaction | Không bán âm kể cả khi đồng thời, không cần khóa tường minh |
 | 7 | Trừ kho khi tạo đơn, hết hạn thì hoàn | Theo requirements §5.2 |
 | 8 | Hai project độc lập, không monorepo | Đơn giản CI/Docker; chấp nhận không chia sẻ type (type API viết tay ở FE theo contract) |
+| 9 | Giữ lượt mã khi tạo đơn bằng UPDATE có điều kiện | Không bao giờ vượt `usageLimit`/`perUserLimit` kể cả khi đồng thời; hoàn lượt idempotent khi `CANCELLED` (D-004) |
 
 ## 10. Câu hỏi mở / Giả định
 

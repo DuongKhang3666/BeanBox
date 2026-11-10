@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600" role="img" aria-label="Quà tặng và combo">
+  <rect width="600" height="600" fill="#a9825f"/>
+  <rect x="210" y="190" width="180" height="150" rx="8" fill="#f1e7d3"/>
+  <rect x="285" y="190" width="30" height="150" fill="#6f4e37"/>
+  <rect x="210" y="250" width="180" height="26" fill="#6f4e37"/>
+  <path d="M300 190 C 260 130, 220 160, 262 190 Z M300 190 C 340 130, 380 160, 338 190 Z" fill="#8a9a5b"/>
+  <text x="300" y="470" font-family="Arial, Helvetica, sans-serif" font-size="40" font-weight="bold" text-anchor="middle" fill="#f5ecd9">Quà tặng &amp; Combo</text>
+  <text x="300" y="515" font-family="Arial, Helvetica, sans-serif" font-size="22" text-anchor="middle" fill="#f1e7d3">BeanBox - ảnh minh họa</text>
+</svg>

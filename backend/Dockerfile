@@ -26,6 +26,8 @@ COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY package.json ./
 COPY prisma ./prisma
+# Ảnh tĩnh phục vụ tại /uploads (ảnh seed nằm trong uploads/seed)
+COPY uploads ./uploads
 USER node
 EXPOSE 4000
 CMD ["sh", "-c", "npx prisma migrate deploy && node dist/server.js"]

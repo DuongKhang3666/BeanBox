@@ -1,6 +1,7 @@
 # BeanBox – Đặc tả yêu cầu (Requirements Specification)
 
-> Phiên bản: 0.1 (bản nháp) · Ngày: 2026-11-10
+> Phiên bản: 0.2 · Ngày: 2026-11-10
+> Thay đổi 0.2: ghi nhận 7 quyết định D-001..D-007 ([`decisions.md`](decisions.md)): thanh toán thất bại, giao lại, phụ phí ship, giữ lượt mã khi tạo đơn, tra cứu đơn bằng SĐT, dữ liệu hành chính.
 > Trạng thái: Draft – cần review trước khi chốt `docs/api-contract.md`
 
 ---
@@ -161,7 +162,7 @@ Quy ước: **ID** – `FR-<module>-<số>`; **Ưu tiên** – MoSCoW: **M** (Mu
 | FR-CHK-07 | Thanh toán online: redirect tới cổng → nhận **IPN/webhook** để cập nhật trạng thái; trang return chỉ hiển thị | M |
 | FR-CHK-08 | Idempotency: bấm "Đặt hàng" nhiều lần không tạo nhiều đơn (Idempotency-Key) | M |
 | FR-CHK-09 | Trang "Đặt hàng thành công" + mã đơn; gửi email xác nhận | M |
-| FR-CHK-10 | Khách vãng lai tra cứu đơn bằng mã đơn + email/SĐT | S |
+| FR-CHK-10 | Khách vãng lai tra cứu đơn bằng mã đơn + SĐT (chuẩn hóa) | M |
 | FR-CHK-11 | Xuất hóa đơn VAT (nhập MST, tên công ty) | C |
 
 ### 4.6 Đơn hàng (ORDER)
@@ -169,7 +170,7 @@ Quy ước: **ID** – `FR-<module>-<số>`; **Ưu tiên** – MoSCoW: **M** (Mu
 |---|---|---|
 | FR-ORD-01 | Mã đơn dạng dễ đọc: `BB-YYMMDD-XXXX` | M |
 | FR-ORD-02 | Vòng đời trạng thái (xem §5.1), lưu lịch sử chuyển trạng thái (ai, khi nào, ghi chú) | M |
-| FR-ORD-03 | Khách hủy đơn khi còn `PENDING` / `CONFIRMED` (chưa giao vận chuyển) | M |
+| FR-ORD-03 | Khách hủy đơn khi còn `PENDING_PAYMENT` / `PENDING` / `CONFIRMED` (chưa giao vận chuyển) | M |
 | FR-ORD-04 | Lưu **snapshot** sản phẩm trong đơn (tên, SKU, giá, ảnh) – không phụ thuộc thay đổi sau này | M |
 | FR-ORD-05 | Email thông báo khi trạng thái thay đổi (xác nhận, đang giao, đã giao, đã hủy) | S |
 | FR-ORD-06 | Yêu cầu đổi/trả trong 7 ngày sau khi giao (lý do, ảnh) | C |
@@ -227,21 +228,34 @@ Quy ước: **ID** – `FR-<module>-<số>`; **Ưu tiên** – MoSCoW: **M** (Mu
 
 ### 5.1 Trạng thái đơn hàng
 ```
-PENDING_PAYMENT ──(thanh toán thành công)──► CONFIRMED
-      │                                         │
-      │(hết hạn 15 phút / thất bại)             ▼
-      ▼                                     PROCESSING (đang đóng gói)
-  CANCELLED ◄──(khách/admin hủy)── PENDING      │
-                                     │          ▼
-                         (admin xác nhận)    SHIPPING
-                                     ▼          │
-                                 CONFIRMED      ▼
-                                            DELIVERED ──► (RETURN_REQUESTED → RETURNED) [v2]
-                                                │
-                                         (giao thất bại) ► FAILED_DELIVERY ► CANCELLED
+Luồng chính:
+
+PENDING_PAYMENT ──(IPN/webhook thành công)──► CONFIRMED ◄──(staff xác nhận)── PENDING
+(online)                                          │                           (COD)
+                                                  ▼
+                                             PROCESSING (đang đóng gói)
+                                                  │
+                                                  ▼
+                                              SHIPPING ◄──(giao lại, staff)── FAILED_DELIVERY
+                                                  │   └──(giao thất bại)──────────▲
+                                                  ▼
+                                              DELIVERED ──► (RETURN_REQUESTED → RETURNED) [v2]
+
+Thanh toán online thất bại (không rời PENDING_PAYMENT):
+PENDING_PAYMENT, paymentStatus=FAILED ──(thử lại thành công, trong 15 phút)──► CONFIRMED, paymentStatus=PAID
+
+Hủy (mọi đường đều hoàn kho + hoàn lượt mã):
+PENDING_PAYMENT ──(khách / staff / quá 15 phút)──► CANCELLED
+PENDING         ──(khách / staff)────────────────► CANCELLED
+CONFIRMED       ──(khách / staff)────────────────► CANCELLED
+PROCESSING      ──(chỉ staff, có ghi chú)────────► CANCELLED
+FAILED_DELIVERY ──(chỉ staff)────────────────────► CANCELLED
 ```
 - **COD**: tạo đơn ở `PENDING` → admin xác nhận → `CONFIRMED`.
-- **Online**: tạo đơn ở `PENDING_PAYMENT` → IPN thành công → `CONFIRMED`; quá 15 phút chưa trả → `CANCELLED` tự động, hoàn tồn kho.
+- **Online**: tạo đơn ở `PENDING_PAYMENT` → IPN thành công → `CONFIRMED`. Thanh toán thất bại KHÔNG chuyển `CANCELLED` ngay: đơn giữ `PENDING_PAYMENT` với `paymentStatus=FAILED`, khách được thử lại tới hết 15 phút (`FAILED → PAID` khi thử lại thành công, đơn → `CONFIRMED`). Quá 15 phút chưa thanh toán thành công → `CANCELLED` tự động, hoàn tồn kho, hoàn lượt mã (D-001).
+- Khách tự hủy được khi đơn ở `PENDING_PAYMENT`, `PENDING`, `CONFIRMED` (D-002); `PROCESSING` trở đi chỉ Staff+ hủy được.
+- `FAILED_DELIVERY` → `SHIPPING` (giao lại, Staff+, có thể cập nhật mã vận đơn/đơn vị vận chuyển mới) hoặc → `CANCELLED` (D-002).
+- Mọi lần chuyển sang `CANCELLED` đều hoàn tồn kho và hoàn lượt mã giảm giá trong cùng transaction (D-004).
 - Chỉ cho phép các chuyển trạng thái hợp lệ theo sơ đồ; chuyển sai → HTTP 409.
 - Trạng thái thanh toán tách riêng: `UNPAID`, `PAID`, `FAILED`, `REFUNDED`.
 
@@ -255,8 +269,9 @@ PENDING_PAYMENT ──(thanh toán thành công)──► CONFIRMED
 |---|---|---|
 | Nội thành TP.HCM / Hà Nội | 20.000đ | 35.000đ |
 | Tỉnh/thành khác | 35.000đ | 55.000đ |
-- **Miễn phí ship tiêu chuẩn** cho đơn ≥ 500.000đ (sau giảm giá).
-- Phụ phí theo khối lượng: +5.000đ mỗi 1 kg vượt quá 2 kg.
+- "Nội thành" = toàn bộ Hà Nội (mã `01`) và TP.HCM (mã `79`) vì đơn vị hành chính 2 cấp không còn quận/huyện (cấu hình `shipping.innerCityProvinceCodes`; đối chiếu khi có dữ liệu hành chính chính thức – D-006).
+- **Miễn phí ship tiêu chuẩn** cho đơn ≥ 500.000đ (sau giảm giá); miễn cả phụ phí khối lượng. Phương thức Nhanh không được freeship ngưỡng (D-003).
+- Phụ phí theo khối lượng: `5.000đ × ceil(max(0, tổng khối lượng (g) − 2000) / 1000)`, tức +5.000đ cho mỗi 1 kg hoặc phần lẻ vượt quá 2 kg (D-003).
 
 ### 5.4 Giá & tiền tệ
 - Lưu tiền dạng **số nguyên VND** (không dùng float). Hiển thị định dạng `125.000₫`.
@@ -265,7 +280,7 @@ PENDING_PAYMENT ──(thanh toán thành công)──► CONFIRMED
 
 ### 5.5 Mã giảm giá
 - Không phân biệt hoa thường; kiểm tra: còn hiệu lực, còn lượt, đủ giá trị tối thiểu, khách chưa vượt giới hạn, sản phẩm đủ điều kiện.
-- Lượt dùng chỉ được tính khi đơn chuyển sang `CONFIRMED`; đơn hủy → hoàn lượt.
+- Lượt dùng được giữ chỗ ngay khi tạo đơn (cùng transaction với trừ kho) để không bao giờ vượt tổng lượt hay lượt/khách; mọi đơn chuyển sang `CANCELLED` (khách/staff hủy, hết hạn thanh toán, giao thất bại rồi hủy) → hoàn lượt. Đơn `RETURNED` (v2) không hoàn lượt. Kiểm tra "còn lượt" ở giỏ/quote chỉ để tham khảo. Cơ chế chi tiết: `api-contract.md` §10 mục 4 và [D-004](decisions.md).
 
 ### 5.6 Cà phê
 - Hiển thị ngày rang của lô hiện tại; khuyến nghị dùng trong 30 ngày sau rang.
@@ -368,7 +383,7 @@ Base: `/api/v1` · JSON · lỗi thống nhất `{ "error": { "code", "message",
 | Tôi | `GET/PATCH /me`, `GET/POST/PATCH/DELETE /me/addresses`, `GET /me/orders`, `GET/POST/DELETE /me/wishlist` |
 | Catalog | `GET /categories`, `GET /brands`, `GET /products?q=&category=&minPrice=&maxPrice=&roast=&origin=&sort=&page=`, `GET /products/:slug`, `GET /products/:slug/reviews`, `GET /search/suggest?q=` |
 | Giỏ hàng | `GET /cart`, `POST /cart/items`, `PATCH /cart/items/:id`, `DELETE /cart/items/:id`, `POST /cart/merge`, `POST /cart/apply-coupon` |
-| Checkout | `POST /checkout/quote` (tính giá, phí ship), `POST /orders` (Idempotency-Key), `GET /orders/:code`, `POST /orders/:code/cancel`, `GET /orders/track?code=&email=` |
+| Checkout | `POST /checkout/quote` (tính giá, phí ship), `POST /orders` (Idempotency-Key), `GET /orders/:code`, `POST /orders/:code/cancel`, `GET /orders/track?code=&phone=` |
 | Thanh toán | `POST /payments/vnpay/create`, `GET /payments/vnpay/ipn`, `GET /payments/vnpay/return`, `POST /payments/stripe/webhook` |
 | Review | `POST /products/:id/reviews`, `PATCH /reviews/:id` |
 | Admin | `/admin/dashboard`, `/admin/products`, `/admin/variants`, `/admin/categories`, `/admin/brands`, `/admin/inventory`, `/admin/orders`, `/admin/orders/:id/status`, `/admin/coupons`, `/admin/users`, `/admin/reviews`, `/admin/settings`, `/admin/uploads` |
@@ -407,7 +422,7 @@ Base: `/api/v1` · JSON · lỗi thống nhất `{ "error": { "code", "message",
 |---|---|---|
 | **M0 – Nền tảng** | Khởi tạo repo (`frontend/`, `backend/`), Docker Compose (Postgres), Prisma schema, seed, CI lint/test, `api-contract.md` | Chạy được `docker compose up` |
 | **M1 – Catalog** | API + UI danh mục, danh sách, lọc, tìm kiếm, chi tiết sản phẩm | Duyệt sản phẩm được |
-| **M2 – Auth & Tài khoản** | Đăng ký/đăng nhập/refresh, hồ sơ, sổ địa chỉ | Khách có tài khoản |
+| **M2 – Auth & Tài khoản** | Đăng ký/đăng nhập/refresh, hồ sơ, sổ địa chỉ, nạp dữ liệu tỉnh/phường từ file nguồn do chủ dự án cung cấp | Khách có tài khoản |
 | **M3 – Giỏ hàng & Checkout COD** | Giỏ (guest + merge), quote, tạo đơn, tồn kho, email | **MVP mua hàng end-to-end** |
 | **M4 – Admin cơ bản** | CRUD sản phẩm/biến thể/ảnh, danh mục, tồn kho, xử lý đơn | Vận hành được cửa hàng |
 | **M5 – Thanh toán online & Khuyến mãi** | VNPay sandbox/Stripe test, IPN/webhook, mã giảm giá | v1 |
@@ -424,7 +439,7 @@ Base: `/api/v1` · JSON · lỗi thống nhất `{ "error": { "code", "message",
 **Giả định**
 - Một cửa hàng, một kho, giao hàng toàn quốc qua đơn vị vận chuyển do cửa hàng tự liên hệ.
 - Thanh toán online chỉ ở môi trường sandbox/test.
-- Dữ liệu tỉnh/thành – phường/xã dùng bộ dữ liệu hành chính VN **2 cấp** (sau sáp nhập 2025) dạng JSON tĩnh.
+- Dữ liệu tỉnh/thành – phường/xã theo hành chính VN **2 cấp** (sau sáp nhập 2025), dạng JSON tĩnh, **do chủ dự án cung cấp file nguồn** và chỉ nạp ở M2. Developer không tự tạo/bịa dữ liệu; chưa có file thì endpoint `/locations` và validate địa chỉ chưa làm (D-006).
 
 **Đã chốt (2026-11-10)**
 | # | Câu hỏi | Quyết định |
@@ -435,6 +450,17 @@ Base: `/api/v1` · JSON · lỗi thống nhất `{ "error": { "code", "message",
 | 4 | Nơi deploy | Giai đoạn đầu **chỉ chạy localhost** (Docker Compose). Khi toàn bộ luồng chạy ổn mới chọn nơi deploy demo công khai (gợi ý: Vercel + Render + Neon) |
 | 5 | Subscription | Để **v2**. Làm xong và ổn định luồng mua hàng thường trước, sau đó thêm subscription như phần nâng cao |
 | 6 | Đơn vị hành chính | Theo cách mới: **2 cấp** (tỉnh/thành – phường/xã) |
+
+**Đã chốt (2026-11-10, đợt 2)** – chi tiết và lý do trong [`decisions.md`](decisions.md)
+| # | Chủ đề | Quyết định |
+|---|---|---|
+| 7 | Thanh toán online thất bại (D-001) | Giữ `PENDING_PAYMENT`, `paymentStatus=FAILED`, thử lại tới hết 15 phút; quá hạn → `CANCELLED`, hoàn kho, hoàn lượt mã |
+| 8 | Giao lại & khách hủy (D-002) | Thêm `FAILED_DELIVERY → SHIPPING`; khách hủy được cả `PENDING_PAYMENT` |
+| 9 | Phụ phí khối lượng (D-003) | `5.000 × ceil(max(0, g − 2000) / 1000)`; freeship Tiêu chuẩn miễn cả phụ phí, Nhanh không |
+| 10 | Lượt mã giảm giá (D-004) | Giữ lượt ngay khi tạo đơn bằng UPDATE có điều kiện; hoàn lượt khi `CANCELLED` |
+| 11 | Khách vãng lai xem đơn (D-005) | Trang `/tra-cuu-don-hang` (mã đơn + SĐT); không `viewToken`; đơn guest không tự gắn vào tài khoản |
+| 12 | Vùng ship & dữ liệu hành chính (D-006) | Nội thành = toàn bộ Hà Nội (`01`) + TP.HCM (`79`); dữ liệu tỉnh/phường do chủ dự án cung cấp, nạp ở M2 |
+| 13 | Chuẩn hóa SĐT (D-007, Tech Lead đề xuất) | Lưu dạng `0xxxxxxxxx`; hủy đơn guest xác minh bằng SĐT; FR-CHK-10 lên mức M |
 
 ---
 

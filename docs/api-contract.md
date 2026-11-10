@@ -1,6 +1,8 @@
 # BeanBox – API Contract
 
-> Phiên bản 0.1 · 2026-11-10 · **Nguồn sự thật cho FE và BE.** Đổi contract phải sửa file này trước và nêu trong báo cáo.
+> Phiên bản 0.2 · 2026-11-10 · **Nguồn sự thật cho FE và BE.** Đổi contract phải sửa file này trước và nêu trong báo cáo.
+> Thay đổi 0.2: áp dụng D-001..D-007 ([`decisions.md`](decisions.md)): giữ lượt mã khi tạo đơn, tra cứu/hủy đơn guest bằng SĐT chuẩn hóa, chuẩn hóa SĐT, chốt các mục §13.1–8.
+> Thay đổi 0.2.1: làm rõ §4 sau khi triển khai M1 (không đổi shape).
 > Base URL: `/api/v1` (trình duyệt: same-origin qua Next rewrites; backend: `http://localhost:4000/api/v1`).
 > Chi tiết đầy đủ cho M1–M3; M4–M6 chỉ liệt kê endpoint (§12).
 
@@ -52,7 +54,7 @@ Phân trang: query `page` (>= 1, mặc định 1), `pageSize` (1–100, mặc đ
 
 **CORS / CSRF.** CORS chỉ cho origin trong `FRONTEND_ORIGINS`, `credentials: true`. `POST /auth/refresh` và `POST /auth/logout` dùng cookie nên bắt buộc header `Origin` thuộc whitelist, nếu không -> 403 `INVALID_ORIGIN`.
 
-**Chuẩn hóa input.** Chuỗi được `trim`; email lowercase; SĐT chấp nhận `0xxxxxxxxx` hoặc `+84xxxxxxxxx` (regex `^(0|\+84)(3|5|7|8|9)\d{8}$`), lưu dạng người dùng nhập đã bỏ khoảng trắng. Trường lạ trong body bị bỏ qua.
+**Chuẩn hóa input.** Chuỗi được `trim`; email lowercase; SĐT được chuẩn hóa (D-007): bỏ khoảng trắng, dấu chấm, gạch ngang; `+84` đầu -> `0`; sau đó phải khớp `^0(3|5|7|8|9)\d{8}$`, sai -> 400 `VALIDATION_ERROR`. Mọi nơi lưu SĐT (`User.phone`, `Address.phone`, `Order.contactPhone`, `shippingAddress.phone`) lưu dạng chuẩn hóa `0xxxxxxxxx`; response trả đúng dạng đã lưu. Trường lạ trong body bị bỏ qua.
 
 **Phân quyền theo tài nguyên (chống IDOR).** Tài nguyên của người khác (đơn hàng, địa chỉ, giỏ, dòng giỏ) luôn trả **404 `NOT_FOUND`**, không bao giờ 403, để không lộ sự tồn tại. 403 chỉ dùng khi thiếu vai trò ở endpoint admin hoặc tài khoản bị khóa. `GET /orders/:code` chỉ cho chủ đơn (kể cả STAFF/ADMIN cũng nhận 404, họ dùng `/admin/orders`).
 
@@ -129,6 +131,13 @@ Tất cả **Public**; chỉ trả sản phẩm `status=ACTIVE` và `deletedAt I
 }
 ```
 Không trả `stock` chính xác ra public.
+
+**Làm rõ sau khi triển khai M1 (0.2.1)**
+- Variant: `salePrice` và `saleEndsAt` là `null` khi biến thể không đang sale (sale đã hết hạn hoặc chưa bắt đầu cũng trả `null`, để không lộ giá của đợt sale chưa công bố).
+- `seo.title` / `seo.description` mặc định lấy `name` / `shortDesc` khi DB chưa có.
+- Sản phẩm ACTIVE thuộc danh mục không active vẫn hiện ở `GET /products` (khi không lọc danh mục) và ở trang chi tiết, nhưng không tính vào `productCount` và không xuất hiện khi lọc theo danh mục cha.
+- `q` rỗng hoặc chỉ có khoảng trắng -> 400 `VALIDATION_ERROR`; client không gửi `q` khi ô tìm kiếm trống.
+- `inStock`: trong danh sách lấy từ cột denormalize; trong chi tiết được tính lại từ các variant.
 
 ### 4.1 `GET /categories`
 Cây 2 cấp, sắp theo `sortOrder`, chỉ `isActive`. `productCount` = số sản phẩm ACTIVE (cha = tổng của con).
@@ -274,11 +283,12 @@ Query: `status` (OrderStatus, nhiều giá trị cách dấu phẩy), `page`, `p
   "items": [ { "productName": "Robusta Buôn Ma Thuột", "variantName": "500 g - Xay phin", "imageUrl": "/uploads/...", "quantity": 2 } ] } ],
   "meta": { "page": 1, "pageSize": 20, "total": 1, "totalPages": 1 } }
 ```
-`items` tối đa 3 dòng đầu. Chi tiết dùng `GET /orders/:code`. Đơn guest đặt trước khi đăng ký **không** tự gắn vào tài khoản (xem §13).
+`items` tối đa 3 dòng đầu. Chi tiết dùng `GET /orders/:code`. Đơn guest đặt trước khi đăng ký **không** tự gắn vào tài khoản (D-005, xem §13 mục 2).
 
 ## 7. Locations
 
 **Public**, dữ liệu tĩnh 2 cấp, header `Cache-Control: public, max-age=86400`.
+Dữ liệu chỉ nạp ở M2, từ file nguồn do chủ dự án cung cấp (D-006); developer không tự tạo dữ liệu. Chưa có file thì các endpoint này và việc validate địa chỉ (`provinceCode`/`wardCode`) chưa làm. Mã và tên trong các ví dụ dưới đây chỉ để minh họa.
 
 ### `GET /locations/provinces`
 ```json
@@ -288,7 +298,7 @@ Query: `status` (OrderStatus, nhiều giá trị cách dấu phẩy), `page`, `p
 ```json
 { "data": [ { "code": "26734", "name": "Phường Bến Nghé" } ] }
 ```
-Lỗi: 404 `NOT_FOUND` nếu mã tỉnh không tồn tại. Giả định mã/tên theo bộ dữ liệu hành chính 2 cấp (xem §13).
+Lỗi: 404 `NOT_FOUND` nếu mã tỉnh không tồn tại. Mã/tên theo file nguồn của chủ dự án (xem §13 mục 8).
 
 ## 8. Cart
 
@@ -347,6 +357,7 @@ Gộp giỏ guest vào giỏ user: cộng dồn theo variant, cắt về `min(t�
 ### 8.7 Mã giảm giá
 **`POST /cart/apply-coupon`** – Optional. Body `{ "code": "welcome10" }` (không phân biệt hoa thường, 1–50 ký tự). Thay mã cũ nếu có. 200 Cart (kèm `coupon`). Giỏ rỗng -> 409 `CART_EMPTY`.
 Lỗi 409 `COUPON_INVALID`, `details.reason` ∈ `NOT_FOUND`, `INACTIVE`, `NOT_STARTED`, `EXPIRED`, `USAGE_LIMIT`, `PER_USER_LIMIT`, `MIN_ORDER` (kèm `details.minOrder`), `NOT_APPLICABLE` (không có sản phẩm đủ điều kiện). Giới hạn theo khách của guest chỉ kiểm khi đặt đơn (có email).
+**Lưu ý (D-004):** `USAGE_LIMIT` và `PER_USER_LIMIT` ở giỏ/quote chỉ là kiểm tra tham khảo (đọc không khóa). Quyết định cuối và việc giữ lượt xảy ra ở `POST /orders` (§9.2); tại đó mã vẫn có thể bị từ chối với `COUPON_INVALID` dù giỏ đã báo hợp lệ.
 **`DELETE /cart/coupon`** – Optional. 200 Cart (`coupon: null`).
 
 ## 9. Checkout & Orders
@@ -424,22 +435,27 @@ Ví dụ:
   "shippingMethod": "STANDARD", "paymentMethod": "COD", "couponCode": "WELCOME10", "note": "Gọi trước khi giao",
   "acceptTerms": true, "expectedTotal": 317000 }
 ```
-**Hành vi:** trong 1 transaction: kiểm tra lại giá/tồn/mã -> tạo Order + OrderItem (snapshot) + `OrderStatusHistory` -> trừ kho (`stock >= qty`) + `InventoryMovement(ORDER_RESERVE)` -> xóa giỏ (và mã). COD -> `PENDING`. Online -> `PENDING_PAYMENT`, `expiresAt = now + 15 phút`; sau đó FE gọi endpoint tạo thanh toán (M5).
+**Hành vi:** trong 1 transaction: kiểm tra lại giá/tồn/mã -> tạo Order + OrderItem (snapshot) + `OrderStatusHistory` -> trừ kho (`stock >= qty`) + `InventoryMovement(ORDER_RESERVE)` -> **giữ lượt mã** (nếu có mã, D-004; xem dưới) -> xóa giỏ (và mã). COD -> `PENDING`. Online -> `PENDING_PAYMENT`, `expiresAt = now + 15 phút`; sau đó FE gọi endpoint tạo thanh toán (M5).
+**Giữ lượt mã (D-004)** – chạy trong cùng transaction, sau bước trừ kho, chỉ khi đơn có mã:
+- a. `UPDATE "Coupon" SET "usedCount" = "usedCount" + 1 WHERE "id" = $id AND "isActive" AND ("usageLimit" IS NULL OR "usedCount" < "usageLimit")`. Số dòng = 0 -> rollback toàn bộ (kể cả trừ kho), 409 `COUPON_INVALID` (`details.reason = USAGE_LIMIT`).
+- b. Sau bước a (transaction đang giữ khóa dòng coupon nên các đơn đồng thời dùng cùng mã bị tuần tự hóa): đếm `CouponRedemption` của coupon chưa `releasedAt`, theo `userId` (user) hoặc `email` lowercase (guest). Nếu >= `perUserLimit` -> rollback, 409 `COUPON_INVALID` (`details.reason = PER_USER_LIMIT`). Thứ tự a rồi b bảo đảm `perUserLimit` không bị vượt khi đồng thời (Postgres READ COMMITTED: lệnh đếm chạy sau khi giao dịch trước commit).
+- c. Tạo `CouponRedemption(couponId, orderId, userId?, email)`.
+
 **201** `{ "data": Order }` (đơn mới). **200** `{ "data": Order }` nếu `Idempotency-Key` đã dùng với cùng nội dung (trả lại đơn cũ, không tạo thêm, không trừ kho lần nữa).
-Lỗi: 400 `VALIDATION_ERROR` (gồm thiếu header key, `acceptTerms` false); 401 (guest dùng `addressId`); 404 (`addressId` lạ); 409 `CART_EMPTY`, `OUT_OF_STOCK` (rollback; `details.items[]`), `ITEM_UNAVAILABLE`, `COUPON_INVALID`, `PRICE_CHANGED`, `IDEMPOTENCY_CONFLICT`, `PAYMENT_METHOD_UNAVAILABLE`; 429.
-Lưu ý: đơn guest không có endpoint xem lại ngoài `GET /orders/track`; FE lưu response vừa nhận để hiển thị trang thành công.
+Lỗi: 400 `VALIDATION_ERROR` (gồm thiếu header key, `acceptTerms` false); 401 (guest dùng `addressId`); 404 (`addressId` lạ); 409 `CART_EMPTY`, `OUT_OF_STOCK` (rollback; `details.items[]`), `ITEM_UNAVAILABLE`, `COUPON_INVALID` (kể cả `reason` `USAGE_LIMIT`/`PER_USER_LIMIT` phát sinh ở bước giữ lượt, rollback cả trừ kho), `PRICE_CHANGED`, `IDEMPOTENCY_CONFLICT`, `PAYMENT_METHOD_UNAVAILABLE`; 429.
+Lưu ý (D-005): đơn guest không có endpoint xem lại ngoài `GET /orders/track` (mã đơn + SĐT); FE lưu response vừa nhận (sessionStorage) để hiển thị trang thành công, mất thì hướng dẫn dùng trang `/tra-cuu-don-hang`.
 
 ### 9.3 `GET /orders/:code` – Auth (chỉ chủ đơn)
 200 `{ "data": Order }`. Đơn không tồn tại, của người khác, hoặc đơn guest -> 404 `NOT_FOUND`. Lỗi: 401.
 
 ### 9.4 `POST /orders/:code/cancel` – Optional
-Body: `{ "reason": "Đặt nhầm", "email": "an@example.com" }`. `reason` string <= 255, tùy chọn. `email` **bắt buộc khi không đăng nhập** (phải khớp `contactEmail`, so sánh không phân biệt hoa thường); đã đăng nhập thì phải là chủ đơn, `email` bị bỏ qua.
-Cho phép khi `status ∈ {PENDING_PAYMENT, PENDING, CONFIRMED}` (§11). Hoàn kho (`ORDER_RELEASE`), hoàn lượt mã nếu đã tính. 200 `{ "data": Order }` (status `CANCELLED`).
-Lỗi: 400; 404 (không tìm thấy hoặc không phải chủ/ email không khớp); 409 `INVALID_STATUS_TRANSITION` (`details: { from, to: "CANCELLED", allowed: [...] }`); 429.
+Body: `{ "reason": "Đặt nhầm", "phone": "0901234567" }`. `reason` string <= 255, tùy chọn. `phone` **bắt buộc khi không đăng nhập** (chuẩn hóa theo §1 rồi so khớp `contactPhone`); đã đăng nhập thì phải là chủ đơn, `phone` bị bỏ qua.
+Cho phép khi `status ∈ {PENDING_PAYMENT, PENDING, CONFIRMED}` (§11). Hoàn kho (`ORDER_RELEASE`) và hoàn lượt mã (luôn, D-004). 200 `{ "data": Order }` (status `CANCELLED`).
+Lỗi: 400; 404 (không tìm thấy hoặc không phải chủ / SĐT không khớp); 409 `INVALID_STATUS_TRANSITION` (`details: { from, to: "CANCELLED", allowed: [...] }`); 429.
 Đơn đã `PAID` online bị hủy: `paymentStatus` giữ `PAID` cho tới khi hoàn tiền thủ công (xử lý ở M5, xem §13).
 
 ### 9.5 `GET /orders/track` – Public (10/phút/IP)
-Query: `code` (bắt buộc), và **đúng một** trong `email` | `phone`. Khớp `contactEmail`/`contactPhone` (đúng, chuẩn hóa) mới trả; sai/không thấy -> 404 `NOT_FOUND` (cùng thông báo). Khai báo route này **trước** `/orders/:code`.
+Query: `code` (bắt buộc) và `phone` (bắt buộc; chuẩn hóa theo §1, sai định dạng -> 400 `VALIDATION_ERROR`). Chỉ trả khi `phone` khớp `contactPhone` (dạng chuẩn hóa); sai/không thấy -> 404 `NOT_FOUND` (cùng thông báo, D-005). Khai báo route này **trước** `/orders/:code`.
 200 (rút gọn dữ liệu cá nhân):
 ```json
 { "data": { "code": "BB-261110-K7QP", "status": "SHIPPING", "paymentStatus": "UNPAID", "paymentMethod": "COD", "shippingMethod": "STANDARD",
@@ -459,11 +475,11 @@ Query: `code` (bắt buộc), và **đúng một** trong `email` | `phone`. Kh�
 **2. Thứ tự tính (requirements §5.4)**
 1. `lineTotal = effectivePrice × quantity`; `subtotal = Σ lineTotal` (giảm giá sản phẩm/flash sale đã nằm trong `effectivePrice`).
 2. Giảm giá mã (`discountTotal`), chỉ cho PERCENT/FIXED:
-   - Điều kiện: `subtotal >= minOrder`; trong thời hạn; còn lượt; `perUserLimit` (theo `userId`, guest theo `contactEmail`); `isActive`.
+   - Điều kiện: `subtotal >= minOrder`; trong thời hạn; `isActive`; "còn lượt" và `perUserLimit` (theo `userId`, guest theo `contactEmail`) ở bước tính giá/quote/giỏ chỉ là kiểm tra tham khảo, kiểm tra cuối và giữ lượt thực hiện ở `POST /orders` (mục 4).
    - `eligible` = tổng `lineTotal` của các dòng thuộc `scope` (rỗng/null = tất cả; category bao gồm danh mục con). `eligible = 0` -> `NOT_APPLICABLE`.
    - PERCENT: `min(floor(eligible × value / 100), maxDiscount ?? ∞)`. FIXED: `min(value, eligible)`. Luôn `discountTotal <= subtotal`.
 3. Phí ship:
-   - Vùng: `INNER` nếu `provinceCode ∈ shipping.innerCityProvinceCodes` (mặc định `["01","79"]` = Hà Nội, TP.HCM), ngược lại `OTHER`. (Giả định: "nội thành" xấp xỉ bằng cả tỉnh/thành vì không còn cấp quận/huyện.)
+   - Vùng: `INNER` nếu `provinceCode ∈ shipping.innerCityProvinceCodes` (mặc định `["01","79"]` = Hà Nội, TP.HCM), ngược lại `OTHER`. Đã chốt D-006: "nội thành" = toàn bộ tỉnh/thành Hà Nội và TP.HCM vì không còn cấp quận/huyện; đối chiếu mã khi có dữ liệu hành chính chính thức.
    - `baseFee`: INNER Tiêu chuẩn 20.000 / Nhanh 35.000; OTHER 35.000 / 55.000 (đọc từ Setting).
    - `weightSurcharge = 5.000 × ceil(max(0, totalWeightGram − 2000) / 1000)` (mỗi 1 kg hoặc phần lẻ vượt 2 kg). `totalWeightGram = Σ weightGram × quantity`.
    - `fee = baseFee + weightSurcharge`.
@@ -474,35 +490,41 @@ Query: `code` (bắt buộc), và **đúng một** trong `email` | `phone`. Kh�
 
 **3. Làm tròn:** chỉ PERCENT có phép chia, dùng `floor`. Không có VAT cộng thêm (giá đã gồm VAT).
 
-**4. Mỗi đơn tối đa 1 mã.** Lượt dùng chỉ tính khi đơn sang `CONFIRMED`; hủy -> hoàn lượt (`CouponRedemption.releasedAt`, `usedCount − 1`). Hệ quả: với COD ở `PENDING`, nhiều đơn có thể cùng dùng lượt cuối cùng; đơn nào được xác nhận sau khi hết lượt vẫn xác nhận được (chấp nhận cho MVP, xem §13).
+**4. Mỗi đơn tối đa 1 mã; lượt dùng được giữ khi tạo đơn (D-004).**
+- Giữ lượt trong transaction của `POST /orders` (sau trừ kho) theo 3 bước a, b, c ở §9.2: UPDATE có điều kiện `usedCount < usageLimit` (0 dòng -> 409 `COUPON_INVALID`/`USAGE_LIMIT`), đếm `CouponRedemption` chưa hoàn theo `userId`/`email` sau khi đã giữ khóa dòng coupon (>= `perUserLimit` -> 409 `PER_USER_LIMIT`), tạo `CouponRedemption`. Nhờ vậy `usageLimit` và `perUserLimit` không bao giờ bị vượt.
+- Hoàn lượt: mọi lần đơn sang `CANCELLED` (khách hủy, staff hủy, job hết hạn `PENDING_PAYMENT` kể cả đã `paymentStatus=FAILED`, `FAILED_DELIVERY -> CANCELLED`), trong cùng transaction: `UPDATE "CouponRedemption" SET "releasedAt" = now() WHERE "orderId" = $id AND "releasedAt" IS NULL`; nếu cập nhật 1 dòng thì `usedCount − 1`. Idempotent. Đơn `RETURNED` (v2) không hoàn lượt.
+- Mã FREESHIP khi đơn đã đạt freeship ngưỡng vẫn giữ lượt (mục 3).
+- Chấp nhận: đơn COD bỏ lửng ở `PENDING` giữ lượt cho tới khi staff hủy.
 
 **Ví dụ.** Giỏ 2 × 165.000 (500 g mỗi gói) = `subtotal 330.000`, mã `WELCOME10` -> `discountTotal 33.000` (10% = 33.000, trần 50.000), giao TP.HCM Tiêu chuẩn, 1 kg: `fee 20.000`, chưa đủ 500.000 sau giảm (297.000) nên không freeship -> `grandTotal = 330.000 − 33.000 + 20.000 = 317.000`.
 
 ## 11. Máy trạng thái đơn hàng
 
-**Nguồn sự thật cho `canTransition(from, to, actor)`.** Actor: `CUSTOMER` (chủ đơn hoặc guest đã xác thực qua email), `STAFF`, `ADMIN` (STAFF/ADMIN gọi chung là *Staff+*), `SYSTEM` (job, IPN/webhook). Mọi chuyển trạng thái ghi `OrderStatusHistory`, và dùng `UPDATE ... WHERE status = from` (optimistic) để an toàn khi đồng thời. Chuyển sai (kể cả cùng trạng thái) -> 409 `INVALID_STATUS_TRANSITION`.
+**Nguồn sự thật cho `canTransition(from, to, actor)`.** Actor: `CUSTOMER` (chủ đơn hoặc guest đã xác thực qua SĐT), `STAFF`, `ADMIN` (STAFF/ADMIN gọi chung là *Staff+*), `SYSTEM` (job, IPN/webhook). Mọi chuyển trạng thái ghi `OrderStatusHistory`, và dùng `UPDATE ... WHERE status = from` (optimistic) để an toàn khi đồng thời. Chuyển sai (kể cả cùng trạng thái) -> 409 `INVALID_STATUS_TRANSITION`.
 
 | # | Từ | Đến | Ai | Điều kiện / tác dụng phụ |
 |---|---|---|---|---|
-| 0 | (tạo) | `PENDING` | SYSTEM (khi `POST /orders`, COD) | Trừ kho |
-| 0' | (tạo) | `PENDING_PAYMENT` | SYSTEM (online) | Trừ kho, `expiresAt = now + 15'` |
-| 1 | `PENDING_PAYMENT` | `CONFIRMED` | SYSTEM | IPN/webhook hợp lệ (chữ ký + số tiền khớp): `paymentStatus=PAID`, `paidAt`; tính lượt mã |
-| 2 | `PENDING_PAYMENT` | `CANCELLED` | SYSTEM (quá `expiresAt`), CUSTOMER, Staff+ | Hoàn kho (`ORDER_RELEASE`) |
-| 3 | `PENDING` | `CONFIRMED` | Staff+ | `confirmedAt`; tính lượt mã |
-| 4 | `PENDING` | `CANCELLED` | CUSTOMER, Staff+ | Hoàn kho; `cancelReason` |
+| 0 | (tạo) | `PENDING` | SYSTEM (khi `POST /orders`, COD) | Trừ kho; giữ lượt mã (nếu có) |
+| 0' | (tạo) | `PENDING_PAYMENT` | SYSTEM (online) | Trừ kho, giữ lượt mã (nếu có), `expiresAt = now + 15'` |
+| 1 | `PENDING_PAYMENT` | `CONFIRMED` | SYSTEM | IPN/webhook hợp lệ (chữ ký + số tiền khớp): `paymentStatus=PAID`, `paidAt` |
+| 2 | `PENDING_PAYMENT` | `CANCELLED` | SYSTEM (quá `expiresAt`), CUSTOMER, Staff+ | Hoàn kho (`ORDER_RELEASE`); hoàn lượt mã |
+| 3 | `PENDING` | `CONFIRMED` | Staff+ | `confirmedAt` |
+| 4 | `PENDING` | `CANCELLED` | CUSTOMER, Staff+ | Hoàn kho; hoàn lượt mã; `cancelReason` |
 | 5 | `CONFIRMED` | `PROCESSING` | Staff+ | Đang đóng gói |
 | 6 | `CONFIRMED` | `CANCELLED` | CUSTOMER, Staff+ | Hoàn kho; hoàn lượt mã; nếu đã `PAID` online cần hoàn tiền thủ công |
 | 7 | `PROCESSING` | `SHIPPING` | Staff+ | Bắt buộc `trackingNumber` (`carrier` tùy chọn) |
 | 8 | `PROCESSING` | `CANCELLED` | Staff+ (bắt buộc `note`) | Hoàn kho; hoàn lượt mã |
 | 9 | `SHIPPING` | `DELIVERED` | Staff+ | `deliveredAt`; COD -> `paymentStatus=PAID`, `paidAt`; `soldCount += qty` |
 | 10 | `SHIPPING` | `FAILED_DELIVERY` | Staff+ | Ghi lý do |
-| 11 | `FAILED_DELIVERY` | `SHIPPING` | Staff+ | Giao lại (bổ sung, xem §13) |
+| 11 | `FAILED_DELIVERY` | `SHIPPING` | Staff+ | Giao lại; có thể cập nhật `trackingNumber`/`carrier` (D-002) |
 | 12 | `FAILED_DELIVERY` | `CANCELLED` | Staff+ | Hoàn kho (hàng hoàn về); hoàn lượt mã |
 | 13 | `DELIVERED` | `RETURN_REQUESTED` | CUSTOMER (trong 7 ngày) | **v2** – chưa triển khai |
 | 14 | `RETURN_REQUESTED` | `RETURNED` | Staff+ | **v2**; `soldCount -= qty`, hoàn kho nếu hàng nhập lại |
 | 15 | `RETURN_REQUESTED` | `DELIVERED` | Staff+ | **v2** – từ chối đổi trả |
 
-Trạng thái cuối: `CANCELLED`, `RETURNED`. Khách chỉ được hủy ở #2, #4, #6 (`canCancel`); sau `PROCESSING` khách không hủy được. `paymentStatus` tách riêng: `UNPAID -> PAID` (IPN hoặc COD giao xong), `UNPAID -> FAILED` (cổng báo lỗi; đơn vẫn `PENDING_PAYMENT` cho tới `expiresAt` để thử lại), `FAILED -> PAID` (thử lại thành công), `PAID -> REFUNDED` (admin/hệ thống ở M5).
+Mọi chuyển sang `CANCELLED`: hoàn kho + hoàn lượt mã trong cùng transaction.
+
+Trạng thái cuối: `CANCELLED`, `RETURNED`. Khách chỉ được hủy ở #2, #4, #6 (`canCancel`); sau `PROCESSING` khách không hủy được. `paymentStatus` tách riêng (D-001): `UNPAID -> PAID` (IPN hoặc COD giao xong), `UNPAID -> FAILED` (cổng báo lỗi; đơn vẫn `PENDING_PAYMENT` cho tới `expiresAt` để thử lại, quá hạn job mới hủy), `FAILED -> PAID` (thử lại thành công, đơn -> `CONFIRMED`), `PAID -> REFUNDED` (admin/hệ thống ở M5).
 
 ## 12. Endpoint M4–M6 (chưa chi tiết)
 
@@ -517,7 +539,7 @@ Quyền: P = Public, O = Optional, A = Auth, S = Staff+, AD = Admin.
 | Admin–Tồn kho | `GET /admin/inventory`, `POST /admin/inventory/adjust`, `GET /admin/inventory/movements` | Xem tồn, điều chỉnh có lý do, lịch sử biến động | S | M4 |
 | Admin–Đơn | `GET /admin/orders`, `GET /admin/orders/:id`, `PATCH /admin/orders/:id/status`, `GET /admin/orders/:id/print` | Danh sách lọc (trạng thái, ngày, thanh toán, mã/SĐT), chi tiết, chuyển trạng thái theo §11, phiếu giao | S | M4 |
 | Uploads | `POST /admin/uploads` | Upload ảnh (jpg/png/webp, <= 5 MB, đổi tên file) | S | M4 |
-| Thanh toán | `POST /payments/vnpay/create` | Tạo URL thanh toán VNPay cho đơn `PENDING_PAYMENT` | O (chủ đơn / guest + email) | M5 |
+| Thanh toán | `POST /payments/vnpay/create` | Tạo URL thanh toán VNPay cho đơn `PENDING_PAYMENT` | O (chủ đơn / guest + SĐT) | M5 |
 | | `GET /payments/vnpay/ipn` | IPN VNPay (xác thực checksum, đối chiếu số tiền) | P (chữ ký) | M5 |
 | | `GET /payments/vnpay/return` | Trang return chỉ hiển thị kết quả | P | M5 |
 | | `POST /payments/stripe/create-session` | Tạo Stripe Checkout Session (bổ sung ngoài requirements §8) | O | M5 |
@@ -537,14 +559,14 @@ Chi tiết các endpoint trên sẽ chốt ở milestone tương ứng. Quy ư�
 
 ## 13. Câu hỏi mở / Giả định
 
-1. **Đơn guest sau khi đặt:** không có endpoint xem chi tiết ngoài `GET /orders/track` (code + email/SĐT). Trang `/dat-hang-thanh-cong/[code]` của guest phải dựa vào response `POST /orders` (lưu sessionStorage); reload mất thì hướng dẫn dùng tra cứu. Đề xuất nếu cần tốt hơn: trả thêm `viewToken` ngắn hạn. Cần quyết định.
-2. **Đơn guest không tự gắn vào tài khoản** khi đăng ký/đăng nhập sau. Có thể thêm "liên kết đơn theo email đã xác thực" ở v1.x.
-3. **Thanh toán thất bại (requirements §5.1 ghi "hết hạn / thất bại -> CANCELLED"):** contract chọn giữ `PENDING_PAYMENT` + `paymentStatus=FAILED` để thử lại tới `expiresAt`, rồi job mới hủy. Cần xác nhận.
-4. **Thêm chuyển `FAILED_DELIVERY -> SHIPPING`** (giao lại); requirements chỉ có `FAILED_DELIVERY -> CANCELLED`.
-5. **Khách hủy đơn `PENDING_PAYMENT`** được phép (requirements §FR-ORD-03 chỉ nêu `PENDING`/`CONFIRMED`); hoàn tiền đơn online đã `PAID` bị hủy chưa có luồng tự động (thủ công ở M5).
-6. **`COUPON` lượt cuối:** do chỉ tính lượt khi `CONFIRMED`, `usageLimit` có thể bị vượt nhẹ với COD. Có thể chặn bằng việc "giữ lượt" lúc tạo đơn nếu cần chặt hơn.
-7. **Phụ phí khối lượng:** làm tròn lên theo mỗi kg hoặc phần lẻ vượt 2 kg (requirements không nói rõ); và freeship Tiêu chuẩn miễn cả phụ phí. Cần xác nhận.
-8. **Mã tỉnh/phường:** giả định `01` = Hà Nội, `79` = TP.HCM và mã phường 5 chữ số theo bộ dữ liệu hành chính 2 cấp; số liệu mẫu trong ví dụ chỉ để minh họa, task nạp dữ liệu phải đối chiếu nguồn chính thức.
+1. **Đã chốt – xem decisions.md D-005.** Guest xem đơn qua `/tra-cuu-don-hang` (`GET /orders/track`, mã đơn + SĐT chuẩn hóa), không `viewToken`. Trang `/dat-hang-thanh-cong/[code]` của guest dựa vào response `POST /orders` (sessionStorage); mất thì hướng dẫn dùng tra cứu.
+2. **Đã chốt – xem decisions.md D-005.** Đơn guest không tự gắn vào tài khoản khi đăng ký/đăng nhập sau.
+3. **Đã chốt – xem decisions.md D-001.** Thanh toán thất bại: giữ `PENDING_PAYMENT` + `paymentStatus=FAILED`, thử lại tới `expiresAt`, quá hạn job mới hủy.
+4. **Đã chốt – xem decisions.md D-002.** Có chuyển `FAILED_DELIVERY -> SHIPPING` (giao lại, Staff+).
+5. **Đã chốt – xem decisions.md D-002.** Khách được hủy đơn `PENDING_PAYMENT`. (Còn mở: hoàn tiền đơn online đã `PAID` bị hủy chưa có luồng tự động, thủ công ở M5.)
+6. **Đã chốt – xem decisions.md D-004.** Giữ lượt mã ngay khi tạo đơn bằng UPDATE có điều kiện; hoàn lượt khi `CANCELLED`; không vượt `usageLimit`/`perUserLimit`.
+7. **Đã chốt – xem decisions.md D-003.** Phụ phí `5.000 × ceil(max(0, g − 2000) / 1000)`; freeship Tiêu chuẩn miễn cả phụ phí, Nhanh không.
+8. **Đã chốt – xem decisions.md D-006.** Nội thành = toàn bộ Hà Nội (`01`) + TP.HCM (`79`); dữ liệu tỉnh/phường do chủ dự án cung cấp, nạp ở M2; mã/tên trong ví dụ chỉ minh họa.
 9. **Không có `facets` (đếm theo bộ lọc)** trong `GET /products`; FE lấy thương hiệu từ `/brands`, các giá trị enum cố định. Thêm `GET /products/filters` nếu UI cần số đếm.
 10. **Concurrent refresh:** không có grace window; FE bắt buộc single-flight. Nếu multi-tab gây đăng xuất ngoài ý muốn, cân nhắc grace 10 giây cho token vừa xoay.
 11. **Trang FE xác thực email** (`/xac-thuc-email`) chưa có trong sitemap requirements §9; cần thêm. Đăng nhập Google, loyalty, subscription, blog, đổi/trả: v2, ngoài contract này.

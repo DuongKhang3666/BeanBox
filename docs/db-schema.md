@@ -1,6 +1,8 @@
 # BeanBox – Thiết kế cơ sở dữ liệu
 
-> Phiên bản 0.1 · 2026-11-10 · PostgreSQL + Prisma 6.x. Khối schema ở §2 sẽ được copy gần như nguyên văn vào `backend/prisma/schema.prisma`.
+> Phiên bản 0.2 · 2026-11-10 · PostgreSQL + Prisma 6.x.
+> Thay đổi 0.2: không đổi Prisma schema; cập nhật giải thích `Coupon`/`CouponRedemption` (giữ lượt khi tạo đơn, D-004), SĐT lưu dạng chuẩn hóa (D-007), dữ liệu hành chính do chủ dự án cung cấp (D-006). Xem [`decisions.md`](decisions.md).
+>  Khối schema ở §2 sẽ được copy gần như nguyên văn vào `backend/prisma/schema.prisma`.
 > Quy ước: id `String @default(cuid())`; tiền là `Int` VND; mọi bảng có `createdAt` (và `updatedAt` nếu có sửa); thời gian lưu UTC.
 
 ## Mục lục
@@ -181,7 +183,7 @@ model Address {
   id           String   @id @default(cuid())
   userId       String
   fullName     String
-  phone        String
+  phone        String // dạng chuẩn hóa 0xxxxxxxxx (D-007)
   provinceCode String
   provinceName String
   wardCode     String
@@ -454,7 +456,7 @@ model Order {
   code            String         @unique // BB-YYMMDD-XXXX
   userId          String? // null = khách vãng lai
   contactEmail    String // luôn có: guest nhập, user lấy từ tài khoản/form
-  contactPhone    String
+  contactPhone    String // dạng chuẩn hóa 0xxxxxxxxx (D-007); khóa tra cứu đơn guest (D-005)
   status          OrderStatus    @default(PENDING)
   paymentStatus   PaymentStatus  @default(UNPAID)
   paymentMethod   PaymentMethod
@@ -669,8 +671,8 @@ model AuditLog {
 | `OrderItem` | Snapshot dòng hàng; `productId` kèm theo để review/báo cáo không cần join qua variant |
 | `OrderStatusHistory` | Mỗi lần đổi trạng thái 1 dòng (kể cả lúc tạo, `fromStatus=null`), có ai/khi nào/ghi chú |
 | `Payment` | Mỗi lần thử thanh toán online 1 dòng. COD không tạo Payment (trạng thái nằm ở `Order.paymentStatus`, chuyển `PAID` khi giao thành công). `unique(provider, providerTxnId)` chống xử lý IPN trùng |
-| `Coupon` | `code` lưu UPPERCASE. `usedCount` denormalize; chỉ tăng khi đơn `CONFIRMED` (§5.5 requirements) |
-| `CouponRedemption` | 1 dòng/đơn đã tính lượt; `email` để áp `perUserLimit` cho guest; `releasedAt` khi hủy đơn (đồng thời giảm `usedCount`) |
+| `Coupon` | `code` lưu UPPERCASE. `usedCount` denormalize; tăng ngay khi tạo đơn (UPDATE có điều kiện `usedCount < usageLimit`, cùng transaction với trừ kho) và giảm khi đơn `CANCELLED` (D-004; `api-contract.md` §9.2, §10 mục 4) |
+| `CouponRedemption` | 1 dòng/đơn, tạo cùng lúc tạo đơn (sau khi giữ lượt thành công); `email` (lowercase) để áp `perUserLimit` cho guest; `releasedAt` đặt khi đơn `CANCELLED` (hủy, hết hạn, giao thất bại rồi hủy), đồng thời giảm `usedCount`; đếm lượt đã dùng = dòng có `releasedAt IS NULL` |
 | `Review` | `unique(orderItemId)` = mỗi dòng hàng đã mua 1 đánh giá. Chỉ khi đơn `DELIVERED` (service kiểm tra) |
 | `Setting` | Key-value JSON (phí ship, ngưỡng freeship, banner...) |
 | `AuditLog` | Nhật ký thao tác admin/staff (`diff` chỉ chứa trường thay đổi, không chứa dữ liệu nhạy cảm) |
@@ -746,7 +748,7 @@ Service phải cập nhật các cột này **trong cùng transaction** với th
 | `Product.inStock` | Mỗi lần `stock` variant đổi (đặt đơn, hủy, nhập kho) | `EXISTS(variant active, chưa xóa, stock > 0)` |
 | `Product.soldCount` | Đơn chuyển `DELIVERED` (+qty); `RETURNED` (-qty) | Tổng `quantity` theo `productId` |
 | `Product.ratingAvg/ratingCount` | Review tạo/sửa/ẩn/hiện | Trung bình và số lượng review `PUBLISHED` |
-| `Coupon.usedCount` | Đơn `CONFIRMED` (+1, tạo `CouponRedemption`); hủy sau đó (-1, đặt `releasedAt`) | Dùng `UPDATE ... SET usedCount = usedCount + 1 WHERE usageLimit IS NULL OR usedCount < usageLimit` |
+| `Coupon.usedCount` | Tạo đơn có mã (+1, rồi tạo `CouponRedemption`); đơn `CANCELLED` (-1 nếu `UPDATE "CouponRedemption" SET "releasedAt" = now() WHERE "orderId" = $id AND "releasedAt" IS NULL` cập nhật được 1 dòng; idempotent) – D-004 | `UPDATE "Coupon" SET "usedCount" = "usedCount" + 1 WHERE "id" = $id AND "isActive" AND ("usageLimit" IS NULL OR "usedCount" < "usageLimit")`; 0 dòng -> rollback `COUPON_INVALID`. Sau đó đếm `CouponRedemption` chưa `releasedAt` theo `userId`/`email` để kiểm `perUserLimit` |
 
 Hạn chế: `minPrice` không phản ánh realtime flash sale theo khung giờ (xem `architecture.md` §6).
 
@@ -815,14 +817,14 @@ Tổng >= 38 sản phẩm. Các trường hợp cần có để test UI/logic (c
 }
 ```
 
-Dữ liệu địa chỉ **không** nằm trong DB: `backend/prisma/data/provinces-wards.json` (nguồn dữ liệu hành chính 2 cấp từ 01/07/2025), nạp vào bộ nhớ khi khởi động.
+Dữ liệu địa chỉ **không** nằm trong DB: `backend/prisma/data/provinces-wards.json` (dữ liệu hành chính 2 cấp từ 01/07/2025), nạp vào bộ nhớ khi khởi động. File này **do chủ dự án cung cấp**, nạp ở M2 và **hiện chưa có trong repo**; developer không tự tạo/bịa dữ liệu (D-006). Chưa có file thì `/locations` và validate địa chỉ chưa làm.
 
 ## 7. Câu hỏi mở / Giả định
 
-1. **`Order.contactEmail/contactPhone` luôn bắt buộc** thay cho `guestEmail?/guestPhone?` trong requirements §7: cần email để gửi xác nhận cho cả user lẫn guest và để tra cứu đơn. Cần xác nhận.
+1. **`Order.contactEmail/contactPhone` luôn bắt buộc** thay cho `guestEmail?/guestPhone?` trong requirements §7: cần email để gửi xác nhận cho cả user lẫn guest, và SĐT (dạng chuẩn hóa) để tra cứu/hủy đơn guest (D-005, D-007). Cần xác nhận.
 2. **Phân biệt giảm hàng vs. giảm ship:** thêm `Order.shippingDiscount` (requirements chỉ có `discountTotal`, `shippingFee`). Công thức `grandTotal` ghi rõ ở trên.
 3. **`ProductStatus` không có trạng thái "hết hàng"** – hết hàng suy ra từ tồn kho (`inStock`).
-4. **Mã tỉnh:** giả định mã Hà Nội = `"01"`, TP.HCM = `"79"` trong bộ dữ liệu 2 cấp; task nạp dữ liệu phải đối chiếu lại và cập nhật `shipping.innerCityProvinceCodes` nếu khác. "Nội thành" được xấp xỉ bằng cả tỉnh/thành (TP.HCM, Hà Nội) vì không còn cấp quận/huyện.
+4. **Đã chốt D-006 – Mã tỉnh / vùng nội thành:** "nội thành" = toàn bộ Hà Nội (`"01"`) và TP.HCM (`"79"`) qua `shipping.innerCityProvinceCodes`; task nạp dữ liệu (M2) đối chiếu mã với file nguồn chủ dự án cung cấp và cập nhật setting nếu khác.
 5. **Thiếu trong requirements:** bảng cho newsletter/liên hệ (FR-CNT-03, mức S) và blog (v2) chưa có; thêm ở milestone tương ứng. `Subscription` để v2 theo chỉ đạo.
 6. **Xóa user:** chưa có luồng xóa tài khoản; nếu cần sẽ ẩn danh hóa thay vì hard-delete (FK `Restrict` ở Review).
 7. **Partial index/CHECK vs Prisma drift** (§4): cần kiểm chứng khi scaffold; phương án dự phòng là chỉ enforce trong service.

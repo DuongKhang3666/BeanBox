@@ -1,7 +1,9 @@
-/* Seed cơ bản: tài khoản, danh mục, thương hiệu, setting, coupon. KHÔNG seed sản phẩm (task riêng). */
+/* Entry seed dev: tài khoản, danh mục, thương hiệu, sản phẩm, setting, coupon. Dữ liệu nằm ở prisma/seed-data/. */
 import 'dotenv/config';
 import argon2 from 'argon2';
 import { Prisma, PrismaClient, Role, CouponType } from '@prisma/client';
+import { BRANDS, CATEGORIES } from './seed-data/catalog.js';
+import { seedProducts } from './seed-data/seed-products.js';
 
 const prisma = new PrismaClient();
 
@@ -60,46 +62,6 @@ async function seedUsers() {
   }
 }
 
-interface CategorySeed {
-  slug: string;
-  name: string;
-  children?: { slug: string; name: string }[];
-}
-
-const CATEGORIES: CategorySeed[] = [
-  {
-    slug: 'ca-phe-hat',
-    name: 'Cà phê hạt',
-    children: [
-      { slug: 'specialty', name: 'Specialty' },
-      { slug: 'ca-phe-viet', name: 'Cà phê Việt' },
-      { slug: 'blend', name: 'Blend' },
-      { slug: 'decaf', name: 'Decaf' },
-    ],
-  },
-  {
-    slug: 'dung-cu-pha-che',
-    name: 'Dụng cụ pha chế',
-    children: [
-      { slug: 'phin', name: 'Phin' },
-      { slug: 'pour-over', name: 'Pour-over' },
-      { slug: 'french-press-aeropress-moka-pot', name: 'French Press, AeroPress & Moka Pot' },
-      { slug: 'may-xay', name: 'Máy xay' },
-      { slug: 'am-rot-can-nhiet-ke', name: 'Ấm rót, cân & nhiệt kế' },
-    ],
-  },
-  {
-    slug: 'phu-kien',
-    name: 'Phụ kiện',
-    children: [
-      { slug: 'giay-loc', name: 'Giấy lọc' },
-      { slug: 'ly-coc-binh-giu-nhiet', name: 'Ly, cốc & bình giữ nhiệt' },
-      { slug: 'hop-bao-quan-ve-sinh', name: 'Hộp bảo quản & vệ sinh' },
-    ],
-  },
-  { slug: 'qua-tang-combo', name: 'Quà tặng & Combo' },
-];
-
 async function seedCategories() {
   let order = 0;
   for (const c of CATEGORIES) {
@@ -120,16 +82,6 @@ async function seedCategories() {
     }
   }
 }
-
-const BRANDS = [
-  { slug: 'beanbox-roastery', name: 'BeanBox Roastery' },
-  { slug: 'hario', name: 'Hario' },
-  { slug: 'kalita', name: 'Kalita' },
-  { slug: 'chemex', name: 'Chemex' },
-  { slug: 'aeropress', name: 'AeroPress' },
-  { slug: 'bialetti', name: 'Bialetti' },
-  { slug: 'timemore', name: 'Timemore' },
-];
 
 async function seedBrands() {
   for (const b of BRANDS) {
@@ -205,9 +157,11 @@ async function main() {
   await seedUsers();
   await seedCategories();
   await seedBrands();
+  const productCount = await seedProducts(prisma);
   await seedSettings();
   await seedCoupons();
   console.log('Seed hoàn tất: 3 tài khoản, danh mục, thương hiệu, setting, 4 coupon.');
+  console.log('Đã seed ' + productCount + ' sản phẩm.');
 }
 
 main()

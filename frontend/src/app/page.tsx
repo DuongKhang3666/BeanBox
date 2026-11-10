@@ -1,18 +1,23 @@
+import Link from "next/link";
+import { connection } from "next/server";
 import { Container } from "@/components/ui/Container";
 import { ButtonLink } from "@/components/ui/Button";
-import { Skeleton } from "@/components/ui/Skeleton";
+import { ErrorState } from "@/components/ui/ErrorState";
+import { getCategories, getProducts } from "@/features/catalog/api";
+import { ProductGrid } from "@/features/catalog/components/ProductGrid";
+import { ROOT_CATEGORY_SLUGS } from "@/lib/site";
 
-function ProductCardSkeleton() {
-  return (
-    <div className="space-y-3 rounded-2xl border border-coffee-200 bg-cream-50 p-3">
-      <Skeleton className="aspect-square w-full" />
-      <Skeleton className="h-4 w-3/4" />
-      <Skeleton className="h-4 w-1/3" />
-    </div>
-  );
-}
+/** Trang chủ cần API lúc chạy; không prerender lúc build (build phải qua được khi backend tắt). */
+export default async function HomePage() {
+  await connection();
 
-export default function HomePage() {
+  const [categories, featured, newest, bestseller] = await Promise.allSettled([
+    getCategories(),
+    getProducts({ featured: true, pageSize: 8 }),
+    getProducts({ sort: "newest", pageSize: 8 }),
+    getProducts({ sort: "bestseller", pageSize: 4 }),
+  ]);
+
   return (
     <>
       <section className="bg-coffee-800 text-cream-50">
@@ -28,15 +33,15 @@ export default function HomePage() {
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <ButtonLink
-              href="/danh-muc/hat-ca-phe"
+              href={`/danh-muc/${ROOT_CATEGORY_SLUGS[0]}`}
               variant="primary"
               size="lg"
               className="bg-cream-100 !text-coffee-900 hover:!bg-white"
             >
-              Khám phá hạt cà phê
+              Khám phá cà phê hạt
             </ButtonLink>
             <ButtonLink
-              href="/danh-muc/dung-cu-pha-che"
+              href={`/danh-muc/${ROOT_CATEGORY_SLUGS[1]}`}
               variant="outline"
               size="lg"
               className="!border-cream-200 !text-cream-50 hover:!bg-coffee-700"
@@ -47,34 +52,78 @@ export default function HomePage() {
         </Container>
       </section>
 
-      <section aria-labelledby="featured-heading" className="py-12">
-        <Container>
-          <h2 id="featured-heading" className="font-serif text-2xl font-semibold text-coffee-900">
-            Sản phẩm nổi bật
-          </h2>
-          <p className="mt-1 text-coffee-700">
-            Danh sách sản phẩm sẽ được kết nối dữ liệu thật ở giai đoạn M1.
-          </p>
-          <div className="mt-6 grid grid-cols-2 gap-4 md:grid-cols-4" aria-busy="true">
-            {Array.from({ length: 4 }, (_, i) => (
-              <ProductCardSkeleton key={i} />
+      <Section id="categories" title="Danh mục">
+        {categories.status === "fulfilled" ? (
+          <ul className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-4">
+            {categories.value.map((c) => (
+              <li key={c.id}>
+                <Link
+                  href={`/danh-muc/${c.slug}`}
+                  className="flex h-full flex-col justify-between gap-2 rounded-2xl border border-coffee-200 bg-cream-50 p-4 transition-colors hover:border-moss-600 hover:bg-moss-50"
+                >
+                  <span className="font-serif text-lg font-semibold text-coffee-900">{c.name}</span>
+                  <span className="text-sm text-coffee-700">{c.productCount} sản phẩm</span>
+                </Link>
+              </li>
             ))}
-          </div>
-        </Container>
-      </section>
+          </ul>
+        ) : (
+          <SectionError />
+        )}
+      </Section>
 
-      <section aria-labelledby="new-heading" className="pb-4">
-        <Container>
-          <h2 id="new-heading" className="font-serif text-2xl font-semibold text-coffee-900">
-            Hàng mới về
-          </h2>
-          <div className="mt-6 grid grid-cols-2 gap-4 md:grid-cols-4" aria-busy="true">
-            {Array.from({ length: 4 }, (_, i) => (
-              <ProductCardSkeleton key={i} />
-            ))}
-          </div>
-        </Container>
-      </section>
+      <Section id="featured" title="Sản phẩm nổi bật">
+        <ProductSection result={featured} emptyText="Chưa có sản phẩm nổi bật." />
+      </Section>
+
+      <Section id="new" title="Hàng mới về">
+        <ProductSection result={newest} emptyText="Chưa có sản phẩm mới." />
+      </Section>
+
+      <Section id="bestseller" title="Bán chạy" last>
+        <ProductSection result={bestseller} emptyText="Chưa có dữ liệu bán chạy." />
+      </Section>
     </>
   );
+}
+
+function Section({
+  id,
+  title,
+  last = false,
+  children,
+}: {
+  id: string;
+  title: string;
+  last?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <section aria-labelledby={`${id}-heading`} className={last ? "pb-14 pt-10" : "pt-10"}>
+      <Container>
+        <h2 id={`${id}-heading`} className="mb-5 font-serif text-2xl font-semibold text-coffee-900">
+          {title}
+        </h2>
+        {children}
+      </Container>
+    </section>
+  );
+}
+
+function SectionError() {
+  return (
+    <ErrorState title="Chưa tải được mục này" description="Vui lòng tải lại trang sau ít phút." />
+  );
+}
+
+function ProductSection({
+  result,
+  emptyText,
+}: {
+  result: PromiseSettledResult<Awaited<ReturnType<typeof getProducts>>>;
+  emptyText: string;
+}) {
+  if (result.status === "rejected") return <SectionError />;
+  if (result.value.items.length === 0) return <p className="text-coffee-700">{emptyText}</p>;
+  return <ProductGrid products={result.value.items} />;
 }

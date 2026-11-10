@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600" role="img" aria-label="Phụ kiện">
+  <rect width="600" height="600" fill="#8a9a5b"/>
+  <path d="M230 170 H370 L355 330 Q300 360 245 330 Z" fill="#f1e7d3"/>
+  <path d="M370 200 H400 Q430 200 430 245 Q430 290 392 290 H362" fill="none" stroke="#f1e7d3" stroke-width="14" stroke-linecap="round"/>
+  <ellipse cx="300" cy="170" rx="70" ry="12" fill="#6f4e37"/>
+  <text x="300" y="470" font-family="Arial, Helvetica, sans-serif" font-size="44" font-weight="bold" text-anchor="middle" fill="#f5ecd9">Phụ kiện</text>
+  <text x="300" y="515" font-family="Arial, Helvetica, sans-serif" font-size="22" text-anchor="middle" fill="#f1e7d3">BeanBox - ảnh minh họa</text>
+</svg>
