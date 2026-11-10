@@ -1,0 +1,58 @@
+@import "tailwindcss";
+
+@theme {
+  /* Nâu cà phê */
+  --color-coffee-50: #f7f1ea;
+  --color-coffee-100: #ece0d1;
+  --color-coffee-200: #d9c2a8;
+  --color-coffee-300: #c0a07d;
+  --color-coffee-400: #a67f58;
+  --color-coffee-500: #8a6340;
+  --color-coffee-600: #6f4e32;
+  --color-coffee-700: #583d28;
+  --color-coffee-800: #432e1f;
+  --color-coffee-900: #2e1f15;
+  /* Kem */
+  --color-cream-50: #fdfaf5;
+  --color-cream-100: #faf5ec;
+  --color-cream-200: #f3ead9;
+  --color-cream-300: #e8dac0;
+  /* Xanh rêu */
+  --color-moss-50: #f1f5ec;
+  --color-moss-100: #dfe8d3;
+  --color-moss-200: #c0d0a9;
+  --color-moss-500: #62803f;
+  --color-moss-600: #4d6a30;
+  --color-moss-700: #3d5427;
+  --color-moss-800: #2f411f;
+  --color-danger-600: #b3261e;
+  --color-danger-50: #fdf1f0;
+
+  --font-sans: var(--font-be-vietnam), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-lora), ui-serif, Georgia, serif;
+}
+
+html {
+  background-color: var(--color-cream-100);
+  color: var(--color-coffee-900);
+}
+
+body {
+  font-family: var(--font-sans);
+  min-height: 100dvh;
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-moss-600);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

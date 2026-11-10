@@ -1,0 +1,60 @@
+# Dev thường chỉ cần: docker compose up -d db mailpit
+# Chạy cả backend trong container: docker compose --profile app up -d --build
+services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: beanbox
+      POSTGRES_PASSWORD: beanbox
+      POSTGRES_DB: beanbox
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/db-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U beanbox -d beanbox']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    ports:
+      - '1025:1025' # SMTP
+      - '8025:8025' # Web UI
+
+  backend:
+    profiles: ['app']
+    build:
+      context: ./backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: '4000'
+      DATABASE_URL: postgresql://beanbox:beanbox@db:5432/beanbox
+      FRONTEND_ORIGINS: ${FRONTEND_ORIGINS:-http://localhost:3000}
+      # Phải đặt (>= 32 ký tự) khi chạy profile app, nếu không backend sẽ dừng ngay khi khởi động
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-}
+      SMTP_HOST: mailpit
+      SMTP_PORT: '1025'
+    ports:
+      - '4000:4000'
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://localhost:4000/api/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  pgdata:

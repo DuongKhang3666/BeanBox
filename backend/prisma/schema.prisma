@@ -1,0 +1,622 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────── Enums ─────────────
+
+enum Role {
+  CUSTOMER
+  STAFF
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED // admin khóa vĩnh viễn; khóa tạm do đăng nhập sai dùng User.lockedUntil
+}
+
+enum ProductStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum RoastLevel {
+  LIGHT
+  MEDIUM
+  MEDIUM_DARK
+  DARK
+}
+
+enum CoffeeProcess {
+  WASHED
+  NATURAL
+  HONEY
+  ANAEROBIC
+  OTHER
+}
+
+enum BrewMethod {
+  PHIN
+  ESPRESSO
+  POUR_OVER
+  COLD_BREW
+  FRENCH_PRESS
+  AEROPRESS
+  MOKA
+}
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  PENDING
+  CONFIRMED
+  PROCESSING
+  SHIPPING
+  DELIVERED
+  FAILED_DELIVERY
+  CANCELLED
+  RETURN_REQUESTED
+  RETURNED
+}
+
+enum PaymentStatus {
+  UNPAID
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  COD
+  VNPAY
+  STRIPE
+}
+
+enum PaymentProvider {
+  VNPAY
+  STRIPE
+}
+
+enum PaymentTxnStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+}
+
+enum ShippingMethod {
+  STANDARD
+  EXPRESS
+}
+
+enum CouponType {
+  PERCENT
+  FIXED
+  FREESHIP
+}
+
+enum InventoryReason {
+  ORDER_RESERVE
+  ORDER_RELEASE
+  RESTOCK
+  DAMAGE
+  STOCKTAKE
+  ADJUSTMENT
+}
+
+enum ReviewStatus {
+  PUBLISHED
+  HIDDEN
+}
+
+// ───────────── Người dùng & phiên ─────────────
+
+model User {
+  id                String     @id @default(cuid())
+  email             String     @unique
+  passwordHash      String
+  fullName          String
+  phone             String?
+  birthDate         DateTime?  @db.Date
+  avatarUrl         String?
+  role              Role       @default(CUSTOMER)
+  status            UserStatus @default(ACTIVE)
+  emailVerifiedAt   DateTime?
+  failedLoginCount  Int        @default(0)
+  lastFailedLoginAt DateTime?
+  lockedUntil       DateTime?
+  lastLoginAt       DateTime?
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  addresses               Address[]
+  refreshTokens           RefreshToken[]
+  passwordResetTokens     PasswordResetToken[]
+  emailVerificationTokens EmailVerificationToken[]
+  cart                    Cart?
+  wishlist                Wishlist[]
+  orders                  Order[]
+  orderStatusChanges      OrderStatusHistory[]
+  inventoryMovements      InventoryMovement[]
+  couponRedemptions       CouponRedemption[]
+  reviews                 Review[]
+  auditLogs               AuditLog[]
+
+  @@index([role])
+  @@index([createdAt])
+}
+
+model Address {
+  id           String   @id @default(cuid())
+  userId       String
+  fullName     String
+  phone        String
+  provinceCode String
+  provinceName String
+  wardCode     String
+  wardName     String
+  line1        String
+  isDefault    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model RefreshToken {
+  id           String    @id @default(cuid())
+  userId       String
+  familyId     String // mọi token cùng chuỗi rotation chung familyId
+  tokenHash    String    @unique // SHA-256 hex
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  replacedById String? // token mới sinh ra khi rotation
+  userAgent    String?
+  ip           String?
+  createdAt    DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+  @@index([expiresAt])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime // now + 30 phút
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model EmailVerificationToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime // now + 24 giờ
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// ───────────── Catalog ─────────────
+
+model Category {
+  id          String   @id @default(cuid())
+  parentId    String?
+  name        String
+  slug        String   @unique
+  description String?
+  imageUrl    String?
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children Category[] @relation("CategoryTree")
+  products Product[]
+
+  @@index([parentId, sortOrder])
+}
+
+model Brand {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  logoUrl   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  products Product[]
+}
+
+model Product {
+  id          String        @id @default(cuid())
+  categoryId  String
+  brandId     String?
+  name        String
+  slug        String        @unique
+  shortDesc   String        @default("")
+  description String        @default("") // Markdown
+  status      ProductStatus @default(DRAFT)
+  isFeatured  Boolean       @default(false)
+  tags        String[]      @default([])
+  seoTitle    String?
+  seoDesc     String?
+
+  // Denormalized – xem mục 5
+  searchText  String        @default("")
+  minPrice    Int           @default(0)
+  inStock     Boolean       @default(false)
+  soldCount   Int           @default(0)
+  ratingAvg   Float         @default(0)
+  ratingCount Int           @default(0)
+
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  category Category        @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  brand    Brand?          @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  coffee   CoffeeProfile?
+  images   ProductImage[]
+  variants ProductVariant[]
+  wishlist Wishlist[]
+  orderItems OrderItem[]
+  reviews  Review[]
+
+  @@index([categoryId, status])
+  @@index([brandId])
+  @@index([status, createdAt])
+  @@index([status, minPrice])
+  @@index([status, soldCount])
+  @@index([status, ratingAvg])
+  @@index([isFeatured, status])
+  @@index([deletedAt])
+  // Tìm kiếm không dấu: GIN trigram. Cần CREATE EXTENSION pg_trgm trước (migration raw SQL đầu tiên).
+  @@index([searchText(ops: raw("gin_trgm_ops"))], type: Gin)
+}
+
+model CoffeeProfile {
+  productId     String         @id
+  originCountry String? // lọc theo origin: "Việt Nam", "Ethiopia", "Colombia"...
+  originRegion  String? // "Cầu Đất", "Yirgacheffe"...
+  variety       String? // "Arabica", "Robusta", "Typica"...
+  process       CoffeeProcess?
+  roastLevel    RoastLevel?
+  altitude      Int? // mét so với mực nước biển
+  tastingNotes  String[]       @default([])
+  brewMethods   BrewMethod[]   @default([])
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([roastLevel])
+  @@index([originCountry])
+  @@index([process])
+}
+
+model ProductImage {
+  id        String   @id @default(cuid())
+  productId String
+  url       String
+  alt       String   @default("")
+  sortOrder Int      @default(0)
+  isPrimary Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId, sortOrder])
+}
+
+model ProductVariant {
+  id                String    @id @default(cuid())
+  productId         String
+  sku               String    @unique
+  name              String // "500 g - Xay phin"
+  attributes        Json      @default("{}") // {"weight":"500g","grind":"phin"} | {"color":"Đen"}
+  price             Int // giá niêm yết
+  salePrice         Int? // giá khuyến mãi (< price)
+  saleStart         DateTime?
+  saleEnd           DateTime?
+  stock             Int       @default(0)
+  lowStockThreshold Int       @default(5)
+  weightGram        Int       @default(0)
+  roastDate         DateTime? @db.Date
+  sortOrder         Int       @default(0)
+  isActive          Boolean   @default(true)
+  deletedAt         DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  product            Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
+  inventoryMovements InventoryMovement[]
+  cartItems          CartItem[]
+  orderItems         OrderItem[]
+
+  @@index([productId, isActive])
+  @@index([stock])
+}
+
+model InventoryMovement {
+  id         String          @id @default(cuid())
+  variantId  String
+  change     Int // âm = xuất, dương = nhập
+  stockAfter Int
+  reason     InventoryReason
+  orderId    String?
+  actorId    String? // null = hệ thống (đặt hàng, job hết hạn)
+  note       String?
+  createdAt  DateTime        @default(now())
+
+  variant ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  order   Order?         @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  actor   User?          @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([variantId, createdAt])
+  @@index([orderId])
+}
+
+// ───────────── Giỏ hàng & yêu thích ─────────────
+
+model Cart {
+  id             String   @id @default(cuid())
+  userId         String?  @unique
+  tokenHash      String?  @unique // SHA-256 của cart token (giỏ guest)
+  couponCode     String?
+  lastActivityAt DateTime @default(now())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user  User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items CartItem[]
+
+  @@index([lastActivityAt])
+}
+
+model CartItem {
+  id               String   @id @default(cuid())
+  cartId           String
+  variantId        String
+  quantity         Int
+  unitPriceAtAdd   Int // giá hiệu lực lúc thêm, để cảnh báo đổi giá (FR-CART-07)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  cart    Cart           @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  variant ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@unique([cartId, variantId])
+  @@index([variantId])
+}
+
+model Wishlist {
+  userId    String
+  productId String
+  createdAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@id([userId, productId])
+  @@index([productId])
+}
+
+// ───────────── Đơn hàng & thanh toán ─────────────
+
+model Order {
+  id              String         @id @default(cuid())
+  code            String         @unique // BB-YYMMDD-XXXX
+  userId          String? // null = khách vãng lai
+  contactEmail    String // luôn có: guest nhập, user lấy từ tài khoản/form
+  contactPhone    String
+  status          OrderStatus    @default(PENDING)
+  paymentStatus   PaymentStatus  @default(UNPAID)
+  paymentMethod   PaymentMethod
+  shippingMethod  ShippingMethod
+  shippingAddress Json // snapshot: fullName, phone, provinceCode/Name, wardCode/Name, line1
+  totalWeightGram Int            @default(0)
+  subtotal        Int
+  discountTotal   Int            @default(0) // giảm trên hàng hóa (mã PERCENT/FIXED)
+  shippingFee     Int // phí ship gốc, đã gồm phụ phí khối lượng
+  shippingDiscount Int           @default(0) // freeship ngưỡng / mã FREESHIP
+  grandTotal      Int
+  couponId        String?
+  couponCode      String?
+  note            String?
+  trackingNumber  String?
+  carrier         String?
+  cancelReason    String?
+  expiresAt       DateTime? // hạn thanh toán của PENDING_PAYMENT
+  paidAt          DateTime?
+  confirmedAt     DateTime?
+  deliveredAt     DateTime?
+  cancelledAt     DateTime?
+  idempotencyKey     String @unique
+  requestFingerprint String // SHA-256 của payload chuẩn hóa, phát hiện cùng key khác nội dung
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user       User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
+  coupon     Coupon?              @relation(fields: [couponId], references: [id], onDelete: SetNull)
+  items      OrderItem[]
+  history    OrderStatusHistory[]
+  payments   Payment[]
+  movements  InventoryMovement[]
+  redemption CouponRedemption?
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@index([status, expiresAt])
+  @@index([paymentStatus])
+  @@index([contactEmail])
+  @@index([contactPhone])
+  @@index([createdAt])
+}
+
+model OrderItem {
+  id          String  @id @default(cuid())
+  orderId     String
+  productId   String
+  variantId   String
+  productName String
+  variantName String
+  sku         String
+  imageUrl    String?
+  weightGram  Int     @default(0)
+  unitPrice   Int // giá hiệu lực tại thời điểm đặt
+  quantity    Int
+  lineTotal   Int
+
+  order   Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product        @relation(fields: [productId], references: [id], onDelete: Restrict)
+  variant ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  review  Review?
+
+  @@index([orderId])
+  @@index([productId])
+  @@index([variantId])
+}
+
+model OrderStatusHistory {
+  id         String       @id @default(cuid())
+  orderId    String
+  fromStatus OrderStatus? // null = lúc tạo đơn
+  toStatus   OrderStatus
+  note       String?
+  actorId    String? // null = hệ thống hoặc khách vãng lai
+  createdAt  DateTime     @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([orderId, createdAt])
+}
+
+model Payment {
+  id            String           @id @default(cuid())
+  orderId       String
+  provider      PaymentProvider
+  providerTxnId String? // vnp_TransactionNo / Stripe payment_intent id
+  providerRef   String? // vnp_TxnRef / Stripe checkout session id
+  amount        Int
+  status        PaymentTxnStatus @default(PENDING)
+  rawPayload    Json?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@unique([provider, providerTxnId])
+  @@index([orderId])
+  @@index([providerRef])
+}
+
+// ───────────── Khuyến mãi ─────────────
+
+model Coupon {
+  id           String     @id @default(cuid())
+  code         String     @unique // lưu UPPERCASE; so khớp không phân biệt hoa thường
+  description  String?
+  type         CouponType
+  value        Int // PERCENT: 1-100; FIXED: số tiền VND; FREESHIP: 0
+  maxDiscount  Int? // PERCENT: trần giảm; FREESHIP: trần giảm phí ship (null = miễn toàn bộ)
+  minOrder     Int        @default(0)
+  startsAt     DateTime?
+  endsAt       DateTime?
+  usageLimit   Int?
+  perUserLimit Int?
+  usedCount    Int        @default(0)
+  scope        Json? // {"categoryIds":[...],"productIds":[...]}; null/rỗng = toàn bộ
+  isActive     Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  orders      Order[]
+  redemptions CouponRedemption[]
+
+  @@index([isActive, endsAt])
+}
+
+model CouponRedemption {
+  id         String    @id @default(cuid())
+  couponId   String
+  orderId    String    @unique
+  userId     String?
+  email      String // định danh lượt dùng của guest (perUserLimit)
+  releasedAt DateTime? // đơn bị hủy -> hoàn lượt
+  createdAt  DateTime  @default(now())
+
+  coupon Coupon @relation(fields: [couponId], references: [id], onDelete: Restrict)
+  order  Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  user   User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([couponId, userId])
+  @@index([couponId, email])
+}
+
+// ───────────── Đánh giá, cấu hình, audit ─────────────
+
+model Review {
+  id          String       @id @default(cuid())
+  productId   String
+  userId      String
+  orderItemId String       @unique
+  rating      Int // 1..5
+  content     String       @default("")
+  images      String[]     @default([])
+  status      ReviewStatus @default(PUBLISHED)
+  reply       String?
+  repliedAt   DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  product   Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  orderItem OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
+
+  @@index([productId, status, createdAt])
+  @@index([userId])
+}
+
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  action    String // "product.update", "order.status", "user.role"...
+  entity    String
+  entityId  String?
+  diff      Json?
+  ip        String?
+  createdAt DateTime @default(now())
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([entity, entityId])
+  @@index([actorId, createdAt])
+  @@index([createdAt])
+}

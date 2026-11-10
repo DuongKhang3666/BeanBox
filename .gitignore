@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Env (chỉ commit .env.example)
+.env
+.env.*
+!.env.example
+
+# Build output
+dist/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+
+# Uploads do người dùng (giữ lại ảnh seed)
+backend/uploads/*
+!backend/uploads/seed/
+
+# Logs & OS
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/*
+!.vscode/extensions.json
