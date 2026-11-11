@@ -35,6 +35,7 @@ export function ProductCard({
           src={product.primaryImage?.url}
           alt={product.primaryImage?.alt}
           name={product.name}
+          className="w-full"
           priority={priority}
           sizes="(min-width: 1024px) 25vw, (min-width: 768px) 33vw, 50vw"
         />

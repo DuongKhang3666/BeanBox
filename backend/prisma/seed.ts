@@ -2,6 +2,8 @@
 import 'dotenv/config';
 import argon2 from 'argon2';
 import { Prisma, PrismaClient, Role, CouponType } from '@prisma/client';
+import { resolveLocation } from '../src/modules/locations/locations.data.js';
+import { SEED_ADDRESSES, SEED_CUSTOMER_EMAIL } from './seed-data/addresses.js';
 import { BRANDS, CATEGORIES } from './seed-data/catalog.js';
 import { seedProducts } from './seed-data/seed-products.js';
 
@@ -62,6 +64,28 @@ async function seedUsers() {
   }
 }
 
+/** Chỉ tạo khi customer chưa có địa chỉ nào: idempotent, không đè dữ liệu người dùng. */
+async function seedAddresses(): Promise<number> {
+  const user = await prisma.user.findUnique({ where: { email: SEED_CUSTOMER_EMAIL } });
+  if (!user) throw new Error(`Không tìm thấy ${SEED_CUSTOMER_EMAIL} để seed địa chỉ`);
+  if ((await prisma.address.count({ where: { userId: user.id } })) > 0) return 0;
+  // Tạo mặc định trước, địa chỉ còn lại sau (createdAt tăng dần).
+  for (const a of SEED_ADDRESSES) {
+    const loc = resolveLocation(a.provinceCode, a.wardCode);
+    await prisma.address.create({
+      data: {
+        userId: user.id,
+        fullName: a.fullName,
+        phone: a.phone,
+        line1: a.line1,
+        isDefault: a.isDefault,
+        ...loc,
+      },
+    });
+  }
+  return SEED_ADDRESSES.length;
+}
+
 async function seedCategories() {
   let order = 0;
   for (const c of CATEGORIES) {
@@ -95,6 +119,7 @@ const SETTINGS: Record<string, Prisma.InputJsonValue> = {
     other: { STANDARD: 35000, EXPRESS: 55000 },
   },
   'shipping.innerCityProvinceCodes': ['01', '79'],
+  'shipping.innerCityWardCodes': [],
   'shipping.freeShippingThreshold': 500000,
   'shipping.weightSurcharge': { freeGram: 2000, stepGram: 1000, feePerStep: 5000 },
   'order.paymentExpiryMinutes': 15,
@@ -155,12 +180,17 @@ async function main() {
     throw new Error('Seed bị từ chối khi NODE_ENV=production');
   }
   await seedUsers();
+  const addressCount = await seedAddresses();
   await seedCategories();
   await seedBrands();
   const productCount = await seedProducts(prisma);
   await seedSettings();
   await seedCoupons();
-  console.log('Seed hoàn tất: 3 tài khoản, danh mục, thương hiệu, setting, 4 coupon.');
+  console.log(
+    'Seed hoàn tất: 3 tài khoản, ' +
+      addressCount +
+      ' địa chỉ mẫu mới, danh mục, thương hiệu, setting, 4 coupon.',
+  );
   console.log('Đã seed ' + productCount + ' sản phẩm.');
 }
 

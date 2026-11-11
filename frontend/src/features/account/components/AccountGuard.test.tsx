@@ -46,7 +46,7 @@ describe("AccountGuard", () => {
     expect(screen.queryByText("Nội dung riêng tư")).not.toBeInTheDocument();
   });
 
-  it("authenticated -> nội dung + điều hướng, đánh dấu mục hiện tại, Đơn hàng không bấm được", () => {
+  it("authenticated -> nội dung + điều hướng, đánh dấu mục hiện tại, có link Đơn hàng", () => {
     auth = { status: "authenticated", logout: async () => {} };
     pathname = "/tai-khoan/dia-chi";
     render(
@@ -60,8 +60,11 @@ describe("AccountGuard", () => {
       "page",
     );
     expect(screen.getByRole("link", { name: "Hồ sơ" })).not.toHaveAttribute("aria-current");
-    expect(screen.queryByRole("link", { name: /Đơn hàng/ })).not.toBeInTheDocument();
-    expect(screen.getByText("Sắp có")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Đơn hàng" })).toHaveAttribute(
+      "href",
+      "/tai-khoan/don-hang",
+    );
+    expect(screen.getByRole("link", { name: "Đơn hàng" })).not.toHaveAttribute("aria-current");
     expect(replace).not.toHaveBeenCalled();
   });
 

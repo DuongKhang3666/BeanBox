@@ -34,9 +34,9 @@ export function makeAddress(over: Partial<Address> = {}): Address {
     fullName: "Nguyễn Văn An",
     phone: "0901234567",
     provinceCode: "79",
-    provinceName: "Tỉnh Mẫu",
-    wardCode: "26734",
-    wardName: "Phường Mẫu",
+    provinceName: "Thành phố Hồ Chí Minh",
+    wardCode: "26740",
+    wardName: "Phường Sài Gòn",
     line1: "12 Đường Số 1",
     isDefault: true,
     createdAt: "2026-11-10T08:30:00.000Z",
@@ -49,3 +49,16 @@ export function bodyOf(fetchMock: { mock: { calls: unknown[][] } }, n: number): 
   const init = fetchMock.mock.calls[n]![1] as RequestInit;
   return JSON.parse(init.body as string);
 }
+
+/** Fixture danh mục nhỏ dùng mã thật từ backend/data/provinces-wards.json. */
+export const PROVINCES = [
+  { code: "01", name: "Thành phố Hà Nội" },
+  { code: "79", name: "Thành phố Hồ Chí Minh" },
+];
+export const WARDS: Record<string, { code: string; name: string }[]> = {
+  "01": [
+    { code: "00004", name: "Phường Ba Đình" },
+    { code: "00070", name: "Phường Hoàn Kiếm" },
+  ],
+  "79": [{ code: "26740", name: "Phường Sài Gòn" }],
+};

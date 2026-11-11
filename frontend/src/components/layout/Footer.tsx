@@ -32,7 +32,7 @@ function LinkList({
 
 export function Footer() {
   return (
-    <footer className="mt-16 bg-coffee-900 text-cream-200">
+    <footer className="mt-16 print:hidden bg-coffee-900 text-cream-200">
       <Container className="grid gap-8 py-10 sm:grid-cols-2 lg:grid-cols-4">
         <div>
           <p className="font-serif text-2xl font-bold text-cream-50">BeanBox</p>

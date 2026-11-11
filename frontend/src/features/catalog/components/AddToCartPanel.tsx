@@ -3,6 +3,8 @@
 import { useId, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Label } from "@/components/ui/Input";
+import { useCart } from "@/features/cart/CartProvider";
+import { cartErrorMessage } from "@/features/cart/messages";
 import { cn } from "@/lib/cn";
 import type { Variant } from "@/types/catalog";
 import { formatPlainDate, formatSaleDate } from "../dates";
@@ -24,7 +26,9 @@ const STOCK_STYLE = {
 export function AddToCartPanel({ variants }: { variants: Variant[] }) {
   const [selectedId, setSelectedId] = useState(() => pickDefaultVariant(variants)?.id ?? "");
   const [quantity, setQuantity] = useState(1);
+  const [error, setError] = useState<string | null>(null);
   const qtyId = useId();
+  const { addItem, openMiniCart, pending } = useCart();
 
   const variant = variants.find((v) => v.id === selectedId) ?? pickDefaultVariant(variants);
   if (!variant) {
@@ -36,6 +40,17 @@ export function AddToCartPanel({ variants }: { variants: Variant[] }) {
   const clamp = (n: number) => Math.min(max, Math.max(1, Number.isFinite(n) ? Math.trunc(n) : 1));
   const qty = clamp(quantity);
   const compareAt = variant.isOnSale ? variant.price : null;
+
+  async function onAdd() {
+    if (!variant || pending.adding) return;
+    setError(null);
+    try {
+      await addItem(variant.id, qty);
+      openMiniCart();
+    } catch (e) {
+      setError(cartErrorMessage(e));
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -104,11 +119,19 @@ export function AddToCartPanel({ variants }: { variants: Variant[] }) {
         </div>
       ) : null}
 
-      {/* TODO(M3): nối với API giỏ hàng (POST /cart/items) và bỏ disabled ở nhánh còn hàng. */}
-      <Button size="lg" disabled className="w-full sm:w-auto sm:min-w-56">
-        {outOfStock ? "Hết hàng" : "Thêm vào giỏ"}
+      <Button
+        size="lg"
+        className="w-full sm:w-auto sm:min-w-56"
+        disabled={outOfStock || pending.adding}
+        onClick={onAdd}
+      >
+        {outOfStock ? "Hết hàng" : pending.adding ? "Đang thêm..." : "Thêm vào giỏ"}
       </Button>
-      {!outOfStock ? <p className="text-sm text-coffee-600">Giỏ hàng sẽ sớm ra mắt.</p> : null}
+      {error ? (
+        <p role="alert" className="text-sm font-medium text-danger-600">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }

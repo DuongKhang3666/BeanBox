@@ -2,7 +2,7 @@ import express from 'express';
 import request from 'supertest';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
-import { createApp } from '../src/app.js';
+import { createApp, redactUrlForLog } from '../src/app.js';
 import { AppError } from '../src/lib/errors.js';
 import { prisma } from '../src/lib/prisma.js';
 import { asyncHandler } from '../src/lib/asyncHandler.js';
@@ -155,5 +155,16 @@ describe('health khi DB lỗi', () => {
     spy.mockRestore();
     expect(res.status).toBe(503);
     expect(res.body.error.code).toBe('SERVICE_UNAVAILABLE');
+  });
+});
+
+describe('redactUrlForLog', () => {
+  it('ẩn query của /payments/* (chữ ký VNPay), giữ nguyên URL khác', () => {
+    expect(redactUrlForLog('/api/v1/payments/vnpay/ipn?vnp_SecureHash=abc&vnp_Amount=1')).toBe(
+      '/api/v1/payments/vnpay/ipn?[REDACTED]',
+    );
+    expect(redactUrlForLog('/api/v1/payments/vnpay/ipn')).toBe('/api/v1/payments/vnpay/ipn');
+    expect(redactUrlForLog('/api/v1/products?q=a')).toBe('/api/v1/products?q=a');
+    expect(redactUrlForLog(undefined)).toBeUndefined();
   });
 });

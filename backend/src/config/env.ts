@@ -31,6 +31,16 @@ export function ttlToSeconds(ttl: string): number {
   return m[2] === 's' ? n : m[2] === 'm' ? n * 60 : n * 3600;
 }
 
+export const DEFAULT_VNPAY_PAYMENT_URL = 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html';
+
+function isUrlWithProtocol(u: string, protocols: readonly string[]): boolean {
+  try {
+    return protocols.includes(new URL(u).protocol);
+  } catch {
+    return false;
+  }
+}
+
 const schema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -80,6 +90,7 @@ const schema = z
       .regex(/^\d+[smh]$/, 'ACCESS_TOKEN_TTL phải có dạng số + s|m|h, ví dụ 15m')
       .default('15m'),
     REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(7),
+    JOBS_ENABLED: z.enum(['true', 'false']).optional(),
     LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).optional(),
     SMTP_HOST: z.string().default('localhost'),
     SMTP_PORT: z.coerce.number().int().default(1025),
@@ -88,15 +99,39 @@ const schema = z
     MAIL_FROM: z.string().default('BeanBox <no-reply@beanbox.local>'),
     VNPAY_TMN_CODE: z.string().optional(),
     VNPAY_HASH_SECRET: z.string().optional(),
-    VNPAY_RETURN_URL: z.string().optional(),
-    STRIPE_SECRET_KEY: z.string().optional(),
+    VNPAY_PAYMENT_URL: z
+      .string()
+      .default(DEFAULT_VNPAY_PAYMENT_URL)
+      .refine((u) => isUrlWithProtocol(u, ['https:']), 'VNPAY_PAYMENT_URL phải là URL https'),
+    /** Mặc định `${WEB_APP_URL}/thanh-toan/ket-qua?provider=vnpay` (tính ở bước transform). */
+    VNPAY_RETURN_URL: z
+      .string()
+      .refine(
+        (u) => isUrlWithProtocol(u, ['http:', 'https:']),
+        'VNPAY_RETURN_URL phải là URL http(s)',
+      )
+      .optional(),
+    // D-014: chỉ khóa test. Thông báo lỗi KHÔNG chứa giá trị khóa.
+    STRIPE_SECRET_KEY: z
+      .string()
+      .refine(
+        (k) => k.startsWith('sk_test_'),
+        'STRIPE_SECRET_KEY phải bắt đầu bằng sk_test_ (khóa live bị từ chối)',
+      )
+      .optional(),
     STRIPE_WEBHOOK_SECRET: z.string().optional(),
+    ORDER_RATE_LIMIT_PER_MIN: z.coerce.number().int().positive().default(10),
+    COUPON_RATE_LIMIT_PER_MIN: z.coerce.number().int().positive().default(10),
+    QUOTE_RATE_LIMIT_PER_MIN: z.coerce.number().int().positive().default(30),
     SEED_ADMIN_PASSWORD: z.string().optional(),
     SEED_STAFF_PASSWORD: z.string().optional(),
     SEED_CUSTOMER_PASSWORD: z.string().optional(),
   })
-  .transform(({ COOKIE_SECURE, ...v }) => ({
+  .transform(({ COOKIE_SECURE, JOBS_ENABLED, ...v }) => ({
     ...v,
+    VNPAY_RETURN_URL: v.VNPAY_RETURN_URL ?? `${v.WEB_APP_URL}/thanh-toan/ket-qua?provider=vnpay`,
+    /** Mặc định true; NODE_ENV=test luôn false. */
+    JOBS_ENABLED: v.NODE_ENV === 'test' ? false : JOBS_ENABLED !== 'false',
     /** Đã tính: mặc định true khi production. */
     COOKIE_SECURE: COOKIE_SECURE ? COOKIE_SECURE === 'true' : v.NODE_ENV === 'production',
     accessTokenTtlSec: ttlToSeconds(v.ACCESS_TOKEN_TTL),

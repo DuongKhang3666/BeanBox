@@ -28,6 +28,8 @@ COPY package.json ./
 COPY prisma ./prisma
 # Ảnh tĩnh phục vụ tại /uploads (ảnh seed nằm trong uploads/seed)
 COPY uploads ./uploads
+# Danh mục tỉnh/phường (đọc lúc khởi động, fail-fast nếu thiếu): backend/data
+COPY data ./data
 USER node
 EXPOSE 4000
 CMD ["sh", "-c", "npx prisma migrate deploy && node dist/server.js"]

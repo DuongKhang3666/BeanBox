@@ -21,9 +21,7 @@ const addr = (over: Record<string, unknown> = {}) => ({
   fullName: 'Nguyễn Văn An',
   phone: '0901234567',
   provinceCode: '79',
-  provinceName: 'Thành phố Hồ Chí Minh',
-  wardCode: '26734',
-  wardName: 'Phường Bến Nghé',
+  wardCode: '26740',
   line1: '12 Lê Lợi',
   ...over,
 });
@@ -181,7 +179,6 @@ describe('Sổ địa chỉ', () => {
     }
     expect((await post(u, addr({ line1: 'abc' }))).status).toBe(400);
     expect((await post(u, addr({ phone: '12' }))).status).toBe(400);
-    expect((await post(u, addr({ provinceName: undefined }))).status).toBe(400);
     expect(await list(u)).toHaveLength(0);
   });
 
@@ -265,50 +262,93 @@ describe('Sổ địa chỉ', () => {
     expect(await list(u)).toEqual([]);
   });
 
-  it('PATCH: sửa thường, ràng buộc cặp mã/tên, isDefault:false bị bỏ qua', async () => {
+  it('tạo: tên do client gửi bị bỏ qua, server lưu tên từ danh mục', async () => {
+    const u = await mkUser('names');
+    const r = await post(u, addr({ provinceName: 'Tên giả', wardName: 'Phường giả' }));
+    expect(r.status).toBe(201);
+    expect(r.body.data).toMatchObject({
+      provinceCode: '79',
+      provinceName: 'Thành phố Hồ Chí Minh',
+      wardCode: '26740',
+      wardName: 'Phường Sài Gòn',
+    });
+    expect((await list(u))[0]).toMatchObject({ id: r.body.data.id });
+  });
+
+  it('tạo: đối chiếu danh mục -> 400 đúng field/message, không ghi gì', async () => {
+    const u = await mkUser('xref');
+    const cases: Array<[Record<string, unknown>, string, string]> = [
+      [{ provinceCode: '01' }, 'wardCode', 'Phường/xã không thuộc tỉnh/thành đã chọn'],
+      [{ provinceCode: '99' }, 'provinceCode', 'Tỉnh/thành không tồn tại'],
+      [{ wardCode: '99999' }, 'wardCode', 'Phường/xã không tồn tại'],
+    ];
+    for (const [over, field, message] of cases) {
+      const r = await post(u, addr(over));
+      expect(r.status, JSON.stringify(over)).toBe(400);
+      expect(r.body.error.code).toBe('VALIDATION_ERROR');
+      expect(r.body.error.details).toEqual([{ field, message }]);
+    }
+    expect(await list(u)).toEqual([]);
+  });
+
+  it('PATCH: sửa thường, đối chiếu danh mục, ràng buộc cặp mã, isDefault:false bị bỏ qua', async () => {
     const u = await mkUser('pat');
     const a = await post(u);
     const url = `${API}/me/addresses/${a.body.data.id}`;
     const patch = (body: Record<string, unknown>) => request(app).patch(url).set(u.auth).send(body);
+    const fieldsOf = (r: request.Response) =>
+      (r.body.error.details as Array<{ field: string }>).map((d) => d.field);
 
     const ok = await patch({ line1: '99 Pasteur', phone: '+84 912 345 678' });
     expect(ok.status).toBe(200);
     expect(ok.body.data).toMatchObject({ line1: '99 Pasteur', phone: '0912345678' });
 
-    const full = await patch({
+    // chỉ wardCode thuộc tỉnh khác (79 hiện tại) -> 400, dữ liệu không đổi
+    const otherProvince = await patch({ wardCode: '00070' });
+    expect(otherProvince.status).toBe(400);
+    expect(otherProvince.body.error.details).toEqual([
+      { field: 'wardCode', message: 'Phường/xã không thuộc tỉnh/thành đã chọn' },
+    ]);
+
+    // đổi cả tỉnh + phường hợp lệ
+    const full = await patch({ provinceCode: '01', wardCode: '00004' });
+    expect(full.status).toBe(200);
+    expect(full.body.data).toMatchObject({
       provinceCode: '01',
       provinceName: 'Thành phố Hà Nội',
-      wardCode: '00001',
+      wardCode: '00004',
       wardName: 'Phường Ba Đình',
     });
-    expect(full.status).toBe(200);
-    expect(full.body.data).toMatchObject({ provinceCode: '01', wardCode: '00001' });
 
-    const wardOnly = await patch({ wardCode: '00004', wardName: 'Phường Phúc Xá' });
+    // chỉ wardCode cùng tỉnh hiện tại -> 200, wardName cập nhật (tên client gửi bị bỏ qua)
+    const wardOnly = await patch({ wardCode: '00070', wardName: 'Tên giả' });
     expect(wardOnly.status).toBe(200);
-
-    const fieldsOf = (r: request.Response) =>
-      (r.body.error.details as Array<{ field: string }>).map((d) => d.field);
+    expect(wardOnly.body.data).toMatchObject({
+      provinceCode: '01',
+      wardCode: '00070',
+      wardName: 'Phường Hoàn Kiếm',
+    });
 
     const bad: Array<[Record<string, unknown>, string]> = [
       [{}, ''],
-      [{ provinceCode: '79' }, 'provinceName'],
-      [{ provinceCode: '79', provinceName: 'TP HCM' }, 'wardCode'],
-      [{ provinceName: 'TP HCM' }, 'provinceCode'],
-      [{ wardCode: '26734' }, 'wardName'],
-      [{ wardName: 'Phường Bến Nghé' }, 'wardCode'],
-      [{ wardCode: '1234', wardName: 'Phường X' }, 'wardCode'],
-      [{ provinceCode: '1', provinceName: 'TP', wardCode: '26734', wardName: 'Phường X' }, ''],
+      [{ provinceCode: '79' }, 'wardCode'],
+      [{ provinceCode: '99', wardCode: '00070' }, 'provinceCode'],
+      [{ provinceCode: '01', wardCode: '99999' }, 'wardCode'],
+      [{ provinceCode: '79', wardCode: '00070' }, 'wardCode'],
+      [{ wardCode: '1234' }, 'wardCode'],
+      [{ provinceCode: '1', wardCode: '26740' }, 'provinceCode'],
     ];
     for (const [body, field] of bad) {
       const r = await patch(body);
       expect(r.status, JSON.stringify(body)).toBe(400);
       if (field) expect(fieldsOf(r)).toContain(field);
     }
+    expect((await list(u))[0]).toBeDefined();
 
     const f = await patch({ isDefault: false });
     expect(f.status).toBe(200);
     expect(f.body.data.isDefault).toBe(true);
+    expect(f.body.data).toMatchObject({ provinceCode: '01', wardCode: '00070' });
     expect((await list(u))[0]!.isDefault).toBe(true);
   });
 });
@@ -333,6 +373,13 @@ describe('IDOR địa chỉ', () => {
       expect(r.body.error.code).toBe('NOT_FOUND');
       expect(r.body.error.message).toBe('Không tìm thấy địa chỉ');
     }
+    // B gửi mã sai lên địa chỉ của A: vẫn 404 (kiểm quyền trước đối chiếu), A không đổi
+    const wrong = await request(app)
+      .patch(url)
+      .set(b.auth)
+      .send({ provinceCode: '99', wardCode: '99999' });
+    expect(wrong.status).toBe(404);
+    expect(wrong.body.error.message).toBe('Không tìm thấy địa chỉ');
     expect(
       (await request(app).post(`${API}/me/addresses/rac-khong-co/default`).set(b.auth)).status,
     ).toBe(404);
@@ -342,7 +389,11 @@ describe('IDOR địa chỉ', () => {
     const rowsA = await list(a);
     expect(rowsA).toHaveLength(2);
     expect(rowsA.map((r) => r.line1).sort()).toEqual(['12 Lê Lợi', '2 đường của A']);
-    expect(rowsA.find((r) => r.id === id)?.isDefault).toBe(true);
+    expect(rowsA.find((r) => r.id === id)).toMatchObject({
+      isDefault: true,
+      provinceCode: '79',
+      wardCode: '26740',
+    });
     expect(rowsA.find((r) => r.id === second.body.data.id)?.isDefault).toBe(false);
   });
 });

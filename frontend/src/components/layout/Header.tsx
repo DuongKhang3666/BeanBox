@@ -2,34 +2,11 @@ import Link from "next/link";
 import { Container } from "@/components/ui/Container";
 import { MAIN_NAV } from "@/lib/site";
 import { HeaderAccount } from "./HeaderAccount";
-
-function CartIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className="h-6 w-6"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      aria-hidden="true"
-    >
-      <path
-        d="M3 4h2l2.4 11.2a1 1 0 0 0 1 .8h8.8a1 1 0 0 0 1-.78L20 8H6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <circle cx="9" cy="20" r="1.2" />
-      <circle cx="17" cy="20" r="1.2" />
-    </svg>
-  );
-}
-
-const iconLink =
-  "inline-flex h-11 w-11 items-center justify-center rounded-lg text-coffee-800 hover:bg-coffee-100";
+import { HeaderCart } from "./HeaderCart";
 
 export function Header() {
   return (
-    <header className="sticky top-0 z-30 border-b border-coffee-200 bg-cream-50/95 backdrop-blur">
+    <header className="sticky top-0 z-30 print:hidden border-b border-coffee-200 bg-cream-50/95 backdrop-blur">
       <Container className="flex flex-wrap items-center gap-x-4 gap-y-2 py-2">
         <Link
           href="/"
@@ -61,7 +38,9 @@ export function Header() {
           action="/tim-kiem"
           method="get"
           role="search"
-          className="ml-auto min-w-0 flex-1 md:max-w-xs"
+          // min-w: không để link/icon bên cạnh ép ô tìm kiếm xuống còn vài chục px;
+          // thiếu chỗ thì flex-wrap đẩy cả ô xuống hàng dưới.
+          className="ml-auto min-w-40 flex-1 md:max-w-xs lg:min-w-48"
         >
           <label htmlFor="site-search" className="sr-only">
             Tìm kiếm sản phẩm
@@ -76,10 +55,8 @@ export function Header() {
           />
         </form>
 
-        <div className="flex items-center">
-          <Link href="/gio-hang" className={iconLink} aria-label="Giỏ hàng">
-            <CartIcon />
-          </Link>
+        <div className="flex shrink-0 items-center">
+          <HeaderCart />
           <HeaderAccount />
         </div>
       </Container>

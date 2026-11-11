@@ -407,6 +407,7 @@ Base: `/api/v1` · JSON · lỗi thống nhất `{ "error": { "code", "message",
 
 **Admin** (`/admin`, yêu cầu STAFF/ADMIN)
 - Dashboard · Sản phẩm · Danh mục · Thương hiệu · Tồn kho · Đơn hàng · Mã giảm giá · Khách hàng · Đánh giá · Cài đặt
+- Route M4 (D-013): `/admin` (chuyển tới `/admin/don-hang`), `/admin/don-hang`, `/admin/don-hang/[code]`, `/admin/don-hang/[code]/in` (phiếu giao, in bằng trình duyệt), `/admin/ton-kho`, `/admin/ton-kho/lich-su`, `/admin/san-pham`, `/admin/san-pham/moi`, `/admin/san-pham/[id]`, `/admin/danh-muc`, `/admin/thuong-hieu`. Mọi trang admin `noindex` và không đưa vào sitemap.
 
 ---
 
@@ -425,9 +426,9 @@ Base: `/api/v1` · JSON · lỗi thống nhất `{ "error": { "code", "message",
 |---|---|---|
 | **M0 – Nền tảng** | Khởi tạo repo (`frontend/`, `backend/`), Docker Compose (Postgres), Prisma schema, seed, CI lint/test, `api-contract.md` | Chạy được `docker compose up` |
 | **M1 – Catalog** | API + UI danh mục, danh sách, lọc, tìm kiếm, chi tiết sản phẩm | Duyệt sản phẩm được |
-| **M2 – Auth & Tài khoản** | Đăng ký/đăng nhập/refresh, hồ sơ, sổ địa chỉ, nạp dữ liệu tỉnh/phường từ file nguồn do chủ dự án cung cấp (nạp dữ liệu tỉnh/phường: bị chặn chờ file – D-008) | Khách có tài khoản |
+| **M2 – Auth & Tài khoản** | Đăng ký/đăng nhập/refresh, hồ sơ, sổ địa chỉ, nạp dữ liệu tỉnh/phường từ file nguồn do chủ dự án cung cấp (`/locations`, đối chiếu mã khi lưu địa chỉ – D-006, đã nạp 2026-11-11) | Khách có tài khoản |
 | **M3 – Giỏ hàng & Checkout COD** | Giỏ (guest + merge), quote, tạo đơn, tồn kho, email | **MVP mua hàng end-to-end** |
-| **M4 – Admin cơ bản** | CRUD sản phẩm/biến thể/ảnh, danh mục, tồn kho, xử lý đơn | Vận hành được cửa hàng |
+| **M4 – Admin cơ bản** | CRUD sản phẩm/biến thể/ảnh, danh mục, tồn kho, xử lý đơn | Vận hành được cửa hàng. Quy tắc nghiệp vụ: D-013; chi tiết API: `api-contract.md` §12 |
 | **M5 – Thanh toán online & Khuyến mãi** | VNPay sandbox/Stripe test, IPN/webhook, mã giảm giá | v1 |
 | **M6 – Hoàn thiện v1** | Đánh giá, wishlist, dashboard, SEO, E2E test, audit bảo mật | v1 chạy ổn định trên localhost |
 | **M7 – Deploy demo** | Chọn nền tảng, cấu hình môi trường, deploy FE/BE/DB, seed dữ liệu demo | Link demo công khai (chỉ làm khi M0–M6 đã ổn) |
@@ -442,7 +443,7 @@ Base: `/api/v1` · JSON · lỗi thống nhất `{ "error": { "code", "message",
 **Giả định**
 - Một cửa hàng, một kho, giao hàng toàn quốc qua đơn vị vận chuyển do cửa hàng tự liên hệ.
 - Thanh toán online chỉ ở môi trường sandbox/test.
-- Dữ liệu tỉnh/thành – phường/xã theo hành chính VN **2 cấp** (sau sáp nhập 2025), dạng JSON tĩnh, **do chủ dự án cung cấp file nguồn** và chỉ nạp ở M2. Developer không tự tạo/bịa dữ liệu; chưa có file thì endpoint `/locations` và validate địa chỉ chưa làm (D-006).
+- Dữ liệu tỉnh/thành – phường/xã theo hành chính VN **2 cấp** (sau sáp nhập 2025), dạng JSON tĩnh, **do chủ dự án cung cấp file nguồn** và nạp ở M2 (`backend/data/provinces-wards.json`, 34 tỉnh / 3.321 phường). Developer không tự tạo/bịa dữ liệu; server phục vụ `/locations` và đối chiếu mã tỉnh/phường khi lưu địa chỉ (D-006).
 
 **Đã chốt (2026-11-10)**
 | # | Câu hỏi | Quyết định |
@@ -462,9 +463,9 @@ Base: `/api/v1` · JSON · lỗi thống nhất `{ "error": { "code", "message",
 | 9 | Phụ phí khối lượng (D-003) | `5.000 × ceil(max(0, g − 2000) / 1000)`; freeship Tiêu chuẩn miễn cả phụ phí, Nhanh không |
 | 10 | Lượt mã giảm giá (D-004) | Giữ lượt ngay khi tạo đơn bằng UPDATE có điều kiện; hoàn lượt khi `CANCELLED` |
 | 11 | Khách vãng lai xem đơn (D-005) | Trang `/tra-cuu-don-hang` (mã đơn + SĐT); không `viewToken`; đơn guest không tự gắn vào tài khoản |
-| 12 | Vùng ship & dữ liệu hành chính (D-006) | Nội thành = toàn bộ Hà Nội (`01`) + TP.HCM (`79`); dữ liệu tỉnh/phường do chủ dự án cung cấp, nạp ở M2 |
+| 12 | Vùng ship & dữ liệu hành chính (D-006) | Nội thành = toàn bộ Hà Nội (`01`) + TP.HCM (`79`) (cần chủ dự án xác nhận trước M3, xem D-006); dữ liệu tỉnh/phường do chủ dự án cung cấp, đã nạp ở M2 |
 | 13 | Chuẩn hóa SĐT (D-007, đã duyệt) | Lưu dạng `0xxxxxxxxx`; hủy đơn guest xác minh bằng SĐT; FR-CHK-10 lên mức M |
-| 14 | Sổ địa chỉ khi chưa có file hành chính (D-008) | Tạm thời: client nhập tên tỉnh/phường, server chỉ kiểm định dạng mã; `/locations` bị chặn chờ file |
+| 14 | Sổ địa chỉ (D-008, đã đóng 2026-11-11) | Client chỉ gửi mã tỉnh/phường; server đối chiếu danh mục và tự điền tên; `/locations` đã triển khai |
 | 15 | IP client cho rate limit (D-009) | `TRUST_PROXY` cấu hình được, backend bind `127.0.0.1`, SSR dùng `X-Internal-Secret` để được miễn rate limit chung |
 
 ---

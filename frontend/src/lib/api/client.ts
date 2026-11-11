@@ -64,6 +64,10 @@ export interface RequestOptions {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   /** Body JSON (tự stringify). */
   body?: unknown;
+  /** Body nhị phân thô (vd. upload ảnh); gửi nguyên, không stringify. Ưu tiên hơn `body`. */
+  rawBody?: Blob;
+  /** Content-Type cho `rawBody`; mặc định lấy `rawBody.type`. */
+  contentType?: string;
   query?: Query;
   headers?: Record<string, string>;
   signal?: AbortSignal;
@@ -126,7 +130,12 @@ export class ApiClient {
 
   private async send(path: string, opts: RequestOptions): Promise<Response> {
     const headers: Record<string, string> = { Accept: "application/json", ...opts.headers };
-    if (opts.body !== undefined) headers["Content-Type"] = "application/json";
+    if (opts.rawBody !== undefined) {
+      const type = opts.contentType ?? opts.rawBody.type;
+      if (type) headers["Content-Type"] = type;
+    } else if (opts.body !== undefined) {
+      headers["Content-Type"] = "application/json";
+    }
     const token = tokenStore.get();
     if (token && !opts.skipAuth) headers["Authorization"] = `Bearer ${token}`;
     const cartToken = this.getCartToken();
@@ -137,7 +146,12 @@ export class ApiClient {
       return await doFetch(this.buildUrl(path, opts.query), {
         method: opts.method ?? "GET",
         headers,
-        body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+        body:
+          opts.rawBody !== undefined
+            ? opts.rawBody
+            : opts.body !== undefined
+              ? JSON.stringify(opts.body)
+              : undefined,
         credentials: "same-origin",
         signal: opts.signal,
       });

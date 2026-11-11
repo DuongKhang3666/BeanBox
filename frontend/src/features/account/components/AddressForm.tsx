@@ -14,21 +14,12 @@ import {
 import { ApiError } from "@/lib/api/errors";
 import type { Address, CreateAddressInput, UpdateAddressInput } from "@/types/account";
 import { createAddress, updateAddress } from "../api";
-import {
-  validateLine1,
-  validateLocationName,
-  validateProvinceCode,
-  validateWardCode,
-} from "../validation";
-import {
-  LOCATION_FIELDS,
-  LocationFieldsTemporary,
-  type LocationValues,
-} from "./LocationFieldsTemporary";
+import { validateLine1, validateProvinceCode, validateWardCode } from "../validation";
+import { LOCATION_FIELDS, LocationFields, type LocationValues } from "./LocationFields";
 
 const FIELDS = ["fullName", "phone", "line1", ...LOCATION_FIELDS] as const;
 
-/** Payload sửa: chỉ trường đổi; ràng buộc D-008 về mã đi kèm tên. */
+/** Payload sửa: chỉ trường đổi. Đổi tỉnh -> gửi cả provinceCode + wardCode; chỉ đổi phường -> wardCode. Không gửi tên. */
 export function buildUpdatePayload(
   address: Address,
   v: {
@@ -43,26 +34,17 @@ export function buildUpdatePayload(
   const phone = normalizePhone(v.phone);
   const line1 = v.line1.trim();
   const provinceCode = v.provinceCode.trim();
-  const provinceName = v.provinceName.trim();
   const wardCode = v.wardCode.trim();
-  const wardName = v.wardName.trim();
 
   if (fullName !== address.fullName) payload.fullName = fullName;
   if (phone !== address.phone) payload.phone = phone;
   if (line1 !== address.line1) payload.line1 = line1;
 
-  const provinceChanged =
-    provinceCode !== address.provinceCode || provinceName !== address.provinceName;
-  const wardChanged = wardCode !== address.wardCode || wardName !== address.wardName;
-  if (provinceChanged) {
-    // Đổi tỉnh kéo theo phường: gửi đủ 4 trường.
+  if (provinceCode !== address.provinceCode) {
     payload.provinceCode = provinceCode;
-    payload.provinceName = provinceName;
     payload.wardCode = wardCode;
-    payload.wardName = wardName;
-  } else if (wardChanged) {
+  } else if (wardCode !== address.wardCode) {
     payload.wardCode = wardCode;
-    payload.wardName = wardName;
   }
   if (v.isDefault && !address.isDefault) payload.isDefault = true;
   return payload;
@@ -85,15 +67,14 @@ export function AddressForm({
   const headingId = useId();
   const formRef = useRef<HTMLFormElement>(null);
   const busy = useRef(false);
+  const focusAfterSave = useRef(false);
 
   const [fullName, setFullName] = useState(address?.fullName ?? "");
   const [phone, setPhone] = useState(address?.phone ?? "");
   const [line1, setLine1] = useState(address?.line1 ?? "");
   const [loc, setLoc] = useState<LocationValues>({
     provinceCode: address?.provinceCode ?? "",
-    provinceName: address?.provinceName ?? "",
     wardCode: address?.wardCode ?? "",
-    wardName: address?.wardName ?? "",
   });
   const [isDefault, setIsDefault] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -103,6 +84,13 @@ export function AddressForm({
   useEffect(() => {
     formRef.current?.querySelector<HTMLElement>("input")?.focus();
   }, []);
+
+  useEffect(() => {
+    if (!saving && focusAfterSave.current) {
+      focusAfterSave.current = false;
+      focusFirstInvalid(FIELDS, errors);
+    }
+  }, [saving, errors]);
 
   const values = { fullName, phone, line1, isDefault, ...loc };
   const dirty = !address || Object.keys(buildUpdatePayload(address, values)).length > 0;
@@ -117,16 +105,12 @@ export function AddressForm({
     const phoneErr = phone.trim() ? validateOptionalPhone(phone) : "Vui lòng nhập số điện thoại";
     const lineErr = validateLine1(line1);
     const pcErr = validateProvinceCode(loc.provinceCode);
-    const pnErr = validateLocationName(loc.provinceName, "tên tỉnh/thành");
     const wcErr = validateWardCode(loc.wardCode);
-    const wnErr = validateLocationName(loc.wardName, "tên phường/xã");
     if (nameErr) fe.fullName = nameErr;
     if (phoneErr) fe.phone = phoneErr;
     if (lineErr) fe.line1 = lineErr;
     if (pcErr) fe.provinceCode = pcErr;
-    if (pnErr) fe.provinceName = pnErr;
     if (wcErr) fe.wardCode = wcErr;
-    if (wnErr) fe.wardName = wnErr;
     setErrors(fe);
     setFormError(undefined);
     if (Object.keys(fe).length > 0) {
@@ -145,9 +129,7 @@ export function AddressForm({
           fullName: fullName.trim(),
           phone: normalizePhone(phone),
           provinceCode: loc.provinceCode.trim(),
-          provinceName: loc.provinceName.trim(),
           wardCode: loc.wardCode.trim(),
-          wardName: loc.wardName.trim(),
           line1: line1.trim(),
           ...(isDefault ? { isDefault: true } : {}),
         };
@@ -166,7 +148,7 @@ export function AddressForm({
         const mapped = mapAuthError(err, FIELDS);
         setErrors(mapped.fieldErrors);
         setFormError(mapped.formError);
-        focusFirstInvalid(FIELDS, mapped.fieldErrors);
+        focusAfterSave.current = true; // fieldset còn disabled tới khi saving=false
       }
     } finally {
       busy.current = false;
@@ -219,11 +201,14 @@ export function AddressForm({
         readOnly={saving}
         required
       />
-      <LocationFieldsTemporary
+      <LocationFields
         values={loc}
         errors={errors}
-        onChange={(field, value) => setLoc((p) => ({ ...p, [field]: value }))}
+        onChange={setLoc}
         disabled={saving}
+        initialNames={
+          address ? { provinceName: address.provinceName, wardName: address.wardName } : undefined
+        }
       />
       {!address?.isDefault ? (
         <label className="flex min-h-11 items-center gap-3 text-coffee-900">

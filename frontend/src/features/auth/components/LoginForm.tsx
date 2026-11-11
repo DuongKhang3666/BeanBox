@@ -53,7 +53,7 @@ export function LoginForm() {
     setSubmitting(true);
     try {
       await login({ email: normalizeEmail(email), password });
-      // TODO(M3): nếu có cart token thì gọi POST /cart/merge rồi xóa token local.
+      // Gộp giỏ guest vào giỏ tài khoản do CartProvider xử lý khi auth chuyển sang authenticated.
       router.replace(safeRedirect(params.get("next")));
     } catch (err) {
       const mapped = mapAuthError(err, FIELDS);

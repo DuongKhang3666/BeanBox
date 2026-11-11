@@ -1,6 +1,10 @@
 # BeanBox – Thiết kế cơ sở dữ liệu
 
 > Phiên bản 0.3 · 2026-11-10 · PostgreSQL + Prisma 6.x.
+> Thay đổi 0.6: MIGRATION mới `m5_payment_refund` (D-015): thêm vào `Payment` các cột `refundedAt`, `refundNote`, `refundedById` (+ relation `refundedBy`/`User.paymentRefunds`) và `@@index([status])`; cập nhật giải thích `Payment` (§3).
+> Thay đổi 0.5: không đổi schema; quy tắc ghi AuditLog và InventoryMovement cho admin (api-contract §12).
+> Thay đổi 0.4: không đổi Prisma schema; thêm setting `shipping.innerCityWardCodes` (§6) và chốt phạm vi nội thành (§7 mục 4, D-006 cập nhật M3).
+> Thay đổi 0.3.1: không đổi Prisma schema; đường dẫn dữ liệu hành chính là `backend/data/provinces-wards.json` (đã có trong repo, 34 tỉnh / 3.321 phường); seed 2 địa chỉ mẫu cho customer (D-006, D-008 đã đóng).
 > Thay đổi 0.3: không đổi Prisma schema; chốt đồng bộ `Order.contactEmail/contactPhone` với requirements §7 (§3, §7 mục 1); seed chưa tạo địa chỉ mẫu cho customer cho tới khi có file hành chính (D-008, §6).
 > Thay đổi 0.2: không đổi Prisma schema; cập nhật giải thích `Coupon`/`CouponRedemption` (giữ lượt khi tạo đơn, D-004), SĐT lưu dạng chuẩn hóa (D-007), dữ liệu hành chính do chủ dự án cung cấp (D-006). Xem [`decisions.md`](decisions.md).
 >  Khối schema ở §2 sẽ được copy gần như nguyên văn vào `backend/prisma/schema.prisma`.
@@ -175,6 +179,7 @@ model User {
   couponRedemptions       CouponRedemption[]
   reviews                 Review[]
   auditLogs               AuditLog[]
+  paymentRefunds          Payment[] @relation("PaymentRefunds")
 
   @@index([role])
   @@index([createdAt])
@@ -549,15 +554,20 @@ model Payment {
   providerRef   String? // vnp_TxnRef / Stripe checkout session id
   amount        Int
   status        PaymentTxnStatus @default(PENDING)
-  rawPayload    Json?
+  rawPayload    Json? // đã bỏ trường chữ ký; không trả ra API
+  refundedAt    DateTime? // m5_payment_refund: admin ghi nhận hoàn tiền thủ công
+  refundNote    String?
+  refundedById  String?
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
 
-  order Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  order      Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  refundedBy User? @relation("PaymentRefunds", fields: [refundedById], references: [id], onDelete: SetNull)
 
   @@unique([provider, providerTxnId])
   @@index([orderId])
   @@index([providerRef])
+  @@index([status])
 }
 
 // ───────────── Khuyến mãi ─────────────
@@ -671,7 +681,7 @@ model AuditLog {
 | `Order` | `userId` null = khách vãng lai. `contactEmail/contactPhone` luôn có (đã đồng bộ requirements §7). `shippingAddress` là snapshot JSON. Tách `discountTotal` (giảm hàng) và `shippingDiscount` (giảm ship) để `grandTotal = subtotal - discountTotal + shippingFee - shippingDiscount`. `expiresAt` chỉ dùng cho `PENDING_PAYMENT`. `idempotencyKey` unique; `requestFingerprint` phát hiện cùng key khác payload |
 | `OrderItem` | Snapshot dòng hàng; `productId` kèm theo để review/báo cáo không cần join qua variant |
 | `OrderStatusHistory` | Mỗi lần đổi trạng thái 1 dòng (kể cả lúc tạo, `fromStatus=null`), có ai/khi nào/ghi chú |
-| `Payment` | Mỗi lần thử thanh toán online 1 dòng. COD không tạo Payment (trạng thái nằm ở `Order.paymentStatus`, chuyển `PAID` khi giao thành công). `unique(provider, providerTxnId)` chống xử lý IPN trùng |
+| `Payment` | Mỗi lần thử thanh toán online 1 dòng. COD không tạo Payment (trạng thái nằm ở `Order.paymentStatus`, chuyển `PAID` khi giao thành công). `unique(provider, providerTxnId)` chống xử lý IPN/webhook trùng. `providerRef` = `Payment.id` (VNPay `vnp_TxnRef`) hoặc Stripe Checkout Session id. Máy trạng thái (`api-contract.md` §13.5): `PENDING -> SUCCEEDED \| FAILED`, `FAILED -> SUCCEEDED` (thành công muộn đã xác thực), `SUCCEEDED -> REFUNDED` (admin, ghi `refundedAt`, `refundNote`, `refundedById`). `needsRefund` KHÔNG lưu cột: tính khi đọc = `SUCCEEDED` và (đơn `CANCELLED` hoặc có Payment `SUCCEEDED` khác tạo trước cùng đơn). `@@index([status])` phục vụ job hết hạn và lọc đơn cần hoàn tiền. Một đơn có thể có nhiều Payment (mỗi lần bấm thanh toán 1 dòng) |
 | `Coupon` | `code` lưu UPPERCASE. `usedCount` denormalize; tăng ngay khi tạo đơn (UPDATE có điều kiện `usedCount < usageLimit`, cùng transaction với trừ kho) và giảm khi đơn `CANCELLED` (D-004; `api-contract.md` §9.2, §10 mục 4) |
 | `CouponRedemption` | 1 dòng/đơn, tạo cùng lúc tạo đơn (sau khi giữ lượt thành công); `email` (lowercase) để áp `perUserLimit` cho guest; `releasedAt` đặt khi đơn `CANCELLED` (hủy, hết hạn, giao thất bại rồi hủy), đồng thời giảm `usedCount`; đếm lượt đã dùng = dòng có `releasedAt IS NULL` |
 | `Review` | `unique(orderItemId)` = mỗi dòng hàng đã mua 1 đánh giá. Chỉ khi đơn `DELIVERED` (service kiểm tra) |
@@ -745,9 +755,9 @@ Service phải cập nhật các cột này **trong cùng transaction** với th
 | Cột | Cập nhật khi | Cách tính |
 |---|---|---|
 | `Product.searchText` | Tạo/sửa product (name, tags, shortDesc) | `normalize(name + ' ' + tags.join(' ') + ' ' + shortDesc)`: lowercase, NFD, bỏ dấu kết hợp, `đ->d`, gộp khoảng trắng |
-| `Product.minPrice` | Tạo/sửa/xóa/bật tắt variant; đổi giá/sale; đổi trạng thái product | Min giá hiệu lực của variant `isActive AND deletedAt IS NULL` (không loại variant hết hàng). Không có variant -> 0 |
-| `Product.inStock` | Mỗi lần `stock` variant đổi (đặt đơn, hủy, nhập kho) | `EXISTS(variant active, chưa xóa, stock > 0)` |
-| `Product.soldCount` | Đơn chuyển `DELIVERED` (+qty); `RETURNED` (-qty) | Tổng `quantity` theo `productId` |
+| `Product.minPrice` | Tạo/sửa/xóa/bật tắt variant; đổi giá/sale; đổi trạng thái product; admin sửa giá/biến thể | Min giá hiệu lực của variant `isActive AND deletedAt IS NULL` (không loại variant hết hàng). Không có variant -> 0 |
+| `Product.inStock` | Mỗi lần `stock` variant đổi (đặt đơn, hủy, nhập kho, điều chỉnh tồn kho admin) | `EXISTS(variant active, chưa xóa, stock > 0)` |
+| `Product.soldCount` | Đơn chuyển `DELIVERED` (+qty; khi admin chuyển DELIVERED); `RETURNED` (-qty) | Tổng `quantity` theo `productId` |
 | `Product.ratingAvg/ratingCount` | Review tạo/sửa/ẩn/hiện | Trung bình và số lượng review `PUBLISHED` |
 | `Coupon.usedCount` | Tạo đơn có mã (+1, rồi tạo `CouponRedemption`); đơn `CANCELLED` (-1 nếu `UPDATE "CouponRedemption" SET "releasedAt" = now() WHERE "orderId" = $id AND "releasedAt" IS NULL` cập nhật được 1 dòng; idempotent) – D-004 | `UPDATE "Coupon" SET "usedCount" = "usedCount" + 1 WHERE "id" = $id AND "isActive" AND ("usageLimit" IS NULL OR "usedCount" < "usageLimit")`; 0 dòng -> rollback `COUPON_INVALID`. Sau đó đếm `CouponRedemption` chưa `releasedAt` theo `userId`/`email` để kiểm `perUserLimit` |
 
@@ -765,9 +775,9 @@ Mã đơn: `BB-` + `YYMMDD` (giờ Việt Nam, UTC+7) + `-` + 4 ký tự ngẫu 
 |---|---|---|
 | `admin@beanbox.local` | ADMIN | `SEED_ADMIN_PASSWORD` |
 | `staff@beanbox.local` | STAFF | `SEED_STAFF_PASSWORD` |
-| `customer@beanbox.local` | CUSTOMER (dự kiến kèm 2 địa chỉ, 1 mặc định – xem ghi chú dưới) | `SEED_CUSTOMER_PASSWORD` |
+| `customer@beanbox.local` | CUSTOMER (kèm 2 địa chỉ, 1 mặc định – xem ghi chú dưới) | `SEED_CUSTOMER_PASSWORD` |
 
-Ghi chú (D-008): customer **chưa có 2 địa chỉ mẫu** cho tới khi có file dữ liệu hành chính của chủ dự án (cần mã/tên tỉnh, phường thật; không bịa). Khi có file, bổ sung vào seed.
+Địa chỉ mẫu của customer (`prisma/seed-data/addresses.ts`), chỉ tạo khi customer chưa có địa chỉ nào (idempotent, không đè dữ liệu người dùng); tên tỉnh/phường lấy qua `resolveLocation` từ danh mục: (a) Hà Nội `01` / `00070` Phường Hoàn Kiếm, "12 Hàng Bài", mặc định; (b) TP.HCM `79` / `26740` Phường Sài Gòn, "12 Lê Lợi".
 
 Cả ba đã `emailVerifiedAt = now`. Mật khẩu dev phải thỏa chính sách (>= 8 ký tự, chữ + số); không dùng lại ở môi trường thật.
 
@@ -812,6 +822,7 @@ Tổng >= 38 sản phẩm. Các trường hợp cần có để test UI/logic (c
     "other":  { "STANDARD": 35000, "EXPRESS": 55000 }
   },
   "shipping.innerCityProvinceCodes": ["01", "79"],
+  "shipping.innerCityWardCodes": [],
   "shipping.freeShippingThreshold": 500000,
   "shipping.weightSurcharge": { "freeGram": 2000, "stepGram": 1000, "feePerStep": 5000 },
   "order.paymentExpiryMinutes": 15,
@@ -820,14 +831,14 @@ Tổng >= 38 sản phẩm. Các trường hợp cần có để test UI/logic (c
 }
 ```
 
-Dữ liệu địa chỉ **không** nằm trong DB: `backend/prisma/data/provinces-wards.json` (dữ liệu hành chính 2 cấp từ 01/07/2025), nạp vào bộ nhớ khi khởi động. File này **do chủ dự án cung cấp**, nạp ở M2 và **hiện chưa có trong repo**; developer không tự tạo/bịa dữ liệu (D-006). Chưa có file thì `/locations` và validate địa chỉ chưa làm.
+Dữ liệu địa chỉ **không** nằm trong DB: `backend/data/provinces-wards.json` (dữ liệu hành chính 2 cấp từ 01/07/2025, nguồn ghi trong `backend/data/README.md`), nạp vào bộ nhớ khi khởi động (fail-fast nếu thiếu/sai; kiểm 34 tỉnh / 3.321 phường). File **do chủ dự án cung cấp**; developer không tự sửa/bịa dữ liệu (D-006). Server phục vụ `/locations` và đối chiếu mã khi lưu địa chỉ.
 
 ## 7. Câu hỏi mở / Giả định
 
 1. **`Order.contactEmail/contactPhone` luôn bắt buộc** thay cho `guestEmail?/guestPhone?` trong requirements §7: cần email để gửi xác nhận cho cả user lẫn guest, và SĐT (dạng chuẩn hóa) để tra cứu/hủy đơn guest (D-005, D-007). **Đã chốt / đã đồng bộ** requirements §7 (2026-11-10).
 2. **Phân biệt giảm hàng vs. giảm ship:** thêm `Order.shippingDiscount` (requirements chỉ có `discountTotal`, `shippingFee`). Công thức `grandTotal` ghi rõ ở trên.
 3. **`ProductStatus` không có trạng thái "hết hàng"** – hết hàng suy ra từ tồn kho (`inStock`).
-4. **Đã chốt D-006 – Mã tỉnh / vùng nội thành:** "nội thành" = toàn bộ Hà Nội (`"01"`) và TP.HCM (`"79"`) qua `shipping.innerCityProvinceCodes`; task nạp dữ liệu (M2) đối chiếu mã với file nguồn chủ dự án cung cấp và cập nhật setting nếu khác.
+4. **Đã chốt D-006 – Mã tỉnh / vùng nội thành:** "nội thành" = toàn bộ Hà Nội (`"01"`) và TP.HCM (`"79"`) qua `shipping.innerCityProvinceCodes`; **đã đối chiếu 2026-11-11** với file nguồn: `01` = Thành phố Hà Nội, `79` = Thành phố Hồ Chí Minh (mã khớp, không đổi setting). Rủi ro phạm vi của `79` sau sáp nhập: **đã chốt 2026-11-11 (M3)** giữ nguyên cho MVP như hạn chế đã biết; muốn thu hẹp thì bỏ `"79"` khỏi `innerCityProvinceCodes` và liệt kê mã phường vào `shipping.innerCityWardCodes` (không sửa code), xem D-006.
 5. **Thiếu trong requirements:** bảng cho newsletter/liên hệ (FR-CNT-03, mức S) và blog (v2) chưa có; thêm ở milestone tương ứng. `Subscription` để v2 theo chỉ đạo.
 6. **Xóa user:** chưa có luồng xóa tài khoản; nếu cần sẽ ẩn danh hóa thay vì hard-delete (FK `Restrict` ở Review).
 7. **Partial index/CHECK vs Prisma drift** (§4): cần kiểm chứng khi scaffold; phương án dự phòng là chỉ enforce trong service.

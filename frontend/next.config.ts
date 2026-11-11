@@ -35,6 +35,11 @@ const nextConfig: NextConfig = {
         headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
       },
       {
+        // Query chứa chữ ký/phiên thanh toán của cổng (VNPay, Stripe).
+        source: "/thanh-toan/ket-qua",
+        headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
+      },
+      {
         source: "/xac-thuc-email",
         headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
       },

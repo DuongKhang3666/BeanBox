@@ -1,6 +1,8 @@
 # BeanBox – Kiến trúc hệ thống
 
-> Phiên bản 0.3 · 2026-11-10 · Nguồn: `docs/requirements.md` + quyết định của Tech Lead.
+> Phiên bản 0.5 · 2026-11-11 · Nguồn: `docs/requirements.md` + quyết định của Tech Lead.
+> Thay đổi 0.5: M5 thanh toán online (D-014), hoàn tiền thủ công và job hết hạn mỗi 60 giây (D-015), biến môi trường mới và rate limit cấu hình được (D-016) ở §7, §8. Hướng dẫn cấu hình: [`payments-setup.md`](payments-setup.md).
+> Thay đổi 0.4: M4 Admin (D-013): module backend `modules/admin/` và `lib/audit.ts`, FE `features/admin/` (§2); router `/admin` chặn quyền ở cấp router, xóa cần `requireAdmin` (§4).
 > Thay đổi 0.3: xác định IP client & rate limit sau proxy (D-009, §3, §8, ADR 10); chi tiết hóa phiên/token và RBAC cho M2 (§4).
 > Thay đổi 0.2: giữ lượt mã giảm giá khi tạo đơn và hoàn lượt khi hủy/hết hạn (D-004), ADR 9, ghi chú nguồn dữ liệu hành chính (D-006). Xem [`decisions.md`](decisions.md).
 > Tài liệu liên quan: `docs/db-schema.md` (Prisma schema), `docs/api-contract.md` (nguồn sự thật cho API).
@@ -46,13 +48,15 @@ BeanBox/
 │     ├─ features/      # theo nghiệp vụ: catalog, cart, checkout, account, admin (component + hook + api calls)
 │     └─ lib/           # api client (fetch wrapper, refresh single-flight), format tiền/ngày, utils
 ├─ backend/
-│  ├─ prisma/           # schema.prisma, migrations/, seed.ts, data/ (provinces-wards.json – M2, file nguồn do chủ dự án cung cấp)
+│  ├─ prisma/           # schema.prisma, migrations/, seed.ts, seed-data/
+│  ├─ data/             # provinces-wards.json + README.md (nguồn) – danh mục hành chính 2 cấp, đọc lúc khởi động (D-006)
 │  ├─ src/
-│  │  ├─ config/        # env (zod-validated), constants
-│  │  ├─ lib/           # prisma client, logger (pino), errors (AppError), mailer, tokens, money, text (bỏ dấu)
+│  │  ├─ config/        # env (zod-validated), constants; paths.ts (UPLOADS_DIR; AppOptions.uploadsDir cho test)
+│  │  ├─ lib/           # prisma client, logger (pino), errors (AppError), mailer, tokens, money, text (bỏ dấu), audit.ts (ghi AuditLog trong transaction, M4)
 │  │  ├─ middlewares/   # requestId, auth, requireRole, validate(zod), rateLimit, originCheck, errorHandler
 │  │  └─ modules/<module>/{<module>.routes,.controller,.service,.schema}.ts
-│  │        # modules: health, catalog, auth, me, locations, cart, checkout, orders, (admin, payments, reviews... ở M4+)
+│  │        # modules: health, catalog, auth, me, locations, cart, checkout, orders, admin (M4), (payments, reviews... ở M5+)
+│  │        # modules/admin/: orders, inventory, catalog (categories/brands), products (gồm variants, images), uploads; một router duy nhất mount /admin
 │  └─ tests/            # unit (pricing, shipping, state machine) + integration (supertest)
 ├─ docker-compose.yml, .env.example, .github/workflows/ci.yml
 ```
@@ -79,6 +83,7 @@ Quy tắc phân lớp backend: `routes` (khai báo + middleware) -> `controller`
 | CSRF | Endpoint dùng cookie (`/auth/refresh`, `/auth/logout`): `SameSite=Strict` + kiểm tra header `Origin` thuộc whitelist (thiếu hoặc sai -> 403) |
 | Khóa tài khoản | 5 lần sai liên tiếp trong 15 phút -> `lockedUntil = now + 15 phút` (FR-AUTH-08) |
 | RBAC | `CUSTOMER`, `STAFF`, `ADMIN`; middleware `requireAuth` đọc lại `role/status` từ DB MỌI request đã xác thực (không chỉ admin), `requireRole` dùng role đó. User không tồn tại -> 401; `DISABLED` -> 403 |
+| Admin | Router `/admin` áp `requireAuth` + `requireStaff` ở cấp router (mọi endpoint con tự động được bảo vệ); xóa sản phẩm/danh mục/brand cần thêm `requireAdmin`. Mọi thao tác ghi ghi `AuditLog` cùng transaction (`lib/audit.ts`) |
 | Frontend | Fetch wrapper tự gắn Bearer; gặp 401 -> refresh **single-flight** trong tab (nhiều request chờ chung 1 lần refresh) -> retry 1 lần. Giữa các tab: khóa bằng Web Locks API (`navigator.locks`) nếu trình duyệt hỗ trợ |
 | Hạn chế đã chấp nhận | Đổi/đặt lại mật khẩu không vô hiệu access token đang sống (tối đa 15 phút); refresh token thì bị thu hồi ngay |
 
@@ -102,9 +107,15 @@ Quy tắc phân lớp backend: `routes` (khai báo + middleware) -> `controller`
 ## 7. Thanh toán & tác vụ nền
 
 - COD: đơn `PENDING`; admin xác nhận. `paymentStatus` chuyển `PAID` khi `DELIVERED`.
-- Online (M5): đơn `PENDING_PAYMENT` + `expiresAt = now + 15 phút`; tạo link thanh toán; **chỉ IPN/webhook đã xác thực chữ ký + khớp số tiền** mới chuyển `CONFIRMED`/`PAID`. Trang return chỉ hiển thị.
-- Tác vụ nền (trong tiến trình backend, `setInterval` 60 giây hoặc `node-cron`, dùng `pg_try_advisory_lock` để chỉ 1 instance chạy): (1) hủy đơn `PENDING_PAYMENT` quá `expiresAt` (kể cả đơn `paymentStatus=FAILED`) + hoàn kho + hoàn lượt mã; (2) xóa giỏ guest không hoạt động > 30 ngày; (3) xóa token hết hạn.
-- Email: Nodemailer (Mailpit khi dev); gửi sau commit, lỗi gửi mail không làm hỏng đơn (log + retry đơn giản).
+- Online (M5, D-014; chi tiết `api-contract.md` §13): đơn `PENDING_PAYMENT` + `expiresAt = now + order.paymentExpiryMinutes` (mặc định 15 phút); server dựng URL thanh toán (VNPay tự ký HMAC-SHA512; Stripe Checkout gọi REST bằng `fetch`, không dùng SDK); FE chỉ chuyển hướng.
+  - Chỉ **dữ liệu có chữ ký hoặc truy vấn server-to-server** mới chuyển `CONFIRMED`/`PAID`: IPN và return VNPay (đã xác minh chữ ký, số tiền khớp), webhook Stripe (raw body, `Stripe-Signature`, chống replay 300 giây) hoặc `POST /payments/stripe/sync` (server tự gọi Stripe). Tham số redirect chưa ký không được tin.
+  - Mọi nguồn kết quả đi qua MỘT hàm xử lý idempotent (1 transaction, khóa Order rồi Payment `FOR UPDATE`); thanh toán muộn/trả trùng không đổi trạng thái đơn, đánh dấu cần hoàn tiền (`api-contract.md` §13.5).
+  - VNPay/Stripe bật theo env (thiếu thì tắt, §8); khóa `sk_live_` bị từ chối khi khởi động.
+  - Hoàn tiền: thủ công. Admin hoàn trên cổng rồi ghi nhận (`POST /admin/orders/:code/refunds`, D-015).
+- Tác vụ nền (trong tiến trình backend, `setInterval`): 
+  - Job dọn dẹp (M3): xóa giỏ guest không hoạt động > 30 ngày; xóa `RefreshToken`/`PasswordResetToken`/`EmailVerificationToken` đã hết hạn. Chạy mỗi 60 phút, dùng `pg_try_advisory_xact_lock` để chỉ 1 instance chạy mỗi lượt; bật/tắt bằng env `JOBS_ENABLED` (mặc định `true`, luôn tắt khi `NODE_ENV=test`).
+  - Job hết hạn thanh toán (M5, D-015): chạy mỗi 60 giây, advisory lock riêng, tối đa 50 đơn `PENDING_PAYMENT` có `expiresAt < now` mỗi lượt (kể cả `paymentStatus=FAILED`); mỗi đơn 1 transaction: `cancelOrderTx` (actor SYSTEM, hoàn kho, hoàn lượt mã), Payment `PENDING` -> `FAILED`; sau commit gửi email hủy và best-effort expire phiên Stripe (lỗi chỉ log). Cùng cờ `JOBS_ENABLED`.
+- Email: Nodemailer (Mailpit khi dev); gửi sau commit, lỗi gửi mail không làm hỏng đơn (log + retry đơn giản). Từ M5 gửi cả email đổi trạng thái (`CONFIRMED`, `SHIPPING`, `DELIVERED`, `CANCELLED`, D-016; `api-contract.md` §13.9).
 
 ## 8. Cấu hình môi trường
 
@@ -119,13 +130,18 @@ Quy tắc phân lớp backend: `routes` (khai báo + middleware) -> `controller`
 | `TRUST_PROXY` | mặc định `loopback`; Docker dùng `uniquelocal`; cấm `true` (D-009) |
 | `INTERNAL_API_SECRET` (backend + frontend server, tùy chọn) | chuỗi >= 32 ký tự; SSR gửi qua `X-Internal-Secret`; chỉ ở server, không bao giờ `NEXT_PUBLIC_` (D-009) |
 | `WEB_APP_URL` | gốc link trong email, mặc định `http://localhost:3000`; không dựng link từ header Host/Origin |
+| `JOBS_ENABLED` | mặc định `true`; bật/tắt job nền dọn dẹp (§7); luôn tắt khi `NODE_ENV=test` |
 | `COOKIE_SECURE` | mặc định `true` khi production |
 | `JWT_ACCESS_SECRET` | chuỗi >= 32 ký tự ngẫu nhiên |
 | `ACCESS_TOKEN_TTL` / `REFRESH_TOKEN_TTL_DAYS` | `15m` / `7` |
 | `API_INTERNAL_URL` (frontend) | `http://localhost:4000` (Docker: `http://backend:4000`) |
 | `SMTP_HOST/PORT/USER/PASS`, `MAIL_FROM` | Mailpit dev |
-| `VNPAY_TMN_CODE`, `VNPAY_HASH_SECRET`, `VNPAY_RETURN_URL` | M5 |
-| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | M5 |
+| `VNPAY_TMN_CODE`, `VNPAY_HASH_SECRET` | Có cả hai thì bật VNPay; thiếu thì tắt (quote `enabled:false`, đặt đơn -> 409 `PAYMENT_METHOD_UNAVAILABLE`). Lấy từ tài khoản sandbox, xem `payments-setup.md` |
+| `VNPAY_PAYMENT_URL` | mặc định `https://sandbox.vnpayment.vn/paymentv2/vpcpay.html`; bắt buộc https |
+| `VNPAY_RETURN_URL` | mặc định `${WEB_APP_URL}/thanh-toan/ket-qua?provider=vnpay` |
+| `STRIPE_SECRET_KEY` | Có thì bật Stripe; CHỈ dạng `sk_test_...` (`sk_live_` -> backend từ chối khởi động) |
+| `STRIPE_WEBHOOK_SECRET` | `whsec_...`, tùy chọn; thiếu thì webhook trả 503, vẫn xác nhận qua `POST /payments/stripe/sync` |
+| `ORDER_RATE_LIMIT_PER_MIN`, `COUPON_RATE_LIMIT_PER_MIN`, `QUOTE_RATE_LIMIT_PER_MIN` | mặc định `10`, `10`, `30` (D-011, D-016); số nguyên dương |
 | `SEED_ADMIN_PASSWORD`, `SEED_STAFF_PASSWORD`, `SEED_CUSTOMER_PASSWORD` | mật khẩu dev cho seed; seed từ chối chạy khi `NODE_ENV=production` |
 
 Backend validate toàn bộ env bằng zod khi khởi động, thiếu/sai thì dừng ngay.

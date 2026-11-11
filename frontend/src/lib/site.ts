@@ -35,7 +35,7 @@ export const POLICY_LINKS = [
   { href: "/chinh-sach/van-chuyen", label: "Chính sách vận chuyển" },
   { href: "/chinh-sach/doi-tra", label: "Chính sách đổi trả" },
   { href: "/chinh-sach/bao-mat", label: "Chính sách bảo mật" },
-  { href: "/chinh-sach/dieu-khoan", label: "Điều khoản sử dụng" },
+  { href: "/chinh-sach/dieu-khoan", label: "Điều khoản mua hàng" },
 ] as const;
 
 /** URL tuyệt đối từ đường dẫn tương đối (dùng cho Open Graph, JSON-LD, sitemap). */

@@ -1,11 +1,15 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { makeProduct, makeVariant } from "../fixtures";
 import { AddToCartPanel } from "./AddToCartPanel";
 import { PriceTag } from "./PriceTag";
 import { ProductCard } from "./ProductCard";
 import { ProductDescription } from "./ProductDescription";
+
+vi.mock("@/features/cart/CartProvider", () => ({
+  useCart: () => ({ addItem: vi.fn(), openMiniCart: vi.fn(), pending: { adding: false } }),
+}));
 
 describe("PriceTag", () => {
   it("giá thường theo định dạng 185.000₫, không có giảm giá", () => {
@@ -102,11 +106,10 @@ describe("AddToCartPanel", () => {
     expect(screen.queryByLabelText("Số lượng")).not.toBeInTheDocument();
   });
 
-  it("còn hàng: nút disabled kèm ghi chú giỏ hàng; số lượng bị chặn bởi maxQuantity", async () => {
+  it("còn hàng: nút bật; số lượng bị chặn bởi maxQuantity", async () => {
     const user = userEvent.setup();
     render(<AddToCartPanel variants={variants} />);
-    expect(screen.getByRole("button", { name: "Thêm vào giỏ" })).toBeDisabled();
-    expect(screen.getByText("Giỏ hàng sẽ sớm ra mắt.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Thêm vào giỏ" })).toBeEnabled();
     const qty = screen.getByLabelText("Số lượng");
     const plus = screen.getByRole("button", { name: "Tăng số lượng" });
     await user.click(plus);

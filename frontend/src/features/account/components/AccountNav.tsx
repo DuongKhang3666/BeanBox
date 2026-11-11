@@ -13,6 +13,7 @@ const focusRing =
 const LINKS = [
   { href: "/tai-khoan", label: "Hồ sơ", exact: true },
   { href: "/tai-khoan/dia-chi", label: "Sổ địa chỉ", exact: false },
+  { href: "/tai-khoan/don-hang", label: "Đơn hàng", exact: false },
 ] as const;
 
 /** Mobile: tab ngang cuộn được. Từ md: cột dọc. */
@@ -46,15 +47,6 @@ export function AccountNav({
             </li>
           );
         })}
-        <li className="shrink-0 md:w-full">
-          {/* M3: trang đơn hàng chưa có, hiển thị không bấm được */}
-          <span aria-disabled="true" className={cn(itemBase, "cursor-not-allowed text-coffee-600")}>
-            Đơn hàng
-            <span className="rounded-full bg-cream-200 px-2 py-0.5 text-xs text-coffee-800">
-              Sắp có
-            </span>
-          </span>
-        </li>
         <li className="shrink-0 md:mt-4 md:w-full">
           <Button
             variant="outline"

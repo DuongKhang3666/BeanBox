@@ -27,7 +27,7 @@ export function ProductImage({
   const failed = !src || failedSrc === src;
 
   return (
-    <div className={cn("relative aspect-square w-full overflow-hidden bg-cream-200", className)}>
+    <div className={cn("relative aspect-square overflow-hidden bg-cream-200", className)}>
       {failed ? (
         <div
           role="img"

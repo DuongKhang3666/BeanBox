@@ -2,7 +2,7 @@ import type { Address, Prisma } from '@prisma/client';
 import { AppError } from '../../lib/errors.js';
 import { prisma } from '../../lib/prisma.js';
 import { toUserDto, type UserDto } from '../../lib/userDto.js';
-import { resolveLocation } from './address.location.js';
+import { resolveLocation } from '../locations/locations.data.js';
 import type { CreateAddressInput, UpdateAddressInput, UpdateProfileInput } from './me.schema.js';
 
 export const MAX_ADDRESSES = 10;
@@ -84,8 +84,8 @@ export async function createAddress(
   userId: string,
   input: CreateAddressInput,
 ): Promise<AddressDto> {
-  const loc = resolveLocation(input);
   return withUserLock(userId, async (tx) => {
+    const loc = resolveLocation(input.provinceCode, input.wardCode);
     const count = await tx.address.count({ where: { userId } });
     if (count >= MAX_ADDRESSES) {
       throw new AppError(409, 'ADDRESS_LIMIT_REACHED', 'Bạn chỉ lưu được tối đa 10 địa chỉ');
@@ -97,10 +97,7 @@ export async function createAddress(
         userId,
         fullName: input.fullName,
         phone: input.phone,
-        provinceCode: loc.provinceCode!,
-        provinceName: loc.provinceName!,
-        wardCode: loc.wardCode!,
-        wardName: loc.wardName!,
+        ...loc,
         line1: input.line1,
         isDefault: makeDefault,
       },
@@ -114,10 +111,14 @@ export async function updateAddress(
   id: string,
   input: UpdateAddressInput,
 ): Promise<AddressDto> {
-  const loc = resolveLocation(input);
   return withUserLock(userId, async (tx) => {
     const existing = await tx.address.findFirst({ where: { id, userId } });
-    if (!existing) throw notFound();
+    if (!existing) throw notFound(); // quyền sở hữu trước, đối chiếu danh mục sau
+    // Chỉ gửi wardCode: phường phải thuộc tỉnh hiện tại của địa chỉ.
+    const loc =
+      input.wardCode !== undefined
+        ? resolveLocation(input.provinceCode ?? existing.provinceCode, input.wardCode)
+        : undefined;
     const makeDefault = input.isDefault === true;
     if (makeDefault) await clearDefault(tx, userId, id);
     const updated = await tx.address.update({

@@ -37,6 +37,22 @@ function LogoutIcon() {
   );
 }
 
+function AdminIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-5 w-5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      aria-hidden="true"
+    >
+      <path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3z" strokeLinejoin="round" />
+      <path d="M9 12l2 2 4-4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 const iconLink =
   "inline-flex h-11 w-11 items-center justify-center rounded-lg text-coffee-800 hover:bg-coffee-100";
 
@@ -76,8 +92,21 @@ export function HeaderAccount() {
     );
   }
 
+  const isStaff = user.role === "STAFF" || user.role === "ADMIN";
+
   return (
     <>
+      {isStaff ? (
+        <Link
+          href="/admin/don-hang"
+          aria-label="Quản trị"
+          className="inline-flex h-11 min-w-11 items-center justify-center gap-1.5 rounded-lg px-2 text-sm font-medium text-moss-800 hover:bg-coffee-100"
+        >
+          <AdminIcon />
+          {/* Dưới xl chỉ hiện icon để không ép ô tìm kiếm. */}
+          <span className="hidden xl:inline">Quản trị</span>
+        </Link>
+      ) : null}
       <Link href="/tai-khoan" className={iconLink} aria-label={`Tài khoản của ${user.fullName}`}>
         <UserIcon />
       </Link>
@@ -89,7 +118,7 @@ export function HeaderAccount() {
         className="inline-flex h-11 min-w-11 items-center justify-center gap-1.5 rounded-lg px-2 text-sm font-medium text-coffee-800 hover:bg-coffee-100 focus-visible:outline-3 focus-visible:outline-offset-1 focus-visible:outline-moss-600 disabled:cursor-not-allowed disabled:opacity-60"
       >
         <LogoutIcon />
-        <span className="hidden sm:inline">Đăng xuất</span>
+        <span className="hidden sm:inline lg:hidden xl:inline">Đăng xuất</span>
       </button>
     </>
   );

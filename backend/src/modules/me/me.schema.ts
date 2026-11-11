@@ -60,9 +60,6 @@ export const updateProfileSchema = z
   });
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
 
-const nameField = (label: string) =>
-  z.string().trim().min(2, `${label} tối thiểu 2 ký tự`).max(100, `${label} tối đa 100 ký tự`);
-
 const provinceCode = z.string().regex(/^\d{2}$/, 'Mã tỉnh/thành phải gồm 2 chữ số');
 const wardCode = z.string().regex(/^\d{5}$/, 'Mã phường/xã phải gồm 5 chữ số');
 const line1 = z
@@ -75,9 +72,7 @@ export const createAddressSchema = z.object({
   fullName: fullNameSchema,
   phone: phoneSchema,
   provinceCode,
-  provinceName: nameField('Tên tỉnh/thành'),
   wardCode,
-  wardName: nameField('Tên phường/xã'),
   line1,
   isDefault: z.boolean().optional(),
 });
@@ -88,9 +83,7 @@ export const updateAddressSchema = z
     fullName: fullNameSchema.optional(),
     phone: phoneSchema.optional(),
     provinceCode: provinceCode.optional(),
-    provinceName: nameField('Tên tỉnh/thành').optional(),
     wardCode: wardCode.optional(),
-    wardName: nameField('Tên phường/xã').optional(),
     line1: line1.optional(),
     isDefault: z.boolean().optional(),
   })
@@ -99,20 +92,12 @@ export const updateAddressSchema = z
       ctx.addIssue({ code: 'custom', message: 'Cần ít nhất một trường để cập nhật' });
       return;
     }
-    const need = (field: string, message: string) =>
-      ctx.addIssue({ code: 'custom', path: [field], message });
-    if (v.provinceCode !== undefined) {
-      if (v.provinceName === undefined) need('provinceName', 'Thiếu tên tỉnh/thành đi kèm mã');
-      if (v.wardCode === undefined) need('wardCode', 'Đổi tỉnh/thành thì phải gửi kèm phường/xã');
-    }
-    if (v.provinceName !== undefined && v.provinceCode === undefined) {
-      need('provinceCode', 'Thiếu mã tỉnh/thành đi kèm tên');
-    }
-    if (v.wardCode !== undefined && v.wardName === undefined) {
-      need('wardName', 'Thiếu tên phường/xã đi kèm mã');
-    }
-    if (v.wardName !== undefined && v.wardCode === undefined) {
-      need('wardCode', 'Thiếu mã phường/xã đi kèm tên');
+    if (v.provinceCode !== undefined && v.wardCode === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['wardCode'],
+        message: 'Đổi tỉnh/thành thì phải gửi kèm phường/xã',
+      });
     }
   });
 export type UpdateAddressInput = z.infer<typeof updateAddressSchema>;

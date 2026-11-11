@@ -236,4 +236,32 @@ describe("ApiClient", () => {
     });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
+
+  it("rawBody: gửi nguyên file với Content-Type của file và Bearer, không stringify", async () => {
+    tokenStore.set("tok-raw");
+    const fetchImpl = vi.fn(async () => json(201, { data: { url: "/uploads/a.png" } }));
+    const client = new ApiClient({
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      getCartToken: () => null,
+    });
+    const file = new File(["abc"], "a.png", { type: "image/png" });
+    await client.request("/admin/uploads", { method: "POST", rawBody: file });
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(init.body).toBe(file);
+    const headers = init.headers as Record<string, string>;
+    expect(headers["Content-Type"]).toBe("image/png");
+    expect(headers.Authorization).toBe("Bearer tok-raw");
+  });
+
+  it("body JSON mặc định không đổi (Content-Type application/json)", async () => {
+    const fetchImpl = vi.fn(async () => json(200, { data: 1 }));
+    const client = new ApiClient({
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      getCartToken: () => null,
+    });
+    await client.post("/x", { a: 1 });
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(init.body).toBe('{"a":1}');
+    expect((init.headers as Record<string, string>)["Content-Type"]).toBe("application/json");
+  });
 });

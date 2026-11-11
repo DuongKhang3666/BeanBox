@@ -146,6 +146,7 @@ model User {
   couponRedemptions       CouponRedemption[]
   reviews                 Review[]
   auditLogs               AuditLog[]
+  paymentRefunds          Payment[]                @relation("PaymentRefunds")
 
   @@index([role])
   @@index([createdAt])
@@ -264,25 +265,25 @@ model Product {
   seoDesc     String?
 
   // Denormalized – xem mục 5
-  searchText  String        @default("")
-  minPrice    Int           @default(0)
-  inStock     Boolean       @default(false)
-  soldCount   Int           @default(0)
-  ratingAvg   Float         @default(0)
-  ratingCount Int           @default(0)
+  searchText  String  @default("")
+  minPrice    Int     @default(0)
+  inStock     Boolean @default(false)
+  soldCount   Int     @default(0)
+  ratingAvg   Float   @default(0)
+  ratingCount Int     @default(0)
 
   deletedAt DateTime?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
-  category Category        @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  brand    Brand?          @relation(fields: [brandId], references: [id], onDelete: SetNull)
-  coffee   CoffeeProfile?
-  images   ProductImage[]
-  variants ProductVariant[]
-  wishlist Wishlist[]
+  category   Category         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  brand      Brand?           @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  coffee     CoffeeProfile?
+  images     ProductImage[]
+  variants   ProductVariant[]
+  wishlist   Wishlist[]
   orderItems OrderItem[]
-  reviews  Review[]
+  reviews    Review[]
 
   @@index([categoryId, status])
   @@index([brandId])
@@ -394,13 +395,13 @@ model Cart {
 }
 
 model CartItem {
-  id               String   @id @default(cuid())
-  cartId           String
-  variantId        String
-  quantity         Int
-  unitPriceAtAdd   Int // giá hiệu lực lúc thêm, để cảnh báo đổi giá (FR-CART-07)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id             String   @id @default(cuid())
+  cartId         String
+  variantId      String
+  quantity       Int
+  unitPriceAtAdd Int // giá hiệu lực lúc thêm, để cảnh báo đổi giá (FR-CART-07)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   cart    Cart           @relation(fields: [cartId], references: [id], onDelete: Cascade)
   variant ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
@@ -424,37 +425,37 @@ model Wishlist {
 // ───────────── Đơn hàng & thanh toán ─────────────
 
 model Order {
-  id              String         @id @default(cuid())
-  code            String         @unique // BB-YYMMDD-XXXX
-  userId          String? // null = khách vãng lai
-  contactEmail    String // luôn có: guest nhập, user lấy từ tài khoản/form
-  contactPhone    String
-  status          OrderStatus    @default(PENDING)
-  paymentStatus   PaymentStatus  @default(UNPAID)
-  paymentMethod   PaymentMethod
-  shippingMethod  ShippingMethod
-  shippingAddress Json // snapshot: fullName, phone, provinceCode/Name, wardCode/Name, line1
-  totalWeightGram Int            @default(0)
-  subtotal        Int
-  discountTotal   Int            @default(0) // giảm trên hàng hóa (mã PERCENT/FIXED)
-  shippingFee     Int // phí ship gốc, đã gồm phụ phí khối lượng
-  shippingDiscount Int           @default(0) // freeship ngưỡng / mã FREESHIP
-  grandTotal      Int
-  couponId        String?
-  couponCode      String?
-  note            String?
-  trackingNumber  String?
-  carrier         String?
-  cancelReason    String?
-  expiresAt       DateTime? // hạn thanh toán của PENDING_PAYMENT
-  paidAt          DateTime?
-  confirmedAt     DateTime?
-  deliveredAt     DateTime?
-  cancelledAt     DateTime?
-  idempotencyKey     String @unique
+  id                 String         @id @default(cuid())
+  code               String         @unique // BB-YYMMDD-XXXX
+  userId             String? // null = khách vãng lai
+  contactEmail       String // luôn có: guest nhập, user lấy từ tài khoản/form
+  contactPhone       String
+  status             OrderStatus    @default(PENDING)
+  paymentStatus      PaymentStatus  @default(UNPAID)
+  paymentMethod      PaymentMethod
+  shippingMethod     ShippingMethod
+  shippingAddress    Json // snapshot: fullName, phone, provinceCode/Name, wardCode/Name, line1
+  totalWeightGram    Int            @default(0)
+  subtotal           Int
+  discountTotal      Int            @default(0) // giảm trên hàng hóa (mã PERCENT/FIXED)
+  shippingFee        Int // phí ship gốc, đã gồm phụ phí khối lượng
+  shippingDiscount   Int            @default(0) // freeship ngưỡng / mã FREESHIP
+  grandTotal         Int
+  couponId           String?
+  couponCode         String?
+  note               String?
+  trackingNumber     String?
+  carrier            String?
+  cancelReason       String?
+  expiresAt          DateTime? // hạn thanh toán của PENDING_PAYMENT
+  paidAt             DateTime?
+  confirmedAt        DateTime?
+  deliveredAt        DateTime?
+  cancelledAt        DateTime?
+  idempotencyKey     String         @unique
   requestFingerprint String // SHA-256 của payload chuẩn hóa, phát hiện cùng key khác nội dung
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
 
   user       User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
   coupon     Coupon?              @relation(fields: [couponId], references: [id], onDelete: SetNull)
@@ -520,15 +521,20 @@ model Payment {
   providerRef   String? // vnp_TxnRef / Stripe checkout session id
   amount        Int
   status        PaymentTxnStatus @default(PENDING)
-  rawPayload    Json?
+  rawPayload    Json? // đã bỏ trường chữ ký; không trả ra API
+  refundedAt    DateTime? // m5_payment_refund: admin ghi nhận hoàn tiền thủ công
+  refundNote    String?
+  refundedById  String?
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
 
-  order Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  order      Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  refundedBy User? @relation("PaymentRefunds", fields: [refundedById], references: [id], onDelete: SetNull)
 
   @@unique([provider, providerTxnId])
   @@index([orderId])
   @@index([providerRef])
+  @@index([status])
 }
 
 // ───────────── Khuyến mãi ─────────────

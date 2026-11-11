@@ -17,6 +17,7 @@ export function ProductGallery({ images, name }: { images: ProductImageType[]; n
           src={current?.url}
           alt={current?.alt}
           name={name}
+          className="w-full"
           priority
           sizes="(min-width: 1024px) 40vw, (min-width: 768px) 50vw, 100vw"
         />
@@ -35,7 +36,7 @@ export function ProductGallery({ images, name }: { images: ProductImageType[]; n
                   i === index ? "border-moss-700" : "border-transparent hover:border-coffee-300",
                 )}
               >
-                <ProductImage src={img.url} alt="" name={name} sizes="80px" />
+                <ProductImage src={img.url} alt="" name={name} sizes="80px" className="w-full" />
               </button>
             </li>
           ))}
