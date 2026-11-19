@@ -55,6 +55,12 @@ export async function deleteAdminProduct(id: string): Promise<void> {
   await api.delete(`/admin/products/${enc(id)}`);
 }
 
+/** Chỉ ADMIN (§14.6). Sản phẩm về Nháp; chưa xóa -> 409 CONFLICT. */
+export async function restoreProduct(id: string): Promise<AdminProduct> {
+  const { data } = await api.post<AdminProduct>(`/admin/products/${enc(id)}/restore`);
+  return data;
+}
+
 export async function createAdminVariant(
   productId: string,
   body: VariantInput,

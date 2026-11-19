@@ -1,6 +1,7 @@
 import type { Request, RequestHandler } from 'express';
 import type { PaymentConfig } from '../../config/payments.js';
 import { asyncHandler } from '../../lib/asyncHandler.js';
+import type { StripeHttp } from '../payments/stripe.js';
 import { identityOf } from '../cart/cart.controller.js';
 import type {
   CancelOrderInput,
@@ -65,6 +66,7 @@ export const cancelOrder = asyncHandler(async (req, res) => {
     userId: req.auth?.userId ?? null,
     input: req.body as CancelOrderInput,
     paymentConfig: paymentConfigOf(req),
+    stripeHttp: req.app.locals.stripeHttp as StripeHttp | undefined,
   });
   res.json({ data: order });
 });

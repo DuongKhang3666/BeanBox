@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { makeDetail, makeVariant } from "./fixtures";
-import { buildProductJsonLd, serializeJsonLd } from "./jsonld";
+import {
+  buildBreadcrumbJsonLd,
+  buildOrganizationJsonLd,
+  buildProductJsonLd,
+  buildWebSiteJsonLd,
+  serializeJsonLd,
+} from "./jsonld";
 
 const SITE = "https://beanbox.test";
 
@@ -50,5 +56,45 @@ describe("serializeJsonLd", () => {
     expect(s).not.toContain("<");
     expect(s).toContain("\\u003c/script>");
     expect(JSON.parse(s).name).toBe("</script><script>alert(1)</script>");
+  });
+});
+
+describe("buildBreadcrumbJsonLd", () => {
+  it("thêm Trang chủ ở vị trí 1, URL tuyệt đối, position tăng dần", () => {
+    const ld = buildBreadcrumbJsonLd(
+      [
+        { name: "Cà phê hạt", path: "/danh-muc/ca-phe-hat" },
+        { name: "Robusta", path: "/san-pham/robusta" },
+      ],
+      SITE,
+    );
+    expect(ld["@type"]).toBe("BreadcrumbList");
+    expect(ld.itemListElement).toEqual([
+      { "@type": "ListItem", position: 1, name: "Trang chủ", item: `${SITE}/` },
+      { "@type": "ListItem", position: 2, name: "Cà phê hạt", item: `${SITE}/danh-muc/ca-phe-hat` },
+      { "@type": "ListItem", position: 3, name: "Robusta", item: `${SITE}/san-pham/robusta` },
+    ]);
+  });
+});
+
+describe("Organization / WebSite JSON-LD", () => {
+  const site = { name: "BeanBox", description: "Mô tả" };
+
+  it("Organization có name và url", () => {
+    expect(buildOrganizationJsonLd(site, SITE)).toMatchObject({
+      "@type": "Organization",
+      name: "BeanBox",
+      url: SITE,
+    });
+  });
+
+  it("WebSite có SearchAction trỏ /tim-kiem?q={search_term_string}", () => {
+    const ld = buildWebSiteJsonLd(site, SITE);
+    expect(ld["@type"]).toBe("WebSite");
+    expect(ld.potentialAction).toMatchObject({
+      "@type": "SearchAction",
+      target: { urlTemplate: `${SITE}/tim-kiem?q={search_term_string}` },
+      "query-input": "required name=search_term_string",
+    });
   });
 });

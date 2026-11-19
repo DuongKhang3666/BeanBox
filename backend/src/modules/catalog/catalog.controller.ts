@@ -8,6 +8,12 @@ export const getCategories = asyncHandler(async (_req, res) => {
   res.json({ data: await service.listCategories() });
 });
 
+export const getCategory = asyncHandler(async (req, res) => {
+  const slug = slugSchema.safeParse(req.params.slug);
+  if (!slug.success) throw new AppError(404, 'NOT_FOUND', 'Không tìm thấy danh mục');
+  res.json({ data: await service.getCategoryBySlug(slug.data) });
+});
+
 export const getBrands = asyncHandler(async (_req, res) => {
   res.json({ data: await service.listBrands() });
 });

@@ -3,21 +3,34 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
+import { useAuth } from "@/features/auth/AuthProvider";
 import { cn } from "@/lib/cn";
 
-export const ADMIN_NAV = [
+interface NavItem {
+  href: string;
+  label: string;
+  /** Chỉ hiện với ADMIN (backend vẫn chặn 403). */
+  adminOnly?: boolean;
+}
+
+export const ADMIN_NAV: readonly NavItem[] = [
+  { href: "/admin", label: "Tổng quan" },
   { href: "/admin/don-hang", label: "Đơn hàng" },
   { href: "/admin/ton-kho", label: "Tồn kho" },
   { href: "/admin/ma-giam-gia", label: "Mã giảm giá" },
   { href: "/admin/san-pham", label: "Sản phẩm" },
   { href: "/admin/danh-muc", label: "Danh mục" },
   { href: "/admin/thuong-hieu", label: "Thương hiệu" },
-] as const;
+  { href: "/admin/danh-gia", label: "Đánh giá" },
+  { href: "/admin/nhat-ky", label: "Nhật ký", adminOnly: true },
+];
 
 /** Sidebar trên desktop; trên mobile là menu thu gọn bằng nút. */
 export function AdminNav() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const { user } = useAuth();
+  const items = ADMIN_NAV.filter((i) => !i.adminOnly || user?.role === "ADMIN");
 
   return (
     <nav aria-label="Quản trị" className="print:hidden">
@@ -35,8 +48,10 @@ export function AdminNav() {
         id="admin-nav-list"
         className={cn("mt-2 space-y-1 md:mt-0 md:block", open ? "block" : "hidden")}
       >
-        {ADMIN_NAV.map((item) => {
-          const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+        {items.map((item) => {
+          const active =
+            pathname === item.href ||
+            (item.href !== "/admin" && pathname.startsWith(`${item.href}/`));
           return (
             <li key={item.href}>
               <Link

@@ -20,6 +20,7 @@ import { PRODUCTS_BASE } from "../productFilters";
 import { ProductStatusBadge } from "./AdminProducts";
 import { ImagesSection } from "./ImagesSection";
 import { ProductForm } from "./ProductForm";
+import { RestoreProductButton } from "./RestoreProductButton";
 import { VariantsSection } from "./VariantsSection";
 
 interface Loaded {
@@ -102,6 +103,13 @@ function Editor({ loaded }: { loaded: Loaded }) {
           <p className="text-sm">
             Đã xóa lúc {formatVnDateTime(product.deletedAt!)}. Bạn chỉ có thể xem thông tin.
           </p>
+          <div className="mt-3">
+            <RestoreProductButton
+              productId={product.id}
+              productName={product.name}
+              onRestored={(restored) => setProduct((cur) => ({ ...cur, ...restored }))}
+            />
+          </div>
         </div>
       ) : null}
 
@@ -131,7 +139,8 @@ function Editor({ loaded }: { loaded: Loaded }) {
         <section className="space-y-3 rounded-2xl border border-danger-600/40 bg-white p-4 sm:p-5">
           <h2 className="font-serif text-lg font-bold text-danger-600">Xóa sản phẩm</h2>
           <p className="text-sm text-coffee-800">
-            Xóa mềm: sản phẩm biến mất khỏi cửa hàng và không thể khôi phục ở phiên bản này.
+            Xóa mềm: sản phẩm biến mất khỏi cửa hàng. Quản trị viên có thể khôi phục (về trạng thái
+            Nháp) từ danh sách sản phẩm đã xóa.
           </p>
           <FormError>{deleteError}</FormError>
           <Button variant="danger" onClick={() => setConfirmDelete(true)}>
@@ -143,7 +152,7 @@ function Editor({ loaded }: { loaded: Loaded }) {
       {confirmDelete ? (
         <ConfirmDialog
           title="Xóa sản phẩm"
-          description={`Xóa sản phẩm "${product.name}"? Đây là xóa mềm: sản phẩm biến mất khỏi cửa hàng và không thể khôi phục ở phiên bản này.`}
+          description={`Xóa sản phẩm "${product.name}"? Đây là xóa mềm: sản phẩm biến mất khỏi cửa hàng và có thể được khôi phục (về trạng thái Nháp) sau đó.`}
           confirmLabel="Xóa sản phẩm"
           busy={deleting}
           onConfirm={onDelete}

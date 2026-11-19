@@ -71,13 +71,14 @@ interface ButtonLinkProps {
   variant?: ButtonVariant;
   size?: ButtonSize;
   className?: string;
+  onClick?: () => void;
   children: React.ReactNode;
 }
 
 /** Link trông như nút (điều hướng, không phải hành động). */
-export function ButtonLink({ href, variant, size, className, children }: ButtonLinkProps) {
+export function ButtonLink({ href, variant, size, className, onClick, children }: ButtonLinkProps) {
   return (
-    <Link href={href} className={buttonClasses(variant, size, className)}>
+    <Link href={href} onClick={onClick} className={buttonClasses(variant, size, className)}>
       {children}
     </Link>
   );

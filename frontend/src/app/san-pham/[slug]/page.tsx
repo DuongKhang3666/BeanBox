@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Container } from "@/components/ui/Container";
 import { ErrorState } from "@/components/ui/ErrorState";
-import { getProduct } from "@/features/catalog/api";
+import { lookupProduct } from "@/features/catalog/api";
 import { AddToCartPanel } from "@/features/catalog/components/AddToCartPanel";
 import { Breadcrumbs, type Crumb } from "@/features/catalog/components/Breadcrumbs";
 import { CoffeeProfileTable } from "@/features/catalog/components/CoffeeProfileTable";
@@ -10,8 +10,12 @@ import { ProductDescription } from "@/features/catalog/components/ProductDescrip
 import { ProductGallery } from "@/features/catalog/components/ProductGallery";
 import { ProductGrid } from "@/features/catalog/components/ProductGrid";
 import { RatingStars } from "@/features/catalog/components/ProductCard";
-import { buildProductJsonLd, serializeJsonLd } from "@/features/catalog/jsonld";
+import { JsonLd } from "@/components/seo/JsonLd";
+import { buildBreadcrumbJsonLd, buildProductJsonLd } from "@/features/catalog/jsonld";
 import { absoluteUrl } from "@/lib/site";
+import { redirectIfMoved } from "@/lib/slugRedirect";
+import { WishlistButton } from "@/features/wishlist/components/WishlistButton";
+import { ReviewsSection } from "@/features/reviews/components/ReviewsSection";
 import type { ProductDetail } from "@/types/catalog";
 
 interface Props {
@@ -19,11 +23,15 @@ interface Props {
 }
 
 async function loadProduct(slug: string): Promise<ProductDetail | null | "error"> {
+  let lookup;
   try {
-    return await getProduct(slug);
+    lookup = await lookupProduct(slug);
   } catch {
     return "error";
   }
+  // Slug cũ (D-018): 308 sang slug hiện tại. Nằm ngoài try để NEXT_REDIRECT không bị nuốt.
+  const result = redirectIfMoved(lookup, "/san-pham");
+  return result.status === "ok" ? result.data : null;
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
@@ -48,6 +56,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       url: absoluteUrl(path),
       locale: "vi_VN",
       ...(image ? { images: [{ url: absoluteUrl(image), alt: product.name }] } : {}),
+    },
+    twitter: {
+      card: image ? "summary_large_image" : "summary",
+      title,
+      description,
+      ...(image ? { images: [absoluteUrl(image)] } : {}),
     },
   };
 }
@@ -75,10 +89,12 @@ export default async function ProductPage({ params }: Props) {
 
   return (
     <Container className="space-y-10 py-6">
-      <script
-        type="application/ld+json"
-        // Nội dung do chính server dựng và đã thay "<" bằng <.
-        dangerouslySetInnerHTML={{ __html: serializeJsonLd(buildProductJsonLd(product)) }}
+      <JsonLd data={buildProductJsonLd(product)} />
+      <JsonLd
+        data={buildBreadcrumbJsonLd([
+          ...product.breadcrumbs.map((b) => ({ name: b.name, path: `/danh-muc/${b.slug}` })),
+          { name: product.name, path: `/san-pham/${product.slug}` },
+        ])}
       />
       <Breadcrumbs items={crumbs} />
 
@@ -91,7 +107,10 @@ export default async function ProductPage({ params }: Props) {
             </p>
           ) : null}
           <h1 className="font-serif text-3xl font-bold text-coffee-900">{product.name}</h1>
-          <RatingStars avg={product.ratingAvg} count={product.ratingCount} />
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <RatingStars avg={product.ratingAvg} count={product.ratingCount} />
+            <WishlistButton productId={product.id} variant="labeled" />
+          </div>
           {product.shortDesc ? <p className="text-coffee-800">{product.shortDesc}</p> : null}
           <AddToCartPanel key={product.id} variants={product.variants} />
         </div>
@@ -119,6 +138,8 @@ export default async function ProductPage({ params }: Props) {
           <ProductDescription markdown={product.description} />
         </section>
       ) : null}
+
+      <ReviewsSection slug={product.slug} productName={product.name} />
 
       {product.related.length > 0 ? (
         <section aria-labelledby="related-heading">

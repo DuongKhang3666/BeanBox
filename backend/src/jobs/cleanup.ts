@@ -1,10 +1,11 @@
 import { env } from '../config/env.js';
 import { logger } from '../lib/logger.js';
 import { prisma } from '../lib/prisma.js';
-import { getPaymentConfig, type PaymentConfig } from '../config/payments.js';
-import { cancelOrderTx } from '../modules/orders/orders.cancel.js';
+import type { PaymentConfig } from '../config/payments.js';
+import { cancelOrderTx, failPendingPaymentsTx } from '../modules/orders/orders.cancel.js';
 import { notifyOrderStatusChange } from '../modules/orders/orders.statusEmails.js';
-import { defaultStripeHttp, expireSession, type StripeHttp } from '../modules/payments/stripe.js';
+import { expireStripeSessionsBestEffort } from '../modules/payments/payments.expire.js';
+import type { StripeHttp } from '../modules/payments/stripe.js';
 
 /**
  * Job nền (architecture §7). Chạy trong tiến trình API:
@@ -117,7 +118,7 @@ async function expireOneOrder(orderId: string, now: Date): Promise<ExpiredOrder 
       ) {
         return null;
       }
-      await tx.$queryRaw`SELECT "id" FROM "Payment" WHERE "orderId" = ${orderId} AND "status" = 'PENDING' ORDER BY "id" FOR UPDATE`;
+      const stripeSessionIds = await failPendingPaymentsTx(tx, orderId);
       await cancelOrderTx(tx, {
         orderId,
         from: 'PENDING_PAYMENT',
@@ -126,24 +127,12 @@ async function expireOneOrder(orderId: string, now: Date): Promise<ExpiredOrder 
         reason: EXPIRE_REASON,
         now,
       });
-      const pending = await tx.payment.findMany({
-        where: { orderId, status: 'PENDING' },
-        select: { id: true, provider: true, providerRef: true },
-      });
-      if (pending.length > 0) {
-        await tx.payment.updateMany({
-          where: { id: { in: pending.map((p) => p.id) }, status: 'PENDING' },
-          data: { status: 'FAILED' },
-        });
-      }
       return {
         id: order.id,
         code: order.code,
         userId: order.userId,
         contactEmail: order.contactEmail,
-        stripeSessionIds: pending
-          .filter((p) => p.provider === 'STRIPE' && p.providerRef)
-          .map((p) => p.providerRef as string),
+        stripeSessionIds,
       };
     },
     { timeout: 30_000, maxWait: 10_000 },
@@ -204,7 +193,6 @@ export async function afterOrdersExpired(
 ): Promise<void> {
   if (orders.length === 0) return;
   logger.info(`Job hết hạn thanh toán: đã hủy ${orders.length} đơn`);
-  let http: StripeHttp | null | undefined = opts.stripeHttp;
   for (const o of orders) {
     try {
       const row = await prisma.order.findUnique({ where: { id: o.id } });
@@ -212,15 +200,10 @@ export async function afterOrdersExpired(
     } catch (err) {
       logger.error({ err, orderId: o.id }, 'Gửi email hủy đơn quá hạn thất bại');
     }
-    for (const sessionId of o.stripeSessionIds) {
-      try {
-        http ??= defaultStripeHttp((opts.paymentConfig ?? getPaymentConfig()).stripe);
-        if (!http) continue;
-        await expireSession(http, sessionId);
-      } catch (err) {
-        logger.warn({ err, orderId: o.id, sessionId }, 'Expire phiên Stripe thất bại (bỏ qua)');
-      }
-    }
+    await expireStripeSessionsBestEffort(o.id, o.stripeSessionIds, {
+      paymentConfig: opts.paymentConfig,
+      stripeHttp: opts.stripeHttp,
+    });
   }
 }
 

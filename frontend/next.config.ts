@@ -28,8 +28,20 @@ const nextConfig: NextConfig = {
     ];
   },
   async headers() {
-    // Token reset/verify nằm trên URL: không gửi Referer sang trang khác.
+    // Header an toàn cho mọi route. Đặt TRƯỚC các rule riêng bên dưới vì khi trùng key, rule sau
+    // thắng (Referrer-Policy: no-referrer ở trang có token/chữ ký trên URL).
+    // Chưa đặt CSP chặt: Next inline script/style cần nonce, chỉ đề xuất trong báo cáo M6.
     return [
+      {
+        source: "/:path*",
+        headers: [
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+        ],
+      },
+      // Token reset/verify nằm trên URL: không gửi Referer sang trang khác.
       {
         source: "/dat-lai-mat-khau",
         headers: [{ key: "Referrer-Policy", value: "no-referrer" }],

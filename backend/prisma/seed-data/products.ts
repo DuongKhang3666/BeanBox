@@ -33,13 +33,7 @@ export interface CoffeeSeed {
   altitude: number | null;
   tastingNotes: string[];
   brewMethods: (
-    | 'PHIN'
-    | 'ESPRESSO'
-    | 'POUR_OVER'
-    | 'COLD_BREW'
-    | 'FRENCH_PRESS'
-    | 'AEROPRESS'
-    | 'MOKA'
+    'PHIN' | 'ESPRESSO' | 'POUR_OVER' | 'COLD_BREW' | 'FRENCH_PRESS' | 'AEROPRESS' | 'MOKA'
   )[];
   /** Ngày rang cách ngày chạy seed bao nhiêu ngày (0-29). */
   roastDaysAgo: number;
@@ -187,7 +181,11 @@ export const SEED_PRODUCTS: ProductSeed[] = [
       brewMethods: ['POUR_OVER', 'ESPRESSO'],
       roastDaysAgo: 12,
     },
-    variants: [bean('KEN', 250, 'WB', 240000, 3), bean('KEN', 250, 'PO', 245000, 4), bean('KEN', 500, 'WB', 455000, 12)],
+    variants: [
+      bean('KEN', 250, 'WB', 240000, 3),
+      bean('KEN', 250, 'PO', 245000, 4),
+      bean('KEN', 500, 'WB', 455000, 12),
+    ],
     stats: [41, 4.7, 9],
   },
   {
@@ -212,7 +210,11 @@ export const SEED_PRODUCTS: ProductSeed[] = [
       brewMethods: ['POUR_OVER', 'AEROPRESS'],
       roastDaysAgo: 4,
     },
-    variants: [bean('CDH', 250, 'WB', 175000, 45), bean('CDH', 250, 'PO', 180000, 35), bean('CDH', 500, 'WB', 335000, 20)],
+    variants: [
+      bean('CDH', 250, 'WB', 175000, 45),
+      bean('CDH', 250, 'PO', 180000, 35),
+      bean('CDH', 500, 'WB', 335000, 20),
+    ],
     stats: [96, 4.8, 22],
   },
   {
@@ -237,7 +239,11 @@ export const SEED_PRODUCTS: ProductSeed[] = [
       brewMethods: ['ESPRESSO', 'MOKA', 'FRENCH_PRESS'],
       roastDaysAgo: 15,
     },
-    variants: [bean('BRA', 250, 'WB', 155000, 60), bean('BRA', 250, 'PO', 160000, 38), bean('BRA', 500, 'WB', 295000, 27)],
+    variants: [
+      bean('BRA', 250, 'WB', 155000, 60),
+      bean('BRA', 250, 'PO', 160000, 38),
+      bean('BRA', 500, 'WB', 295000, 27),
+    ],
     stats: [152, 4.3, 31],
   },
 
@@ -294,7 +300,11 @@ export const SEED_PRODUCTS: ProductSeed[] = [
       brewMethods: ['PHIN', 'POUR_OVER'],
       roastDaysAgo: 10,
     },
-    variants: [bean('ACD', 250, 'WB', 135000, 33), bean('ACD', 250, 'PHIN', 135000, 28), bean('ACD', 500, 'PHIN', 255000, 19)],
+    variants: [
+      bean('ACD', 250, 'WB', 135000, 33),
+      bean('ACD', 250, 'PHIN', 135000, 28),
+      bean('ACD', 500, 'PHIN', 255000, 19),
+    ],
     stats: [187, 4.4, 40],
   },
   {
@@ -319,7 +329,11 @@ export const SEED_PRODUCTS: ProductSeed[] = [
       brewMethods: ['PHIN', 'POUR_OVER', 'FRENCH_PRESS'],
       roastDaysAgo: 18,
     },
-    variants: [bean('ASL', 250, 'WB', 125000, 24), bean('ASL', 250, 'PHIN', 125000, 31), bean('ASL', 500, 'PHIN', 235000, 14)],
+    variants: [
+      bean('ASL', 250, 'WB', 125000, 24),
+      bean('ASL', 250, 'PHIN', 125000, 31),
+      bean('ASL', 500, 'PHIN', 235000, 14),
+    ],
     stats: [93, 4.2, 17],
   },
   {
@@ -344,7 +358,11 @@ export const SEED_PRODUCTS: ProductSeed[] = [
       brewMethods: ['PHIN', 'ESPRESSO'],
       roastDaysAgo: 21,
     },
-    variants: [bean('CUL', 250, 'PHIN', 95000, 52), bean('CUL', 500, 'PHIN', 185000, 41), bean('CUL', 1000, 'PHIN', 355000, 16)],
+    variants: [
+      bean('CUL', 250, 'PHIN', 95000, 52),
+      bean('CUL', 500, 'PHIN', 185000, 41),
+      bean('CUL', 1000, 'PHIN', 355000, 16),
+    ],
     stats: [205, 4.1, 28],
   },
   {
@@ -369,7 +387,11 @@ export const SEED_PRODUCTS: ProductSeed[] = [
       brewMethods: ['PHIN', 'POUR_OVER'],
       roastDaysAgo: 25,
     },
-    variants: [bean('MOK', 250, 'WB', 145000, 21), bean('MOK', 250, 'PHIN', 145000, 17), bean('MOK', 500, 'WB', 275000, 11)],
+    variants: [
+      bean('MOK', 250, 'WB', 145000, 21),
+      bean('MOK', 250, 'PHIN', 145000, 17),
+      bean('MOK', 500, 'WB', 275000, 11),
+    ],
     stats: [58, 4.5, 11],
   },
 
@@ -426,7 +448,11 @@ export const SEED_PRODUCTS: ProductSeed[] = [
       brewMethods: ['ESPRESSO', 'MOKA'],
       roastDaysAgo: 8,
     },
-    variants: [bean('BES', 250, 'WB', 115000, 44), bean('BES', 250, 'ESP', 118000, 36), bean('BES', 500, 'WB', 215000, 26)],
+    variants: [
+      bean('BES', 250, 'WB', 115000, 44),
+      bean('BES', 250, 'ESP', 118000, 36),
+      bean('BES', 500, 'WB', 215000, 26),
+    ],
     stats: [133, 4.4, 25],
   },
   {
@@ -560,7 +586,14 @@ export const SEED_PRODUCTS: ProductSeed[] = [
     status: 'ACTIVE',
     isFeatured: true,
     variants: [
-      item('HARIO-V60-02-NHUA', 'Nhựa - Trong suốt', { material: 'Nhựa', color: 'Trong suốt' }, 210000, 36, 120),
+      item(
+        'HARIO-V60-02-NHUA',
+        'Nhựa - Trong suốt',
+        { material: 'Nhựa', color: 'Trong suốt' },
+        210000,
+        36,
+        120,
+      ),
       item('HARIO-V60-02-DO', 'Nhựa - Đỏ', { material: 'Nhựa', color: 'Đỏ' }, 220000, 20, 120),
       item('HARIO-V60-02-SU', 'Sứ - Trắng', { material: 'Sứ', color: 'Trắng' }, 395000, 14, 400),
     ],
@@ -795,9 +828,23 @@ export const SEED_PRODUCTS: ProductSeed[] = [
     status: 'ACTIVE',
     isFeatured: false,
     variants: [
-      item('GL-V60-100-TRANG', '100 tờ - Trắng', { quantity: '100 tờ', color: 'Trắng' }, 55000, 80, 100),
+      item(
+        'GL-V60-100-TRANG',
+        '100 tờ - Trắng',
+        { quantity: '100 tờ', color: 'Trắng' },
+        55000,
+        80,
+        100,
+      ),
       item('GL-V60-100-NAU', '100 tờ - Nâu', { quantity: '100 tờ', color: 'Nâu' }, 55000, 70, 100),
-      item('GL-V60-40-TRANG', '40 tờ - Trắng', { quantity: '40 tờ', color: 'Trắng' }, 28000, 58, 50),
+      item(
+        'GL-V60-40-TRANG',
+        '40 tờ - Trắng',
+        { quantity: '40 tờ', color: 'Trắng' },
+        28000,
+        58,
+        50,
+      ),
     ],
     stats: [390, 4.6, 83],
   },
@@ -851,7 +898,14 @@ export const SEED_PRODUCTS: ProductSeed[] = [
     isFeatured: false,
     variants: [
       item('BGN-500-DEN', '500 ml - Đen', { capacity: '500 ml', color: 'Đen' }, 290000, 29, 400),
-      item('BGN-500-XANH', '500 ml - Xanh rêu', { capacity: '500 ml', color: 'Xanh rêu' }, 290000, 23, 400),
+      item(
+        'BGN-500-XANH',
+        '500 ml - Xanh rêu',
+        { capacity: '500 ml', color: 'Xanh rêu' },
+        290000,
+        23,
+        400,
+      ),
       // Ngưỡng cảnh báo riêng 10: tồn 8 -> LOW_STOCK
       item('BGN-500-KEM', '500 ml - Kem', { capacity: '500 ml', color: 'Kem' }, 290000, 8, 400, {
         lowStockThreshold: 10,

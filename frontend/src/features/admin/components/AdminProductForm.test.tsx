@@ -265,7 +265,7 @@ describe("Sửa sản phẩm", () => {
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: "Xóa sản phẩm" }));
     const dialog = screen.getByRole("dialog", { name: "Xóa sản phẩm" });
-    expect(within(dialog).getByText(/xóa mềm.*không thể khôi phục/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/xóa mềm.*có thể được khôi phục/)).toBeInTheDocument();
     await user.click(within(dialog).getByRole("button", { name: "Xóa sản phẩm" }));
     await waitFor(() => expect(push).toHaveBeenCalledWith("/admin/san-pham"));
     expect(writes(mock)[0]).toMatchObject({ method: "DELETE", path: "/admin/products/p1" });

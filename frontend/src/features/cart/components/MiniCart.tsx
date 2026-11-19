@@ -122,10 +122,12 @@ function MiniCartDialog() {
             <span className="text-lg font-bold">{formatVND(cart?.subtotal ?? 0)}</span>
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <ButtonLink href="/gio-hang" variant="outline">
+            <ButtonLink href="/gio-hang" variant="outline" onClick={closeMiniCart}>
               Xem giỏ hàng
             </ButtonLink>
-            <ButtonLink href="/thanh-toan">Thanh toán</ButtonLink>
+            <ButtonLink href="/thanh-toan" onClick={closeMiniCart}>
+              Thanh toán
+            </ButtonLink>
           </div>
         </div>
       </div>

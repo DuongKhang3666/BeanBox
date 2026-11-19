@@ -74,22 +74,18 @@ function useLiveState(stored: Order, authed: boolean, enabled: boolean) {
     if (!enabled) return;
     let cancelled = false;
     const load = authed
-      ? getOrder(code).then(
-          (o): Live => ({
-            status: o.status,
-            paymentStatus: o.paymentStatus,
-            canPay: o.canPay,
-            expiresAt: o.expiresAt,
-          }),
-        )
-      : trackOrder(code, phone).then(
-          (o): Live => ({
-            status: o.status,
-            paymentStatus: o.paymentStatus,
-            canPay: o.canPay,
-            expiresAt: o.expiresAt ?? null,
-          }),
-        );
+      ? getOrder(code).then((o): Live => ({
+          status: o.status,
+          paymentStatus: o.paymentStatus,
+          canPay: o.canPay,
+          expiresAt: o.expiresAt,
+        }))
+      : trackOrder(code, phone).then((o): Live => ({
+          status: o.status,
+          paymentStatus: o.paymentStatus,
+          canPay: o.canPay,
+          expiresAt: o.expiresAt ?? null,
+        }));
     load.then(
       (live) => !cancelled && setRes({ key, live }),
       () => !cancelled && setRes({ key, live: null }),
@@ -155,15 +151,7 @@ function titleFor(status: Order["status"]): string {
   return "Đặt hàng thành công";
 }
 
-function Header({
-  order,
-  authed,
-  pay,
-}: {
-  order: Order;
-  authed: boolean;
-  pay?: React.ReactNode;
-}) {
+function Header({ order, authed, pay }: { order: Order; authed: boolean; pay?: React.ReactNode }) {
   return (
     <section
       aria-labelledby="success-title"

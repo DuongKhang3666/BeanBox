@@ -3,13 +3,22 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Container } from "@/components/ui/Container";
 import { ErrorState } from "@/components/ui/ErrorState";
-import { getBrands, getCategories, getCoffeeOrigins, getProducts } from "@/features/catalog/api";
+import {
+  getBrands,
+  getCategories,
+  getCoffeeOrigins,
+  getProducts,
+  lookupCategory,
+} from "@/features/catalog/api";
 import { Breadcrumbs, type Crumb } from "@/features/catalog/components/Breadcrumbs";
 import { FilterPanel } from "@/features/catalog/components/FilterPanel";
 import { ProductResults } from "@/features/catalog/components/ProductResults";
 import { parseFilters, toApiQuery, type RawSearchParams } from "@/features/catalog/filters";
-import { COFFEE_BEANS_SLUG } from "@/lib/site";
-import type { CategoryChild, CategoryNode } from "@/types/catalog";
+import { JsonLd } from "@/components/seo/JsonLd";
+import { buildBreadcrumbJsonLd } from "@/features/catalog/jsonld";
+import { absoluteUrl, COFFEE_BEANS_SLUG } from "@/lib/site";
+import { redirectIfMoved } from "@/lib/slugRedirect";
+import type { CategoryChild, CategoryDetail, CategoryNode } from "@/types/catalog";
 
 interface Props {
   params: Promise<{ slug: string }>;
@@ -28,21 +37,89 @@ function findCategory(
   return null;
 }
 
+type Found = ReturnType<typeof findCategory>;
+
+/** Dựng kết quả từ GET /categories/:slug khi cây (cache 5 phút) chưa có danh mục. */
+function fromDetail(d: CategoryDetail): NonNullable<Found> {
+  const children: CategoryChild[] = d.children.map((c) => ({
+    id: c.slug,
+    name: c.name,
+    slug: c.slug,
+    imageUrl: null,
+    productCount: 0,
+  }));
+  const self: CategoryNode = {
+    id: d.id,
+    name: d.name,
+    slug: d.slug,
+    imageUrl: d.imageUrl,
+    productCount: 0,
+    children,
+  };
+  const parent: CategoryNode | null = d.parent
+    ? {
+        id: d.parent.slug,
+        name: d.parent.name,
+        slug: d.parent.slug,
+        imageUrl: null,
+        productCount: 0,
+        children: [],
+      }
+    : null;
+  const asChild: CategoryChild = {
+    id: d.id,
+    name: d.name,
+    slug: d.slug,
+    imageUrl: d.imageUrl,
+    productCount: 0,
+  };
+  return { category: parent ? asChild : self, parent };
+}
+
+/**
+ * Tìm danh mục: cây trước; không có thì hỏi GET /categories/:slug để bắt slug cũ (308) hoặc danh mục mới.
+ * `null` = 404 thường. Lỗi của endpoint này (không phải 404) coi như không tìm thấy.
+ */
+async function resolveCategory(tree: CategoryNode[], slug: string): Promise<Found> {
+  const hit = findCategory(tree, slug);
+  if (hit) return hit;
+  let lookup;
+  try {
+    lookup = await lookupCategory(slug);
+  } catch {
+    return null;
+  }
+  const result = redirectIfMoved(lookup, "/danh-muc");
+  return result.status === "ok" ? fromDetail(result.data) : null;
+}
+
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
   const path = `/danh-muc/${slug}`;
+  let tree: CategoryNode[];
   try {
-    const found = findCategory(await getCategories(), slug);
-    if (!found) return { title: "Không tìm thấy danh mục" };
-    const name = found.category.name;
-    return {
-      title: name,
-      description: `Mua ${name.toLowerCase()} chính hãng tại BeanBox: nhiều lựa chọn, giá rõ ràng, giao hàng toàn quốc.`,
-      alternates: { canonical: path },
-    };
+    tree = await getCategories();
   } catch {
     return { title: "Danh mục sản phẩm", alternates: { canonical: path } };
   }
+  // Ngoài try: slug cũ ném NEXT_REDIRECT (308) và không được bị nuốt.
+  const found = await resolveCategory(tree, slug);
+  if (!found) return { title: "Không tìm thấy danh mục" };
+  const name = found.category.name;
+  const description = `Mua ${name.toLowerCase()} chính hãng tại BeanBox: nhiều lựa chọn, giá rõ ràng, giao hàng toàn quốc.`;
+  return {
+    title: name,
+    description,
+    alternates: { canonical: path },
+    openGraph: {
+      type: "website",
+      title: name,
+      description,
+      url: absoluteUrl(path),
+      locale: "vi_VN",
+    },
+    twitter: { card: "summary", title: name, description },
+  };
 }
 
 export default async function CategoryPage({ params, searchParams }: Props) {
@@ -67,7 +144,7 @@ export default async function CategoryPage({ params, searchParams }: Props) {
     );
   }
 
-  const found = findCategory(catRes.value, slug);
+  const found = await resolveCategory(catRes.value, slug);
   if (!found) notFound();
   const { category, parent } = found;
   const root = parent ?? (category as CategoryNode);
@@ -89,6 +166,12 @@ export default async function CategoryPage({ params, searchParams }: Props) {
 
   return (
     <Container className="space-y-5 py-6">
+      <JsonLd
+        data={buildBreadcrumbJsonLd([
+          ...(parent ? [{ name: parent.name, path: `/danh-muc/${parent.slug}` }] : []),
+          { name: category.name, path: pathname },
+        ])}
+      />
       <Breadcrumbs items={crumbs} />
       <h1 className="font-serif text-3xl font-bold text-coffee-900">{category.name}</h1>
 

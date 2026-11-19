@@ -3,8 +3,11 @@ import { Be_Vietnam_Pro, Lora } from "next/font/google";
 import "./globals.css";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
+import { JsonLd } from "@/components/seo/JsonLd";
+import { buildOrganizationJsonLd, buildWebSiteJsonLd } from "@/features/catalog/jsonld";
 import { AuthProvider } from "@/features/auth/AuthProvider";
 import { CartProvider } from "@/features/cart/CartProvider";
+import { WishlistProvider } from "@/features/wishlist/WishlistProvider";
 import { MiniCart } from "@/features/cart/components/MiniCart";
 import { SITE_DESCRIPTION, SITE_NAME, SITE_URL } from "@/lib/site";
 
@@ -36,6 +39,11 @@ export const metadata: Metadata = {
     description: SITE_DESCRIPTION,
     url: SITE_URL,
   },
+  twitter: {
+    card: "summary_large_image",
+    title: SITE_NAME,
+    description: SITE_DESCRIPTION,
+  },
 };
 
 export const viewport: Viewport = {
@@ -48,6 +56,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="vi" className={`${beVietnam.variable} ${lora.variable}`}>
       <body className="flex min-h-dvh flex-col">
+        <JsonLd
+          data={buildOrganizationJsonLd({ name: SITE_NAME, description: SITE_DESCRIPTION })}
+        />
+        <JsonLd data={buildWebSiteJsonLd({ name: SITE_NAME, description: SITE_DESCRIPTION })} />
         <a
           href="#main-content"
           className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-coffee-900 focus:px-4 focus:py-2 focus:text-white"
@@ -56,12 +68,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </a>
         <AuthProvider>
           <CartProvider>
-            <Header />
-            <main id="main-content" className="flex-1">
-              {children}
-            </main>
-            <Footer />
-            <MiniCart />
+            <WishlistProvider>
+              <Header />
+              <main id="main-content" className="flex-1">
+                {children}
+              </main>
+              <Footer />
+              <MiniCart />
+            </WishlistProvider>
           </CartProvider>
         </AuthProvider>
       </body>

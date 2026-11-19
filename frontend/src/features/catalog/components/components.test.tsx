@@ -7,6 +7,11 @@ import { PriceTag } from "./PriceTag";
 import { ProductCard } from "./ProductCard";
 import { ProductDescription } from "./ProductDescription";
 
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  usePathname: () => "/",
+}));
+
 vi.mock("@/features/cart/CartProvider", () => ({
   useCart: () => ({ addItem: vi.fn(), openMiniCart: vi.fn(), pending: { adding: false } }),
 }));
@@ -26,6 +31,13 @@ describe("PriceTag", () => {
 });
 
 describe("ProductCard", () => {
+  it("có nút tim nằm ngoài link tới trang chi tiết (không lồng button trong link)", () => {
+    render(<ProductCard product={makeProduct()} />);
+    const heart = screen.getByRole("button", { name: "Thêm vào yêu thích" });
+    expect(heart).toHaveAttribute("aria-pressed", "false");
+    expect(heart.closest("a")).toBeNull();
+  });
+
   it("link tới trang chi tiết đúng slug", () => {
     render(<ProductCard product={makeProduct()} />);
     expect(screen.getByRole("link", { name: "Ethiopia Yirgacheffe" })).toHaveAttribute(

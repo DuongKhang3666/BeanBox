@@ -441,3 +441,106 @@ export interface AdminCouponQuery {
   page?: number;
   pageSize?: number;
 }
+
+/** Theo docs/api-contract.md §14.3 (dashboard). */
+
+export interface DashboardDay {
+  /** YYYY-MM-DD, giờ Việt Nam */
+  date: string;
+  revenue: number;
+  orders: number;
+}
+
+export interface DashboardTopProduct {
+  productId: string;
+  name: string;
+  slug: string;
+  quantity: number;
+  revenue: number;
+}
+
+export interface DashboardLowStock {
+  variantId: string;
+  sku: string;
+  productName: string;
+  variantName: string;
+  stock: number;
+  lowStockThreshold: number;
+}
+
+export interface AdminDashboard {
+  revenue: { today: number; last7Days: number; last30Days: number };
+  orders: { today: number; last7Days: number; last30Days: number };
+  /** Đúng 30 phần tử, tăng dần theo ngày. */
+  dailyRevenue: DashboardDay[];
+  ordersByStatus: OrderStatusCounts;
+  topProducts: DashboardTopProduct[];
+  lowStock: DashboardLowStock[];
+  attention: { pendingOrders: number; needsRefund: number };
+  generatedAt: string;
+}
+
+/** Theo docs/api-contract.md §14.4 (nhật ký thao tác, chỉ Admin). */
+
+export interface AuditActor {
+  id: string;
+  fullName: string;
+  email: string;
+  role: UserRole;
+}
+
+export interface AuditLogItem {
+  id: string;
+  action: string;
+  entity: string;
+  entityId: string | null;
+  /** `{ field: [trước, sau] }`; có thể null/rỗng. */
+  diff: Record<string, unknown> | null;
+  ip: string | null;
+  createdAt: string;
+  /** null = hệ thống ghi hoặc tài khoản đã bị xóa. */
+  actor: AuditActor | null;
+}
+
+export interface AuditLogQuery {
+  actionPrefix?: string;
+  entity?: string;
+  entityId?: string;
+  actorId?: string;
+  /** YYYY-MM-DD, giờ Việt Nam */
+  from?: string;
+  to?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+/** Theo docs/api-contract.md §14.1 (kiểm duyệt đánh giá). */
+
+export type ReviewStatus = "PUBLISHED" | "HIDDEN";
+
+export interface AdminReview {
+  id: string;
+  rating: number;
+  /** Văn bản thuần. */
+  content: string;
+  authorName: string;
+  verifiedPurchase: boolean;
+  createdAt: string;
+  updatedAt: string;
+  reply: string | null;
+  repliedAt: string | null;
+  status: ReviewStatus;
+  images: string[];
+  product: { id: string; name: string; slug: string };
+  author: { id: string; fullName: string; email: string };
+}
+
+export interface AdminReviewQuery {
+  status?: ReviewStatus;
+  rating?: number;
+  productId?: string;
+  q?: string;
+  hasReply?: boolean;
+  page?: number;
+  pageSize?: number;
+}

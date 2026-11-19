@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { WishlistButton } from "@/features/wishlist/components/WishlistButton";
 import type { ProductListItem } from "@/types/catalog";
 import { ROAST_LABELS } from "../labels";
 import { PriceTag } from "./PriceTag";
@@ -23,9 +24,12 @@ const badge = "rounded-md px-2 py-0.5 text-xs font-semibold";
 export function ProductCard({
   product,
   priority = false,
+  onWishlistToggled,
 }: {
   product: ProductListItem;
   priority?: boolean;
+  /** Chỉ truyền được từ Client Component (vd. trang yêu thích). */
+  onWishlistToggled?: (wished: boolean) => void;
 }) {
   const roast = product.coffee?.roastLevel ? ROAST_LABELS[product.coffee.roastLevel] : null;
   return (
@@ -38,6 +42,11 @@ export function ProductCard({
           className="w-full"
           priority={priority}
           sizes="(min-width: 1024px) 25vw, (min-width: 768px) 33vw, 50vw"
+        />
+        <WishlistButton
+          productId={product.id}
+          className="absolute right-2 top-2"
+          onToggled={onWishlistToggled}
         />
         <div className="absolute left-2 top-2 flex flex-col items-start gap-1">
           {!product.inStock ? (

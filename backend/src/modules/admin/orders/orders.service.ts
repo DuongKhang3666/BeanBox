@@ -8,7 +8,12 @@ import {
   type OrderActor,
 } from '../../../lib/orderStateMachine.js';
 import { prisma } from '../../../lib/prisma.js';
-import { cancelOrderTx } from '../../orders/orders.cancel.js';
+import { vnDayEnd, vnDayStart } from '../admin.schema.js';
+import { cancelOrderTx, failPendingPaymentsTx } from '../../orders/orders.cancel.js';
+import {
+  expireStripeSessionsBestEffort,
+  type ExpireSessionsOptions,
+} from '../../payments/payments.expire.js';
 import { notifyOrderStatusChange } from '../../orders/orders.statusEmails.js';
 import {
   adminOrderInclude,
@@ -25,7 +30,6 @@ import {
 } from './orders.schema.js';
 
 const TX_OPTIONS = { timeout: 20_000, maxWait: 10_000 } as const;
-const VN_OFFSET = '+07:00';
 const DEFAULT_CANCEL_REASON = 'Cửa hàng hủy đơn';
 
 const notFound = () => new AppError(404, 'NOT_FOUND', 'Không tìm thấy đơn hàng');
@@ -55,7 +59,7 @@ function searchClause(q: string): Prisma.OrderWhereInput[] {
  * Id các đơn cần hoàn tiền (§13.7): có Payment SUCCEEDED VÀ (đơn CANCELLED hoặc >= 2 Payment SUCCEEDED).
  * Tập này nhỏ (chỉ đơn bất thường) nên lấy id rồi lọc bằng `id IN`.
  */
-async function ordersNeedingRefund(): Promise<string[]> {
+export async function ordersNeedingRefund(): Promise<string[]> {
   const rows = await prisma.$queryRaw<Array<{ id: string }>>`
     SELECT o."id" FROM "Order" o
     WHERE EXISTS (SELECT 1 FROM "Payment" p WHERE p."orderId" = o."id" AND p."status" = 'SUCCEEDED')
@@ -78,8 +82,8 @@ export function buildOrdersWhere(
   if (q.paymentMethod) where.paymentMethod = { in: q.paymentMethod };
   if (q.from || q.to) {
     where.createdAt = {
-      ...(q.from ? { gte: new Date(`${q.from}T00:00:00.000${VN_OFFSET}`) } : {}),
-      ...(q.to ? { lte: new Date(`${q.to}T23:59:59.999${VN_OFFSET}`) } : {}),
+      ...(q.from ? { gte: vnDayStart(q.from) } : {}),
+      ...(q.to ? { lte: vnDayEnd(q.to) } : {}),
     };
   }
   if (q.q) where.OR = searchClause(q.q);
@@ -190,6 +194,8 @@ export interface UpdateStatusArgs {
   role: 'STAFF' | 'ADMIN';
   ip: string | null;
   now?: Date;
+  /** Cấu hình để expire phiên Stripe sau khi hủy (§14.7); test tiêm HTTP giả. */
+  stripe?: ExpireSessionsOptions;
 }
 
 const staleConflict = (currentStatus: OrderStatus) =>
@@ -205,7 +211,9 @@ export async function updateOrderStatus(args: UpdateStatusArgs): Promise<AdminOr
   const to = input.toStatus as OrderStatus;
   const from = input.fromStatus as OrderStatus;
 
+  let stripeSessionIds: string[] = [];
   const { dto, row } = await prisma.$transaction(async (tx) => {
+    stripeSessionIds = [];
     const locked = await tx.$queryRaw<Array<{ id: string }>>`
       SELECT "id" FROM "Order" WHERE "code" = ${code} FOR UPDATE`;
     if (locked.length === 0) throw notFound();
@@ -238,6 +246,8 @@ export async function updateOrderStatus(args: UpdateStatusArgs): Promise<AdminOr
     let after: Record<string, unknown> = { ...before, status: to };
 
     if (to === 'CANCELLED') {
+      // Order đã khóa; khóa/đặt FAILED cho Payment PENDING trước khi hoàn kho (D-015, §14.7).
+      stripeSessionIds = await failPendingPaymentsTx(tx, order.id);
       await cancelOrderTx(tx, {
         orderId: order.id,
         from,
@@ -324,6 +334,7 @@ export async function updateOrderStatus(args: UpdateStatusArgs): Promise<AdminOr
 
   // Sau commit (api-contract §13.9): không gửi khi lỗi; lỗi gửi chỉ log.
   notifyOrderStatusChange(row);
+  await expireStripeSessionsBestEffort(row.id, stripeSessionIds, args.stripe);
   return dto;
 }
 

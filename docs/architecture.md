@@ -55,8 +55,9 @@ BeanBox/
 │  │  ├─ lib/           # prisma client, logger (pino), errors (AppError), mailer, tokens, money, text (bỏ dấu), audit.ts (ghi AuditLog trong transaction, M4)
 │  │  ├─ middlewares/   # requestId, auth, requireRole, validate(zod), rateLimit, originCheck, errorHandler
 │  │  └─ modules/<module>/{<module>.routes,.controller,.service,.schema}.ts
-│  │        # modules: health, catalog, auth, me, locations, cart, checkout, orders, admin (M4), (payments, reviews... ở M5+)
-│  │        # modules/admin/: orders, inventory, catalog (categories/brands), products (gồm variants, images), uploads; một router duy nhất mount /admin
+│  │        # modules: health, catalog, auth, me, locations, cart, checkout, orders, admin (M4), payments (M5), reviews, wishlist (M6)
+│  │        # modules/admin/: orders, inventory, catalog (categories/brands), products (gồm variants, images, restore), uploads; một router duy nhất mount /admin
+│  │        # M6 thêm: modules/reviews (công khai + của tôi), modules/wishlist (/me/wishlist), modules/admin/dashboard, modules/admin/audit (chỉ Admin), modules/admin/reviews; slug redirect nằm trong catalog + admin/catalog + admin/products (bảng SlugRedirect)
 │  └─ tests/            # unit (pricing, shipping, state machine) + integration (supertest)
 ├─ docker-compose.yml, .env.example, .github/workflows/ci.yml
 ```
@@ -100,6 +101,7 @@ Quy tắc phân lớp backend: `routes` (khai báo + middleware) -> `controller`
 ## 6. Tìm kiếm & lọc
 
 - `Product.searchText` = lowercase + bỏ dấu tiếng Việt (NFD, bỏ combining marks, `đ -> d`) của `name + tags + shortDesc`, do service cập nhật mỗi lần ghi sản phẩm. Query người dùng chuẩn hóa cùng hàm, tách theo khoảng trắng, mỗi token là `contains` (AND).
+- **Gợi ý tìm kiếm (M6, FR-CAT-06):** FE gọi `GET /search/suggest` (api-contract §4.5) từ ô tìm kiếm header dạng combobox: tối thiểu 2 ký tự, debounce, hủy request cũ; không đổi API.
 - Index: `pg_trgm` + GIN trên `searchText` (xem `db-schema.md`). Sort `relevance` dùng `word_similarity` qua raw query.
 - Lọc/sắp giá dùng cột denormalize `minPrice` (giá hiệu lực thấp nhất của variant active), `soldCount`, `ratingAvg`, `ratingCount`, `inStock`.
 - **Hạn chế đã chấp nhận (MVP):** `minPrice` cập nhật khi variant đổi, nên flash sale theo khung giờ (`saleStart/saleEnd`) **chưa phản ánh realtime** trong lọc/sắp giá; giá hiển thị (card, chi tiết, giỏ, checkout) luôn tính lại từ variant nên đúng. Hướng xử lý sau: job mỗi phút recompute `minPrice` cho sản phẩm có sale sắp bắt đầu/kết thúc, hoặc tính `minPrice` trong query bằng `LEAST` trên variant.
@@ -132,7 +134,7 @@ Quy tắc phân lớp backend: `routes` (khai báo + middleware) -> `controller`
 | `WEB_APP_URL` | gốc link trong email, mặc định `http://localhost:3000`; không dựng link từ header Host/Origin |
 | `JOBS_ENABLED` | mặc định `true`; bật/tắt job nền dọn dẹp (§7); luôn tắt khi `NODE_ENV=test` |
 | `COOKIE_SECURE` | mặc định `true` khi production |
-| `JWT_ACCESS_SECRET` | chuỗi >= 32 ký tự ngẫu nhiên |
+| `JWT_ACCESS_SECRET` | chuỗi >= 32 ký tự ngẫu nhiên; khi `NODE_ENV=production`, `JWT_ACCESS_SECRET`/`INTERNAL_API_SECRET` bắt đầu bằng `dev-` bị từ chối lúc khởi động (D-020) |
 | `ACCESS_TOKEN_TTL` / `REFRESH_TOKEN_TTL_DAYS` | `15m` / `7` |
 | `API_INTERNAL_URL` (frontend) | `http://localhost:4000` (Docker: `http://backend:4000`) |
 | `SMTP_HOST/PORT/USER/PASS`, `MAIL_FROM` | Mailpit dev |

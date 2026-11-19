@@ -3,3 +3,4 @@ node_modules
 coverage
 prisma/migrations
 package-lock.json
+data/provinces-wards.json

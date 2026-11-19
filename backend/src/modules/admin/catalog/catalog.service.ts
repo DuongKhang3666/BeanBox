@@ -3,6 +3,7 @@ import { diffFields, writeAudit } from '../../../lib/audit.js';
 import { AppError } from '../../../lib/errors.js';
 import { prisma } from '../../../lib/prisma.js';
 import { slugify, SLUG_REGEX } from '../../../lib/slug.js';
+import { deleteRedirectsOf, recordSlugChange } from '../../../lib/slugRedirect.js';
 import { ID_REGEX } from '../admin.schema.js';
 import {
   buildCategoryTree,
@@ -173,6 +174,9 @@ export async function updateCategory(
       if (input.isActive !== undefined) data.isActive = input.isActive;
 
       const row = await tx.category.update({ where: { id }, data, include: categoryInclude });
+      if (input.slug !== undefined) {
+        await recordSlugChange(tx, 'CATEGORY', id, before.slug, input.slug);
+      }
       const diff = diffFields(before, row, CATEGORY_AUDIT_KEYS);
       if (diff) {
         await writeAudit(tx, {
@@ -211,6 +215,7 @@ export async function deleteCategory(id: string, { actorId, ip }: Actor): Promis
       ]);
       if (childCount > 0 || productCount > 0) throw conflict({ childCount, productCount });
       await tx.category.delete({ where: { id } });
+      await deleteRedirectsOf(tx, 'CATEGORY', id);
       await writeAudit(tx, {
         actorId,
         action: 'category.delete',

@@ -22,7 +22,9 @@ import { loadLocations } from './modules/locations/locations.data.js';
 import { locationsRouter } from './modules/locations/locations.routes.js';
 import { meRouter } from './modules/me/me.routes.js';
 import { createPaymentsRouter } from './modules/payments/payments.routes.js';
+import { createReviewsRouter } from './modules/reviews/reviews.routes.js';
 import type { StripeHttp } from './modules/payments/stripe.js';
+import { wishlistRouter } from './modules/wishlist/wishlist.routes.js';
 
 const API_PREFIX = '/api/v1';
 
@@ -61,6 +63,8 @@ export interface AppOptions {
   paymentSyncRateLimit?: number;
   /** HTTP client Stripe (mặc định fetch tới api.stripe.com). Test tiêm bản giả, không đi qua mạng. */
   stripeHttp?: StripeHttp;
+  /** Số request/phút/IP của POST /products/:slug/reviews và PATCH /reviews/:id (mặc định 10). Chỉ đổi trong test. */
+  reviewRateLimit?: number;
   /** Thư mục lưu/phục vụ ảnh upload (mặc định backend/uploads). Chỉ đổi trong test. */
   uploadsDir?: string;
 }
@@ -111,6 +115,8 @@ export function createApp(options: AppOptions = {}): Express {
       windowMs: 60_000,
       limit: options.paymentSyncRateLimit ?? 30,
     }),
+    // Ghi đánh giá (§14.1): store riêng, theo IP, đứng trước xác thực.
+    reviewWrite: createRateLimiter({ windowMs: 60_000, limit: options.reviewRateLimit ?? 10 }),
     // Chỉ áp cho /admin/uploads (store riêng), đứng sau requireAuth/requireStaff.
     upload: createRateLimiter({ windowMs: 60_000, limit: options.uploadRateLimit ?? 30 }),
   };
@@ -172,7 +178,9 @@ export function createApp(options: AppOptions = {}): Express {
   app.use(API_PREFIX, healthRouter);
   app.use(API_PREFIX, createAuthRouter({ sensitiveLimiter: limiters.sensitive }));
   app.use(API_PREFIX, meRouter);
+  app.use(API_PREFIX, wishlistRouter);
   app.use(API_PREFIX, catalogRouter);
+  app.use(API_PREFIX, createReviewsRouter({ writeLimiter: limiters.reviewWrite }));
   app.use(API_PREFIX, locationsRouter);
   app.use(API_PREFIX, createCartRouter({ couponLimiter: limiters.coupon }));
   app.use(API_PREFIX, createCheckoutRouter({ quoteLimiter: limiters.quote }));

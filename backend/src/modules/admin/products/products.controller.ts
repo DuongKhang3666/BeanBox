@@ -41,6 +41,10 @@ export const deleteProduct = asyncHandler(async (req, res) => {
   res.status(204).end();
 });
 
+export const restoreProduct = asyncHandler(async (req, res) => {
+  res.json({ data: await products.restoreProduct(param(req, 'id'), actor(req)) });
+});
+
 export const createVariant = asyncHandler(async (req, res) => {
   const data = await variants.createVariant(
     param(req, 'id'),

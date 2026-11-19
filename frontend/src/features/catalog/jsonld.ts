@@ -47,3 +47,61 @@ export function buildProductJsonLd(product: ProductDetail, siteUrl: string = SIT
 export function serializeJsonLd(data: unknown): string {
   return JSON.stringify(data).replace(/</g, "\\u003c");
 }
+
+export interface BreadcrumbItem {
+  name: string;
+  /** Đường dẫn tương đối hoặc URL tuyệt đối. */
+  path: string;
+}
+
+/** schema.org/BreadcrumbList; mục đầu luôn là Trang chủ. */
+export function buildBreadcrumbJsonLd(items: BreadcrumbItem[], siteUrl: string = SITE_URL) {
+  const all: BreadcrumbItem[] = [{ name: "Trang chủ", path: "/" }, ...items];
+  return {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: all.map((item, i) => ({
+      "@type": "ListItem",
+      position: i + 1,
+      name: item.name,
+      item: abs(siteUrl, item.path),
+    })),
+  };
+}
+
+/** schema.org/Organization cho layout gốc. */
+export function buildOrganizationJsonLd(
+  site: { name: string; description: string },
+  siteUrl: string = SITE_URL,
+) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    name: site.name,
+    url: siteUrl,
+    description: site.description,
+  };
+}
+
+/** schema.org/WebSite kèm SearchAction trỏ tới trang /tim-kiem. */
+export function buildWebSiteJsonLd(
+  site: { name: string; description: string },
+  siteUrl: string = SITE_URL,
+) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    name: site.name,
+    url: siteUrl,
+    description: site.description,
+    inLanguage: "vi-VN",
+    potentialAction: {
+      "@type": "SearchAction",
+      target: {
+        "@type": "EntryPoint",
+        urlTemplate: `${siteUrl}/tim-kiem?q={search_term_string}`,
+      },
+      "query-input": "required name=search_term_string",
+    },
+  };
+}

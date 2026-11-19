@@ -22,7 +22,9 @@ import {
 } from '../checkout/checkout.service.js';
 import { resolveLocation } from '../locations/locations.data.js';
 import { getShopSettings } from '../settings/settings.service.js';
-import { cancelOrderTx } from './orders.cancel.js';
+import { expireStripeSessionsBestEffort } from '../payments/payments.expire.js';
+import type { StripeHttp } from '../payments/stripe.js';
+import { cancelOrderTx, failPendingPaymentsTx } from './orders.cancel.js';
 import {
   orderInclude,
   toOrderDto,
@@ -462,6 +464,8 @@ export interface CustomerCancelArgs {
   userId: string | null;
   input: CancelOrderInput;
   paymentConfig?: PaymentConfig;
+  /** HTTP client Stripe để expire phiên sau khi hủy (§14.7); test tiêm bản giả. */
+  stripeHttp?: StripeHttp | undefined;
   now?: Date;
 }
 
@@ -490,7 +494,11 @@ export async function cancelOrderForCustomer(
   const code = normalizeOrderCode(args.rawCode);
   if (!ORDER_CODE_REGEX.test(code)) throw orderNotFound();
 
+  let stripeSessionIds: string[] = [];
   const { dto, row } = await prisma.$transaction(async (tx) => {
+    stripeSessionIds = [];
+    // Khóa Order trước (D-015) rồi mới đọc trạng thái; sau đó khóa Payment, rồi hoàn kho.
+    await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "code" = ${code} FOR UPDATE`;
     const order = await tx.order.findUnique({
       where: { code },
       select: { id: true, status: true, userId: true, contactPhone: true },
@@ -502,6 +510,7 @@ export async function cancelOrderForCustomer(
       : false;
     if (!order || !owned) throw orderNotFound();
 
+    stripeSessionIds = await failPendingPaymentsTx(tx, order.id);
     await cancelOrderTx(tx, {
       orderId: order.id,
       from: order.status,
@@ -524,6 +533,10 @@ export async function cancelOrderForCustomer(
 
   // Sau commit (api-contract §13.9): gửi nền, lỗi chỉ log.
   notifyOrderStatusChange(row);
+  await expireStripeSessionsBestEffort(row.id, stripeSessionIds, {
+    paymentConfig: args.paymentConfig,
+    stripeHttp: args.stripeHttp,
+  });
   return dto;
 }
 

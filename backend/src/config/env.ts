@@ -127,6 +127,19 @@ const schema = z
     SEED_STAFF_PASSWORD: z.string().optional(),
     SEED_CUSTOMER_PASSWORD: z.string().optional(),
   })
+  .superRefine((v, ctx) => {
+    // Chặn secret mẫu ở production; thông báo KHÔNG in giá trị.
+    if (v.NODE_ENV !== 'production') return;
+    for (const key of ['JWT_ACCESS_SECRET', 'INTERNAL_API_SECRET'] as const) {
+      if (v[key]?.startsWith('dev-')) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [key],
+          message: `${key} đang dùng giá trị mẫu (bắt đầu bằng "dev-"); production phải dùng secret ngẫu nhiên riêng`,
+        });
+      }
+    }
+  })
   .transform(({ COOKIE_SECURE, JOBS_ENABLED, ...v }) => ({
     ...v,
     VNPAY_RETURN_URL: v.VNPAY_RETURN_URL ?? `${v.WEB_APP_URL}/thanh-toan/ket-qua?provider=vnpay`,

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { csvEnum, dateOnly, paginationShape } from '../admin.schema.js';
+import { csvEnum, dateOnly, paginationShape, refineDateRange } from '../admin.schema.js';
 
 export const ORDER_STATUSES = [
   'PENDING_PAYMENT',
@@ -45,15 +45,7 @@ export const adminOrdersQuerySchema = z
     sort: z.enum(['newest', 'oldest'], { error: 'Sắp xếp không hợp lệ' }).default('newest'),
     ...paginationShape,
   })
-  .superRefine((v, ctx) => {
-    if (v.from && v.to && v.from > v.to) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['from'],
-        message: 'Ngày bắt đầu phải nhỏ hơn hoặc bằng ngày kết thúc',
-      });
-    }
-  });
+  .superRefine(refineDateRange);
 export type AdminOrdersQuery = z.infer<typeof adminOrdersQuerySchema>;
 
 const optionalText = (max: number, maxMsg: string) =>

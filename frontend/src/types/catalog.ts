@@ -57,6 +57,8 @@ export interface ProductListItem {
   compareAtPrice: number | null;
   inStock: boolean;
   isFeatured: boolean;
+  /** Chưa có trong contract §4.2; nếu API trả thì sitemap dùng làm lastModified. */
+  updatedAt?: string;
   ratingAvg: number;
   ratingCount: number;
   coffee: {
@@ -126,3 +128,17 @@ export interface SuggestResult {
   products: Array<{ slug: string; name: string; imageUrl: string | null; minPrice: number }>;
   categories: Array<{ slug: string; name: string }>;
 }
+
+/** GET /categories/:slug (docs/api-contract.md §14.5). */
+export interface CategoryDetail {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  imageUrl: string | null;
+  parent: { name: string; slug: string } | null;
+  children: Array<{ name: string; slug: string }>;
+}
+
+/** GET /me/wishlist: ProductListItem kèm addedAt (§14.2). */
+export type WishlistItem = ProductListItem & { addedAt: string };

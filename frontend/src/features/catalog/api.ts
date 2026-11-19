@@ -2,7 +2,14 @@
 import { ApiError } from "@/lib/api/errors";
 import { serverGet } from "@/lib/api/server";
 import type { PaginationMeta } from "@/types/api";
-import type { Brand, CategoryNode, ProductDetail, ProductListItem } from "@/types/catalog";
+import { lookupFromError, type SlugLookup } from "@/lib/slugRedirect";
+import type {
+  Brand,
+  CategoryDetail,
+  CategoryNode,
+  ProductDetail,
+  ProductListItem,
+} from "@/types/catalog";
 import type { ApiQuery } from "./filters";
 
 const TAXONOMY_REVALIDATE = 300;
@@ -44,6 +51,30 @@ export async function getProduct(slug: string): Promise<ProductDetail | null> {
   } catch (e) {
     if (e instanceof ApiError && e.status === 404) return null;
     throw e;
+  }
+}
+
+/** Như getProduct nhưng phân biệt slug cũ (404 + details.movedTo, D-018) với 404 thường. */
+export async function lookupProduct(slug: string): Promise<SlugLookup<ProductDetail>> {
+  try {
+    const res = await serverGet<ProductDetail>(`/products/${encodeURIComponent(slug)}`, {
+      revalidate: PRODUCT_REVALIDATE,
+    });
+    return { status: "ok", data: res.data };
+  } catch (e) {
+    return lookupFromError(e);
+  }
+}
+
+/** GET /categories/:slug (§14.5): thông tin danh mục hoặc slug cũ. */
+export async function lookupCategory(slug: string): Promise<SlugLookup<CategoryDetail>> {
+  try {
+    const res = await serverGet<CategoryDetail>(`/categories/${encodeURIComponent(slug)}`, {
+      revalidate: TAXONOMY_REVALIDATE,
+    });
+    return { status: "ok", data: res.data };
+  } catch (e) {
+    return lookupFromError(e);
   }
 }
 

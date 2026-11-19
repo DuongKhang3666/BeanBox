@@ -25,6 +25,7 @@ adminProductsRouter.post('/products', validate(createProductSchema), controller.
 adminProductsRouter.get('/products/:id', controller.getProduct);
 adminProductsRouter.patch('/products/:id', validate(updateProductSchema), controller.updateProduct);
 adminProductsRouter.delete('/products/:id', requireAdmin, controller.deleteProduct);
+adminProductsRouter.post('/products/:id/restore', requireAdmin, controller.restoreProduct);
 
 adminProductsRouter.post(
   '/products/:id/variants',

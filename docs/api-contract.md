@@ -1,6 +1,8 @@
 # BeanBox – API Contract
 
-> Phiên bản 0.6.1 · 2026-11-11 · **Nguồn sự thật cho FE và BE.** Đổi contract phải sửa file này trước và nêu trong báo cáo.
+> Phiên bản 0.7 · 2026-11-11 · **Nguồn sự thật cho FE và BE.** Đổi contract phải sửa file này trước và nêu trong báo cáo.
+> Thay đổi 0.7.1: ghi nhận khi triển khai M6: `Review` có thêm unique `(userId, productId)` (chống tạo trùng khi gửi đồng thời; trùng -> 409 `REVIEW_NOT_ALLOWED` `ALREADY_REVIEWED`); `requirements.md` đổi `POST /products/:id/reviews` thành `:slug`, FR-REV-01 bỏ ảnh ở M6 và FR-REV-02 thành 1 đánh giá/người dùng/sản phẩm; Enter ở ô tìm kiếm tới `/tim-kiem?q=` (§14.8). Không đổi shape API.
+> Thay đổi 0.7: chi tiết hóa M6 (D-017..D-020): §14 đổi thành "Hoàn thiện v1 (M6)" gồm đánh giá (14.1; `POST` dùng `:slug` thay vì `:productId`, `PUT|DELETE /admin/reviews/:id/reply` thay cho `POST .../reply`), wishlist (14.2), dashboard (14.3), audit log (14.4), redirect slug + `GET /categories/:slug` (14.5), khôi phục sản phẩm (14.6), hủy đơn và Payment Stripe (14.7), gợi ý tìm kiếm ở FE (14.8); Settings, Users, Nội dung (contact/newsletter) chuyển vào 14.9 "Hoãn sau M6" (dự kiến M6b). Thêm mã lỗi `REVIEW_NOT_ALLOWED`, `REVIEW_EDIT_EXPIRED`, `WISHLIST_LIMIT` (§2); §4.4 ghi chú slug cũ -> 404 + `details.movedTo`. Cần migration `m6_slug_redirect` (`db-schema.md`). Câu hỏi mở §15 mục 14 đã chốt.
 > Thay đổi 0.6.1: triển khai Stripe (§13.2, §13.4), hoàn tiền, email: `TrackedOrder.expiresAt` (§9.5); `AdminOrderListItem.needsRefund` (§12.1); `POST /admin/orders/:code/refunds` chỉ Admin (§13.7, trước đó ghi Staff); `expires_at` của phiên Stripe = now + 31 phút (đệm 60 giây so với mức tối thiểu 30 phút của Stripe, §13.2); sync Stripe chỉ hỏi Stripe với session id do hệ thống tạo (§13.4).
 > Thay đổi 0.6: chi tiết hóa M5 (D-014, D-015, D-016): thêm §13 Thanh toán online (VNPay, Stripe), mã giảm giá admin, hoàn tiền thủ công, job hết hạn, email đổi trạng thái; `canPay` ở Order/TrackedOrder (§9); `payments[]`/`needsRefund` ở AdminOrder (§12.1); mã lỗi `PAYMENT_NOT_ALLOWED`, `PAYMENT_SIGNATURE_INVALID`, `COUPON_CODE_TAKEN` (§2); rate limit đặt đơn/áp mã/quote cấu hình qua env (§1). Phần M6 chuyển thành §14, câu hỏi mở thành §15 (đã đánh số lại các tham chiếu). Cần migration `m5_payment_refund` (`db-schema.md`).
 > Thay đổi 0.5.1: làm rõ sau khi triển khai M4 (không đổi shape chính), xem cuối §12.
@@ -12,7 +14,7 @@
 > Thay đổi 0.3: chi tiết hóa M2 Auth & Tài khoản, D-008, D-009.
 > Thay đổi 0.3.1: nạp danh mục hành chính thật (D-006), đóng D-008: triển khai §7 Locations, đối chiếu mã tỉnh/phường khi tạo/sửa địa chỉ (§6.3), thay mã/tên ví dụ bằng mã thật (79/26740 "Phường Sài Gòn").
 > Base URL: `/api/v1` (trình duyệt: same-origin qua Next rewrites; backend: `http://localhost:4000/api/v1`).
-> Chi tiết đầy đủ cho M1–M5; M6 chỉ liệt kê endpoint (§14).
+> Chi tiết đầy đủ cho M1–M6; các endpoint hoãn (Settings, Users, Nội dung) chỉ liệt kê ở §14.9.
 
 ## Mục lục
 1. [Quy ước chung](#1-quy-ước-chung)
@@ -28,7 +30,7 @@
 11. [Máy trạng thái đơn hàng](#11-máy-trạng-thái-đơn-hàng)
 12. [Admin (M4)](#12-admin-m4)
 13. [Thanh toán online, mã giảm giá admin, hoàn tiền (M5)](#13-thanh-toán-online-mã-giảm-giá-admin-hoàn-tiền-m5)
-14. [Endpoint M6 (chưa chi tiết)](#14-endpoint-m6-chưa-chi-tiết)
+14. [Hoàn thiện v1 (M6)](#14-hoàn-thiện-v1-m6)
 15. [Câu hỏi mở / Giả định](#15-câu-hỏi-mở--giả-định)
 
 ## 1. Quy ước chung
@@ -102,6 +104,9 @@ Phân trang: query `page` (>= 1, mặc định 1), `pageSize` (1–100, mặc đ
 | 409 | `PAYMENT_METHOD_UNAVAILABLE` | Phương thức thanh toán chưa bật (VNPay/Stripe thiếu cấu hình env, §13.0) |
 | 409 | `PAYMENT_NOT_ALLOWED` | Không tạo được phiên thanh toán cho đơn; `details.reason` = `STATUS` \| `METHOD_MISMATCH` \| `EXPIRED` \| `UNAVAILABLE` (§13.2) |
 | 409 | `COUPON_CODE_TAKEN` | Mã giảm giá đã tồn tại (admin tạo mã, §13.8); `details.field = "code"` |
+| 409 | `REVIEW_NOT_ALLOWED` | Không được viết đánh giá; `details.reason` = `NOT_PURCHASED` \| `ALREADY_REVIEWED` (§14.1) |
+| 409 | `REVIEW_EDIT_EXPIRED` | Quá 30 ngày kể từ lúc tạo, không sửa được đánh giá (§14.1) |
+| 409 | `WISHLIST_LIMIT` | Danh sách yêu thích đã đủ 100 sản phẩm (§14.2) |
 | 413 | `PAYLOAD_TOO_LARGE` | Body vượt giới hạn (upload ảnh > 5 MB) |
 | 429 | `RATE_LIMITED` | Vượt giới hạn tần suất |
 | 500 | `INTERNAL_ERROR` | Lỗi hệ thống |
@@ -215,7 +220,7 @@ Ví dụ: `GET /products?category=ca-phe-hat&roast=LIGHT,MEDIUM&origin=Ethiopia&
   "createdAt": "2026-10-01T00:00:00.000Z"
 } }
 ```
-Chỉ trả variant `isActive` và chưa xóa, sắp theo `sortOrder`. Lỗi: 404 `NOT_FOUND` (slug không tồn tại, DRAFT/ARCHIVED, đã xóa mềm).
+Chỉ trả variant `isActive` và chưa xóa, sắp theo `sortOrder`. Lỗi: 404 `NOT_FOUND` (slug không tồn tại, DRAFT/ARCHIVED, đã xóa mềm). Từ 0.7: nếu slug là slug cũ của một sản phẩm đang hiển thị (đã đổi slug) thì 404 `NOT_FOUND` kèm `details: { "movedTo": "<slug hiện tại>" }` để FE chuyển hướng (§14.5).
 
 ### 4.5 `GET /search/suggest?q=`
 `q`: string 2–50 (ngắn hơn -> 400). `limit`: int 1–10, mặc định 6. Chuẩn hóa không dấu, ưu tiên khớp đầu tên.
@@ -580,13 +585,13 @@ Trạng thái cuối: `CANCELLED`, `RETURNED`. Khách chỉ được hủy ở #
 
 ## 12. Admin (M4)
 
-Quyền: S = Staff+ (STAFF hoặc ADMIN), AD = Admin. Quyết định nền: D-013. Xem audit log (`GET /admin/audit-logs`) để M6 (§14).
+Quyền: S = Staff+ (STAFF hoặc ADMIN), AD = Admin. Quyết định nền: D-013. Xem audit log (`GET /admin/audit-logs`): §14.4. Dashboard, đánh giá, khôi phục sản phẩm: §14.
 
 ### 12.0 Quy ước chung admin
 
 - **Chặn quyền ở cấp router.** Mọi `/admin/*` mount dưới một router dùng `requireAuth` + `requireStaff`; role luôn đọc lại từ DB mỗi request (§1). Thiếu/sai token -> 401 `UNAUTHORIZED`; CUSTOMER -> 403 `FORBIDDEN`; user DISABLED -> 403 `ACCOUNT_DISABLED`. Endpoint ghi chú **Admin** thêm `requireAdmin` (STAFF -> 403 `FORBIDDEN`).
 - Admin xem được `stock` chính xác và `id` nội bộ. Phân trang theo §1. Tài nguyên không tồn tại -> 404 `NOT_FOUND`. ID trong path phải là chuỗi 1–50 ký tự `[a-z0-9]` (cuid), sai định dạng -> 404.
-- **Audit log (FR-ADM-11).** MỌI thao tác ghi của admin ghi 1 dòng `AuditLog` trong CÙNG transaction với thay đổi: `actorId`, `action`, `entity`, `entityId`, `diff`, `ip` (`req.ip`). `diff` chỉ chứa trường thay đổi, dạng `{ "field": [old, new] }`; tạo mới: `{ "field": [null, new] }` cho các trường chính. Không chứa mật khẩu/token; với đơn hàng không ghi địa chỉ/SĐT. Danh sách `action`: `order.status`, `inventory.adjust`, `product.create|update|delete`, `variant.create|update|delete`, `image.create|update|delete|reorder`, `category.create|update|delete`, `brand.create|update|delete`, `upload.create`; từ 0.6 thêm `coupon.create|update|delete`, `payment.refund` (§13) và `payment.late` (actorId null, hệ thống ghi, §13.5).
+- **Audit log (FR-ADM-11).** MỌI thao tác ghi của admin ghi 1 dòng `AuditLog` trong CÙNG transaction với thay đổi: `actorId`, `action`, `entity`, `entityId`, `diff`, `ip` (`req.ip`). `diff` chỉ chứa trường thay đổi, dạng `{ "field": [old, new] }`; tạo mới: `{ "field": [null, new] }` cho các trường chính. Không chứa mật khẩu/token; với đơn hàng không ghi địa chỉ/SĐT. Danh sách `action`: `order.status`, `inventory.adjust`, `product.create|update|delete`, `variant.create|update|delete`, `image.create|update|delete|reorder`, `category.create|update|delete`, `brand.create|update|delete`, `upload.create`; từ 0.6 thêm `coupon.create|update|delete`, `payment.refund` (§13) và `payment.late` (actorId null, hệ thống ghi, §13.5); từ 0.7 thêm `review.hide|show|reply|reply_delete` (§14.1) và `product.restore` (§14.6).
 - **Rate limit.** Chung 100/phút/IP (§1); `POST /admin/uploads` thêm 30/phút/IP (store riêng).
 - **Không cache.** Mọi response admin có `Cache-Control: no-store`.
 - Ngày lọc `from`, `to` dạng `YYYY-MM-DD`, tính theo giờ Việt Nam (UTC+7), bao gồm cả hai đầu, yêu cầu `from <= to`, sai -> 400 `VALIDATION_ERROR`.
@@ -940,24 +945,142 @@ AuditLog `coupon.create|update|delete` (§12.0). Thay đổi có hiệu lực ng
 
 Sau commit, gửi nền tới `contactEmail` khi đơn sang: `CONFIRMED`; `SHIPPING` (kèm mã vận đơn và đơn vị vận chuyển nếu có); `DELIVERED`; `CANCELLED` (kèm lý do; áp dụng cho khách tự hủy, staff hủy và hết hạn thanh toán). Không gửi cho các chuyển khác (`PROCESSING`, `FAILED_DELIVERY`...). Áp dụng cho mọi nguồn chuyển trạng thái (admin, khách, SYSTEM từ thanh toán, job). Link trong email giống email xác nhận đơn (§9.2): user -> `${WEB_APP_URL}/tai-khoan/don-hang/<code>`, guest -> `${WEB_APP_URL}/tra-cuu-don-hang?code=<code>`, KHÔNG đưa SĐT vào URL. Lỗi gửi mail chỉ ghi log, không ảnh hưởng đơn (D-016).
 
-## 14. Endpoint M6 (chưa chi tiết)
+## 14. Hoàn thiện v1 (M6)
 
-Quyền: P = Public, O = Optional, A = Auth, S = Staff+, AD = Admin.
+Quyền: P = Public, O = Optional, A = Auth, S = Staff+, AD = Admin. Quyết định nền: D-017..D-020. Quy ước chung ở §1, mã lỗi ở §2, máy trạng thái ở §11, quy ước admin (không cache, audit, ngày lọc giờ VN) ở §12.0 áp dụng nguyên cho các endpoint dưới đây.
 
-| Nhóm | Endpoint | Mô tả | Quyền | Chốt ở |
+### 14.1 Đánh giá sản phẩm (FR-REV)
+
+**Quy tắc (D-017)**
+- Chỉ người đã mua mới được đánh giá: user có `OrderItem` của sản phẩm thuộc đơn của mình ở trạng thái `DELIVERED`.
+- Mỗi user tối đa **1 đánh giá/sản phẩm** (kể cả mua nhiều lần). Server tự gắn `orderItemId` = dòng `DELIVERED` sớm nhất của user cho sản phẩm đó mà chưa có review (client không gửi `orderItemId`).
+- Đăng ngay với `status = PUBLISHED`; staff ẩn sau (hậu kiểm). Review `HIDDEN` không hiện ở API công khai và không tính vào điểm trung bình.
+- Sửa được trong **30 ngày kể từ `createdAt`** (chỉ `rating`, `content`). M6 KHÔNG nhận ảnh: `images` luôn là `[]`.
+- `content` là văn bản thuần (không HTML/Markdown), FE hiển thị dạng text và giữ xuống dòng; server `trim`, không diễn giải thẻ.
+- Tên hiển thị `authorName` được che bớt: từ cuối của `fullName` giữ nguyên, các từ trước chỉ lấy chữ cái đầu viết hoa kèm dấu chấm, ví dụ "Nguyễn Văn An" -> "An N. V."; tên một từ giữ nguyên. API công khai không trả email, `userId`.
+- Rate limit ghi đánh giá (`POST /products/:slug/reviews`, `PATCH /reviews/:id`): 10/phút/IP, store riêng, đặt trước bước xác thực như các limiter ở §1.
+
+**Shape `Review` (công khai)**
+```json
+{ "id": "ckr1", "rating": 5, "content": "Thơm, hậu ngọt.", "authorName": "An N. V.", "verifiedPurchase": true,
+  "createdAt": "2026-11-11T03:00:00.000Z", "updatedAt": "2026-11-11T03:00:00.000Z",
+  "reply": "Cảm ơn bạn đã ủng hộ BeanBox.", "repliedAt": "2026-11-12T02:00:00.000Z" }
+```
+`verifiedPurchase` luôn `true` (mọi review đều từ đơn đã giao). `reply`, `repliedAt` là `null` khi chưa trả lời. `MyReview` = `Review` + `status` (`PUBLISHED` | `HIDDEN`) và `images: []`.
+
+**`GET /products/:slug/reviews` – Public.** Chỉ review `PUBLISHED`. Query: `rating` (1–5, nhiều giá trị phân cách phẩy, ví dụ `rating=4,5`), `sort` = `newest` (mặc định) | `highest` | `lowest` (cùng điểm thì mới nhất trước; tie-break `id DESC`), `page`, `pageSize` (§1). Response phân trang kèm `meta.summary` (tính trên TẤT CẢ review `PUBLISHED`, không bị ảnh hưởng bởi lọc `rating`):
+```json
+{ "data": [ { "...": "Review" } ],
+  "meta": { "page": 1, "pageSize": 10, "total": 18, "totalPages": 2,
+            "summary": { "ratingAvg": 4.6, "ratingCount": 18, "distribution": { "1": 0, "2": 1, "3": 1, "4": 4, "5": 12 } } } }
+```
+`ratingAvg` làm tròn 1 chữ số thập phân (0 khi chưa có review); `distribution` luôn đủ 5 khóa. Slug không tồn tại hoặc sản phẩm không hiển thị (DRAFT/ARCHIVED/đã xóa) -> 404 `NOT_FOUND`; slug cũ -> 404 kèm `details.movedTo` (§14.5).
+
+**`GET /products/:slug/reviews/me` – Auth.** Cho FE quyết định hiện form:
+```json
+{ "data": { "canReview": false, "reason": "ALREADY_REVIEWED", "review": { "...": "MyReview" }, "canEdit": true } }
+```
+`reason` = `null` (được viết) | `"NOT_PURCHASED"` | `"ALREADY_REVIEWED"`. `review` là `MyReview` hoặc `null` (kể cả khi đang `HIDDEN`, để tác giả biết). `canEdit` = có review và còn trong 30 ngày. Sản phẩm không hiển thị -> 404.
+
+**`POST /products/:slug/reviews` – Auth** (từ 0.7 dùng `:slug` thay cho `:productId` cho nhất quán với storefront). Body: `{ "rating": 1–5 (int), "content": string 0–2000 (trim, có thể rỗng) }`. Thành công 201 `MyReview`. Lỗi: 400 `VALIDATION_ERROR`; 404 `NOT_FOUND` (sản phẩm không hiển thị); 409 `REVIEW_NOT_ALLOWED` với `details.reason` = `NOT_PURCHASED` | `ALREADY_REVIEWED`; 429 `RATE_LIMITED`.
+
+**`PATCH /reviews/:id` – Auth**, chỉ tác giả (review của người khác hoặc không tồn tại -> 404 `NOT_FOUND`, §1). Body `{ "rating"?, "content"? }`, ít nhất 1 trường, ràng buộc như POST. Quá 30 ngày kể từ `createdAt` -> 409 `REVIEW_EDIT_EXPIRED`. Review đang `HIDDEN` vẫn sửa được nhưng giữ nguyên `HIDDEN` (tác giả không tự hiện lại được). Thành công 200 `MyReview`; `updatedAt` đổi.
+
+**Denormalize.** `Product.ratingAvg/ratingCount` = trung bình / số review `PUBLISHED`, tính lại trong CÙNG transaction khi tạo, sửa `rating`, ẩn, hiện review (khóa dòng Product trước để tuần tự hóa; dùng luôn khóa này để chặn 2 request đồng thời cùng tạo review cho một cặp user + sản phẩm). Ghi chú: dữ liệu seed có `ratingAvg/ratingCount` giả cho dev; khi sản phẩm có review thật đầu tiên, giá trị được tính lại từ review thật (giá trị giả biến mất).
+
+**Admin (Staff)**
+- `GET /admin/reviews`: lọc `status` (`PUBLISHED` | `HIDDEN`), `rating` (1–5), `productId`, `q` (tìm trong nội dung, không phân biệt hoa thường, escape ký tự `%`, `_`, `\` của LIKE), `hasReply` (`true` | `false`); phân trang; sắp `createdAt DESC, id DESC`. Item = `Review` + `status`, `images: []`, `product: { id, name, slug }`, `author: { id, fullName, email }` (admin thấy tên đầy đủ; `authorName` đã che vẫn có sẵn).
+- `PATCH /admin/reviews/:id` body `{ "status": "PUBLISHED" | "HIDDEN" }` -> 200 item admin. Trạng thái không đổi thì trả 200 (idempotent, không ghi audit). Tính lại `ratingAvg/ratingCount`.
+- `PUT /admin/reviews/:id/reply` body `{ "reply": string 1–1000 (trim) }` -> 200 item admin; ghi đè câu trả lời cũ, đặt `repliedAt = now`.
+- `DELETE /admin/reviews/:id/reply` -> 200 item admin (`reply`, `repliedAt` = `null`); chưa có reply thì vẫn 200.
+- AuditLog `review.hide|show|reply|reply_delete` (`entity = "Review"`, `diff` chỉ ghi trạng thái, không chép nội dung đánh giá). Thay cho `POST /admin/reviews/:id/reply` ở bảng M6 cũ.
+
+### 14.2 Wishlist (FR-WISH)
+
+- **`GET /me/wishlist` – Auth.** Danh sách `ProductListItem` (§4) kèm `addedAt` (= `Wishlist.createdAt`), sắp `addedAt DESC`. Chỉ sản phẩm `ACTIVE` chưa xóa mềm (sản phẩm bị ẩn/xóa không hiện nhưng KHÔNG tự bị xóa khỏi bảng, hiện lại nếu sản phẩm hiển thị trở lại). Tối đa 100, không phân trang (`data` là mảng).
+- **`GET /me/wishlist/ids` – Auth.** `{ "data": { "productIds": ["ckp1", "..."] } }` (cùng điều kiện hiển thị) để FE tô trái tim ở danh sách sản phẩm.
+- **`POST /me/wishlist` – Auth.** Body `{ "productId": string }`. Sản phẩm phải `ACTIVE` chưa xóa, ngược lại 404 `NOT_FOUND`. Đã có -> 200 (idempotent); mới -> 201. Trả `{ "data": { "productId", "addedAt" } }`. Đã đủ 100 mục (đếm cả mục của sản phẩm đang ẩn) và thêm mục mới -> 409 `WISHLIST_LIMIT`.
+- **`DELETE /me/wishlist/:productId` – Auth.** 204, idempotent (không có hoặc sản phẩm không tồn tại vẫn 204).
+
+### 14.3 Dashboard (FR-ADM-01)
+
+`GET /admin/dashboard` – Staff. Mọi mốc ngày theo giờ Việt Nam (UTC+7); "hôm nay" tính từ 00:00 VN; `last7Days` gồm hôm nay và 6 ngày trước; `last30Days` gồm hôm nay và 29 ngày trước.
+```json
+{ "data": {
+  "revenue": { "today": 1250000, "last7Days": 8420000, "last30Days": 31200000 },
+  "orders":  { "today": 4, "last7Days": 31, "last30Days": 120 },
+  "dailyRevenue": [ { "date": "2026-10-13", "revenue": 0, "orders": 2 } ],
+  "ordersByStatus": { "PENDING_PAYMENT": 1, "PENDING": 3, "CONFIRMED": 0, "PROCESSING": 2, "SHIPPING": 1, "DELIVERED": 40, "CANCELLED": 5, "FAILED_DELIVERY": 0, "RETURN_REQUESTED": 0, "RETURNED": 0 },
+  "topProducts": [ { "productId": "ckp1", "name": "Ethiopia Yirgacheffe Washed", "slug": "ethiopia-yirgacheffe-washed", "quantity": 12, "revenue": 2220000 } ],
+  "lowStock": [ { "variantId": "ckv1", "sku": "ETH-250-WB", "productName": "Ethiopia Yirgacheffe Washed", "variantName": "250 g / Nguyên hạt", "stock": 2, "lowStockThreshold": 5 } ],
+  "attention": { "pendingOrders": 3, "needsRefund": 1 },
+  "generatedAt": "2026-11-11T04:00:00.000Z"
+} }
+```
+- `revenue.*` = Σ `grandTotal` của đơn có `paymentStatus = PAID` và `status` không thuộc {`CANCELLED`, `RETURNED`}, với `paidAt` nằm trong khoảng. Tính theo `paidAt`, không theo `createdAt` (D-019). Đơn COD chỉ tính khi đã `PAID` (giao thành công, §11). Đơn đã hoàn tiền (`paymentStatus = REFUNDED`) không tính.
+- `orders.*` = số đơn có `createdAt` trong khoảng (mọi trạng thái).
+- `dailyRevenue`: đúng 30 phần tử, tăng dần theo `date` (`YYYY-MM-DD`, giờ VN), ngày không có dữ liệu = `revenue: 0, orders: 0`. `revenue` theo định nghĩa `paidAt` ở trên, `orders` theo `createdAt`, nhóm theo ngày VN.
+- `ordersByStatus`: toàn thời gian, đủ khóa cho mọi giá trị `OrderStatus` (thiếu = 0).
+- `topProducts`: tối đa 5 sản phẩm, xếp theo tổng `quantity` của `OrderItem` thuộc đơn tạo trong 30 ngày qua có `status` không thuộc {`CANCELLED`, `PENDING_PAYMENT`}, giảm dần (hòa thì `revenue` giảm dần, rồi `productId`); `revenue` = Σ `lineTotal`. `name`/`slug` lấy từ Product hiện tại.
+- `lowStock`: tối đa 10 biến thể `isActive` chưa xóa, thuộc sản phẩm chưa xóa, có `stock <= lowStockThreshold`, sắp `stock` tăng dần (hòa thì `sku`).
+- `attention`: chỉ `pendingOrders` (số đơn `PENDING` hiện tại) và `needsRefund` (số đơn cần hoàn tiền, định nghĩa như §12.1). Chưa có chỉ số đánh giá bị ẩn.
+- Có `Cache-Control: no-store` (§12.0). FE vẽ biểu đồ bằng CSS (không thêm thư viện biểu đồ).
+
+### 14.4 Nhật ký thao tác (FR-ADM-11)
+
+`GET /admin/audit-logs` – **Admin** (Staff nhận 403 `FORBIDDEN`). Query (đều tùy chọn): `action` (một hoặc nhiều giá trị phân cách phẩy, khớp chính xác), `actionPrefix` (ví dụ `order.`; khớp đầu chuỗi, escape LIKE; dùng cùng `action` thì lấy hợp), `entity`, `entityId`, `actorId`, `from`, `to` (`YYYY-MM-DD` giờ VN, bao gồm hai đầu, §12.0), `page`, `pageSize`. Sắp `createdAt DESC, id DESC`.
+```json
+{ "data": [ { "id": "cka1", "action": "order.status", "entity": "Order", "entityId": "cko1",
+              "diff": { "status": ["PENDING", "CONFIRMED"] }, "ip": "127.0.0.1", "createdAt": "2026-11-11T03:00:00.000Z",
+              "actor": { "id": "cku1", "fullName": "Nhân viên", "email": "staff@beanbox.local", "role": "STAFF" } } ],
+  "meta": { "page": 1, "pageSize": 20, "total": 1, "totalPages": 1 } }
+```
+`actor` là `null` khi hệ thống ghi (`actorId` null) hoặc tài khoản đã bị xóa. Chỉ Admin xem (D-019); `diff` đã không chứa bí mật/PII theo §12.0, API trả nguyên.
+
+### 14.5 Redirect khi đổi slug (D-018)
+
+Bảng `SlugRedirect` (`db-schema.md`, migration `m6_slug_redirect`): `{ entity: PRODUCT | CATEGORY, fromSlug, targetId }`, unique `(entity, fromSlug)`.
+
+**Ghi.** Khi admin đổi slug sản phẩm hoặc danh mục (`PATCH /admin/products/:id`, `PATCH /admin/categories/:id`), trong cùng transaction:
+1. Upsert redirect `(entity, fromSlug = slug cũ) -> targetId`.
+2. Nếu slug MỚI trùng một `fromSlug` đã lưu của cùng `entity` thì xóa redirect đó (slug cũ của đối tượng khác nay được dùng lại).
+3. Không tạo chuỗi: redirect lưu theo id nên luôn dẫn tới slug hiện tại; đổi slug lần nữa chỉ thêm `fromSlug` mới, các redirect cũ vẫn trỏ cùng id. Đổi về đúng slug đã từng dùng của chính đối tượng đó thì xóa redirect tương ứng (trường hợp riêng của bước 2).
+4. Xóa vĩnh viễn danh mục -> xóa redirect của nó (service). Sản phẩm chỉ xóa mềm nên giữ redirect; khi sản phẩm không hiển thị thì tra cứu theo redirect cũng trả 404 thường (không `movedTo`).
+
+**Tra cứu.** Khớp slug trực tiếp luôn được ưu tiên. Nếu không khớp trực tiếp nhưng có redirect tới đối tượng đang hiển thị (sản phẩm `ACTIVE` chưa xóa; danh mục `isActive`):
+- `GET /products/:slug`, `GET /products/:slug/reviews`, `GET /products/:slug/reviews/me`, `GET /categories/:slug` -> 404 `NOT_FOUND` kèm `details: { "movedTo": "<slug hiện tại>" }`.
+- `GET /products?category=<slug>` KHÔNG redirect (slug cũ không khớp danh mục nào -> kết quả rỗng như hiện tại).
+
+**`GET /categories/:slug` – Public** (mới, 0.7). Chỉ danh mục `isActive` (con của danh mục bị ẩn vẫn theo quy tắc `GET /categories` §4.1):
+```json
+{ "data": { "id": "ckc1", "name": "Specialty", "slug": "specialty", "description": "...", "imageUrl": null,
+            "parent": { "name": "Cà phê hạt", "slug": "ca-phe-hat" }, "children": [ { "name": "Pour-over", "slug": "pour-over" } ] } }
+```
+`parent` là `null` với danh mục gốc; `children` chỉ gồm danh mục con `isActive`, sắp `sortOrder`. Không tồn tại hoặc ẩn -> 404 (kèm `movedTo` nếu là slug cũ).
+
+**Lý do 404 + `movedTo` thay vì 301 ở API.** API là JSON; FE (Next) tự quyết định chuyển hướng. Khi nhận 404 có `details.movedTo`, trang `/san-pham/[slug]` và `/danh-muc/[slug]` (SSR) gọi `permanentRedirect` (HTTP 308) tới URL mới để giữ SEO; trường hợp khác trả `notFound()`. Trang đánh giá nằm trong trang chi tiết nên không cần redirect riêng.
+
+### 14.6 Khôi phục sản phẩm xóa mềm (D-018)
+
+`POST /admin/products/:id/restore` – **Admin**. Không body. Chỉ áp dụng cho sản phẩm đã xóa mềm; sản phẩm chưa xóa -> 409 `CONFLICT`; không tồn tại -> 404. Trong một transaction: `deletedAt = null`, `status = DRAFT` (admin tự bật `ACTIVE` sau khi kiểm tra), biến thể đã xóa mềm GIỮ NGUYÊN (admin tạo lại hoặc sửa nếu cần), tính lại các cột denormalize (`minPrice`, `inStock`, `ratingAvg/ratingCount`, `searchText`, `db-schema.md` §5). AuditLog `product.restore`. Slug của sản phẩm đã xóa vẫn được giữ nguyên nên không xung đột. Thành công 200 `AdminProduct` (§12.4).
+
+### 14.7 Hủy đơn thủ công và phiên Stripe
+
+Khi admin hoặc khách hủy đơn (§9.4, §12.1) mà đơn có `Payment` `PENDING` (đơn `PENDING_PAYMENT` đã tạo phiên thanh toán): TRONG cùng transaction hủy, chuyển mọi `Payment` `PENDING` của đơn sang `FAILED` (khóa Order trước Payment như D-015). Sau commit, best-effort expire phiên Stripe Checkout tương ứng (cùng cách job hết hạn §13.6); lỗi chỉ ghi log, không ảnh hưởng kết quả hủy. Phiên VNPay không có thao tác expire. Mục đích: không để khách tiếp tục thanh toán một đơn đã hủy; nếu thanh toán vẫn thành công muộn thì xử lý theo §13.5 (`payment.late`, `needsRefund`).
+
+### 14.8 Gợi ý tìm kiếm (FR-CAT-06)
+
+Không đổi API. FE dùng `GET /search/suggest` (§4.5) ở ô tìm kiếm trên header: combobox (a11y `role="combobox"`, `aria-expanded`, điều hướng bàn phím), chỉ gọi khi đủ tối thiểu 2 ký tự (sau trim), debounce khoảng 250 ms, hủy request cũ khi gõ tiếp, `limit` mặc định; Enter không chọn mục nào thì chuyển tới `/tim-kiem?q=...` (không phải `/san-pham?q=`).
+
+### 14.9 Hoãn sau M6
+
+Chưa làm trong M6, dự kiến M6b (trước deploy M7); chi tiết sẽ chốt khi vào M6b (D-020).
+
+| Nhóm | Endpoint | Mô tả | Quyền | Ghi chú |
 |---|---|---|---|---|
-| Reviews | `GET /products/:slug/reviews` | Danh sách đánh giá + phân bố sao, lọc theo sao | P | M6 |
-| | `POST /products/:productId/reviews`, `PATCH /reviews/:id` | Viết/sửa đánh giá (đã nhận hàng, sửa trong 30 ngày) | A | M6 |
-| | `GET /admin/reviews`, `PATCH /admin/reviews/:id` (ẩn/hiện), `POST /admin/reviews/:id/reply` | Duyệt, trả lời | S | M6 |
-| Wishlist | `GET/POST /me/wishlist`, `DELETE /me/wishlist/:productId` | Yêu thích | A | M6 |
-| Dashboard | `GET /admin/dashboard` | Doanh thu 1/7/30 ngày, đơn theo trạng thái, top bán chạy, sắp hết hàng | S | M6 |
-| Settings | `GET/PUT /admin/settings`, `GET /settings/public` | Phí ship, freeship, liên hệ, banner; bản công khai chỉ whitelist key | AD / P | M6 |
-| Users | `GET /admin/users`, `PATCH /admin/users/:id/status`, `PATCH /admin/users/:id/role` | Quản lý người dùng | AD (đổi role) | M6 |
-| Audit | `GET /admin/audit-logs` | Nhật ký thao tác | AD | M6 |
-| Nội dung | `POST /contact`, `POST /newsletter/subscribe` | Form liên hệ, bản tin (cần thêm bảng) | P | M6 |
-
-
-Chi tiết các endpoint trên sẽ chốt ở milestone tương ứng. Quy ước chung ở §1, mã lỗi ở §2, máy trạng thái ở §11, quy ước admin ở §12.0 áp dụng nguyên cho các endpoint này.
+| Settings | `GET/PUT /admin/settings`, `GET /settings/public` | Phí ship, freeship, liên hệ, banner; bản công khai chỉ whitelist key | AD / P | Dự kiến M6b trước deploy |
+| Users | `GET /admin/users`, `PATCH /admin/users/:id/status`, `PATCH /admin/users/:id/role` | Quản lý người dùng | AD (đổi role) | Dự kiến M6b trước deploy |
+| Nội dung | `POST /contact`, `POST /newsletter/subscribe` | Form liên hệ, bản tin (cần thêm bảng) | P | Dự kiến M6b trước deploy |
 
 ## 15. Câu hỏi mở / Giả định
 
@@ -974,4 +1097,4 @@ Chi tiết các endpoint trên sẽ chốt ở milestone tương ứng. Quy ư�
 11. **Đã chốt ở M2:** đã thêm trang FE xác thực email `/xac-thuc-email` vào sitemap (requirements §9). Đăng nhập Google, loyalty, subscription, blog, đổi/trả: v2, ngoài contract này.
 12. **`GET /health`** nằm dưới `/api/v1` theo chỉ đạo; Docker healthcheck gọi `/api/v1/health` trực tiếp ở cổng 4000.
 13. **Đã chốt – xem decisions.md D-016.** Email đổi trạng thái đơn gửi từ M5 cho `CONFIRMED`, `SHIPPING`, `DELIVERED`, `CANCELLED` (§13.9).
-14. **Hoãn M6 (D-016):** redirect khi đổi slug và khôi phục sản phẩm xóa mềm.
+14. **Đã chốt – xem decisions.md D-018.** Redirect khi đổi slug và khôi phục sản phẩm xóa mềm làm ở M6 (§14.5, §14.6).

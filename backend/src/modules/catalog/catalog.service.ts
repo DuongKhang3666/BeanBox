@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 import { AppError } from '../../lib/errors.js';
 import { effectivePrice, isOnSale, summarizePrices } from '../../lib/pricing.js';
 import { prisma } from '../../lib/prisma.js';
+import { resolveSlugRedirect } from '../../lib/slugRedirect.js';
 import { escapeLike, normalizeSearch, tokenize } from '../../lib/text.js';
 import type { ProductListQuery, SuggestQuery } from './catalog.schema.js';
 
@@ -56,6 +57,39 @@ export async function listCategories() {
   });
 }
 
+export async function getCategoryBySlug(slug: string) {
+  const c = await prisma.category.findFirst({
+    where: { slug, isActive: true },
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+      description: true,
+      imageUrl: true,
+      parent: { select: { name: true, slug: true } },
+      children: {
+        where: { isActive: true },
+        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+        select: { name: true, slug: true },
+      },
+    },
+  });
+  if (!c) {
+    const movedTo = await resolveSlugRedirect('CATEGORY', slug);
+    if (movedTo) throw new AppError(404, 'NOT_FOUND', 'Không tìm thấy danh mục', { movedTo });
+    throw new AppError(404, 'NOT_FOUND', 'Không tìm thấy danh mục');
+  }
+  return {
+    id: c.id,
+    name: c.name,
+    slug: c.slug,
+    description: c.description,
+    imageUrl: c.imageUrl,
+    parent: c.parent ? { name: c.parent.name, slug: c.parent.slug } : null,
+    children: c.children.map((x) => ({ name: x.name, slug: x.slug })),
+  };
+}
+
 export async function listBrands() {
   const [brands, counts] = await Promise.all([
     prisma.brand.findMany({
@@ -70,7 +104,7 @@ export async function listBrands() {
 
 // ───────────── Product list ─────────────
 
-const listItemSelect = {
+export const listItemSelect = {
   id: true,
   slug: true,
   name: true,
@@ -319,7 +353,11 @@ export async function getProductBySlug(slug: string, now: Date = new Date()) {
     where: { slug, ...LIVE_PRODUCT },
     select: detailSelect,
   });
-  if (!p) throw new AppError(404, 'NOT_FOUND', 'Không tìm thấy sản phẩm');
+  if (!p) {
+    const movedTo = await resolveSlugRedirect('PRODUCT', slug);
+    if (movedTo) throw new AppError(404, 'NOT_FOUND', 'Không tìm thấy sản phẩm', { movedTo });
+    throw new AppError(404, 'NOT_FOUND', 'Không tìm thấy sản phẩm');
+  }
 
   const relatedRows = await prisma.product.findMany({
     where: { ...LIVE_PRODUCT, categoryId: p.categoryId, id: { not: p.id } },

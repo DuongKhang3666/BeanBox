@@ -1,6 +1,7 @@
 # BeanBox – Thiết kế cơ sở dữ liệu
 
-> Phiên bản 0.3 · 2026-11-10 · PostgreSQL + Prisma 6.x.
+> Phiên bản 0.7 · 2026-11-11 · PostgreSQL + Prisma 6.x.
+> Thay đổi 0.7: MIGRATION mới `m6_slug_redirect` (D-018): thêm enum `SlugEntity`, model `SlugRedirect`, `Review @@index([status, createdAt])` (danh sách duyệt đánh giá của admin) và `Review @@unique([userId, productId])` (1 đánh giá/user/sản phẩm, chặn gửi đồng thời; Tech Lead chốt); cập nhật giải thích `Review`, `Wishlist`, `SlugRedirect` (§3) và `ratingAvg/ratingCount` chỉ tính `PUBLISHED` (§5). Quy tắc nghiệp vụ: api-contract §14.
 > Thay đổi 0.6: MIGRATION mới `m5_payment_refund` (D-015): thêm vào `Payment` các cột `refundedAt`, `refundNote`, `refundedById` (+ relation `refundedBy`/`User.paymentRefunds`) và `@@index([status])`; cập nhật giải thích `Payment` (§3).
 > Thay đổi 0.5: không đổi schema; quy tắc ghi AuditLog và InventoryMovement cho admin (api-contract §12).
 > Thay đổi 0.4: không đổi Prisma schema; thêm setting `shipping.innerCityWardCodes` (§6) và chốt phạm vi nội thành (§7 mục 4, D-006 cập nhật M3).
@@ -633,8 +634,10 @@ model Review {
   user      User      @relation(fields: [userId], references: [id], onDelete: Restrict)
   orderItem OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
 
+  @@unique([userId, productId]) // m6_slug_redirect: 1 đánh giá/user/sản phẩm (D-017), chặn gửi đồng thời
   @@index([productId, status, createdAt])
   @@index([userId])
+  @@index([status, createdAt]) // m6_slug_redirect: danh sách duyệt của admin
 }
 
 model Setting {
@@ -659,6 +662,25 @@ model AuditLog {
   @@index([actorId, createdAt])
   @@index([createdAt])
 }
+
+// ───────────── Redirect slug (m6_slug_redirect, D-018) ─────────────
+
+enum SlugEntity {
+  PRODUCT
+  CATEGORY
+}
+
+// Không có FK vì đa hình (targetId trỏ Product hoặc Category tùy entity).
+model SlugRedirect {
+  id        String     @id @default(cuid())
+  entity    SlugEntity
+  fromSlug  String
+  targetId  String
+  createdAt DateTime   @default(now())
+
+  @@unique([entity, fromSlug])
+  @@index([entity, targetId])
+}
 ```
 
 ## 3. Giải thích model
@@ -677,14 +699,15 @@ model AuditLog {
 | `ProductVariant` | SKU bán được: giá, giá sale theo khung giờ, tồn kho, cân nặng, ngày rang theo lô. Giá hiệu lực = `salePrice` nếu `salePrice` không null và `now` trong `[saleStart, saleEnd]` (bound null = mở), ngược lại `price` |
 | `InventoryMovement` | Sổ cái kho bất biến: mọi thay đổi `stock` đều ghi 1 dòng (`stockAfter` để đối soát). `ORDER_RESERVE` khi đặt, `ORDER_RELEASE` khi hủy/hết hạn |
 | `Cart`, `CartItem` | Giỏ server-side. Giỏ user: `userId`; giỏ guest: `tokenHash`. `couponCode` lưu mã đang áp. `unique(cartId, variantId)`: thêm trùng thì cộng dồn |
-| `Wishlist` | Khóa phức hợp (userId, productId) |
+| `Wishlist` | Khóa phức hợp (userId, productId). Tối đa 100 mục/user (service, `WISHLIST_LIMIT`); `createdAt` là `addedAt` ở API. Sản phẩm ẩn/xóa mềm không tự bị xóa khỏi bảng, chỉ không hiển thị (api-contract §14.2) |
 | `Order` | `userId` null = khách vãng lai. `contactEmail/contactPhone` luôn có (đã đồng bộ requirements §7). `shippingAddress` là snapshot JSON. Tách `discountTotal` (giảm hàng) và `shippingDiscount` (giảm ship) để `grandTotal = subtotal - discountTotal + shippingFee - shippingDiscount`. `expiresAt` chỉ dùng cho `PENDING_PAYMENT`. `idempotencyKey` unique; `requestFingerprint` phát hiện cùng key khác payload |
 | `OrderItem` | Snapshot dòng hàng; `productId` kèm theo để review/báo cáo không cần join qua variant |
 | `OrderStatusHistory` | Mỗi lần đổi trạng thái 1 dòng (kể cả lúc tạo, `fromStatus=null`), có ai/khi nào/ghi chú |
 | `Payment` | Mỗi lần thử thanh toán online 1 dòng. COD không tạo Payment (trạng thái nằm ở `Order.paymentStatus`, chuyển `PAID` khi giao thành công). `unique(provider, providerTxnId)` chống xử lý IPN/webhook trùng. `providerRef` = `Payment.id` (VNPay `vnp_TxnRef`) hoặc Stripe Checkout Session id. Máy trạng thái (`api-contract.md` §13.5): `PENDING -> SUCCEEDED \| FAILED`, `FAILED -> SUCCEEDED` (thành công muộn đã xác thực), `SUCCEEDED -> REFUNDED` (admin, ghi `refundedAt`, `refundNote`, `refundedById`). `needsRefund` KHÔNG lưu cột: tính khi đọc = `SUCCEEDED` và (đơn `CANCELLED` hoặc có Payment `SUCCEEDED` khác tạo trước cùng đơn). `@@index([status])` phục vụ job hết hạn và lọc đơn cần hoàn tiền. Một đơn có thể có nhiều Payment (mỗi lần bấm thanh toán 1 dòng) |
 | `Coupon` | `code` lưu UPPERCASE. `usedCount` denormalize; tăng ngay khi tạo đơn (UPDATE có điều kiện `usedCount < usageLimit`, cùng transaction với trừ kho) và giảm khi đơn `CANCELLED` (D-004; `api-contract.md` §9.2, §10 mục 4) |
 | `CouponRedemption` | 1 dòng/đơn, tạo cùng lúc tạo đơn (sau khi giữ lượt thành công); `email` (lowercase) để áp `perUserLimit` cho guest; `releasedAt` đặt khi đơn `CANCELLED` (hủy, hết hạn, giao thất bại rồi hủy), đồng thời giảm `usedCount`; đếm lượt đã dùng = dòng có `releasedAt IS NULL` |
-| `Review` | `unique(orderItemId)` = mỗi dòng hàng đã mua 1 đánh giá. Chỉ khi đơn `DELIVERED` (service kiểm tra) |
+| `Review` | `unique(orderItemId)` = mỗi dòng hàng đã mua tối đa 1 đánh giá. Từ M6 (api-contract §14.1, D-017): mỗi user tối đa 1 đánh giá/sản phẩm (service kiểm tra trong transaction có khóa Product; không có unique DB `(userId, productId)`); `orderItemId` do server gắn = dòng `DELIVERED` sớm nhất của user cho sản phẩm chưa có review; chỉ khi đơn `DELIVERED`; `status` mặc định `PUBLISHED`, staff ẩn sau; sửa trong 30 ngày kể từ `createdAt` (service); `images` luôn `[]` ở M6; `content` là văn bản thuần. Index `(status, createdAt)` phục vụ `GET /admin/reviews` |
+| `SlugRedirect` | Slug cũ của sản phẩm/danh mục sau khi đổi slug: `(entity, fromSlug) -> targetId`. Không FK (đa hình): xóa vĩnh viễn danh mục thì service xóa redirect của nó; sản phẩm chỉ xóa mềm nên giữ. Lưu theo id nên không tạo chuỗi redirect (api-contract §14.5) |
 | `Setting` | Key-value JSON (phí ship, ngưỡng freeship, banner...) |
 | `AuditLog` | Nhật ký thao tác admin/staff (`diff` chỉ chứa trường thay đổi, không chứa dữ liệu nhạy cảm) |
 
@@ -745,7 +768,7 @@ Ghi chú:
 - Index GIN trigram khai báo bằng `@@index([searchText(ops: raw("gin_trgm_ops"))], type: Gin)` trong schema để Prisma không đề xuất xóa nó ở lần `migrate dev` sau. Nếu phiên bản Prisma thực tế không chấp nhận cú pháp này, bỏ dòng đó khỏi schema và tạo index bằng raw SQL: `CREATE INDEX "Product_searchText_trgm" ON "Product" USING GIN ("searchText" gin_trgm_ops);`.
 - Chưa chắc: CHECK constraint và partial unique index tạo thủ công có thể bị `prisma migrate dev` coi là drift (đề xuất DROP INDEX cho partial unique). **Task scaffold phải kiểm tra bằng cách chạy `migrate dev` lần 2**; nếu Prisma đòi xóa partial index thì ghi chú trong migration, dùng `prisma migrate deploy` ở môi trường thật, và vẫn enforce trong service (xem câu hỏi mở).
 - **Kết quả kiểm tra drift (Prisma 6.19.3, Postgres 17, đã chạy):** cú pháp `gin_trgm_ops` trong schema được chấp nhận (index sinh ra trong migration init). Sau khi áp đủ 3 migration (`enable_pg_trgm`, `init`, `constraints_and_partial_indexes`), `prisma migrate dev` lần 2 báo "Already in sync" – **Prisma KHÔNG đòi DROP** partial unique index hay CHECK constraint. Raw SQL được giữ nguyên trong migration `constraints_and_partial_indexes`. Schema ở §2 không phải sửa gì (`prisma validate` pass nguyên văn).
-- Các ràng buộc service (không có trong DB): Category tối đa 2 cấp; tối đa 10 địa chỉ/user; tối đa 3 ảnh/review; chỉ một `Coupon` áp mỗi đơn (đã đúng bởi cấu trúc `Order.couponId`).
+- Các ràng buộc service (không có trong DB): Category tối đa 2 cấp; tối đa 10 địa chỉ/user; tối đa 1 đánh giá/user/sản phẩm; Wishlist tối đa 100 mục/user; đánh giá không có ảnh ở M6 (giới hạn 3 ảnh/review để dành cho bản sau); chỉ một `Coupon` áp mỗi đơn (đã đúng bởi cấu trúc `Order.couponId`).
 - Tổng "không âm" và công thức `grandTotal` đã có CHECK; service vẫn tính trước, CHECK là lưới an toàn.
 
 ## 5. Quy tắc dữ liệu denormalize
@@ -758,7 +781,7 @@ Service phải cập nhật các cột này **trong cùng transaction** với th
 | `Product.minPrice` | Tạo/sửa/xóa/bật tắt variant; đổi giá/sale; đổi trạng thái product; admin sửa giá/biến thể | Min giá hiệu lực của variant `isActive AND deletedAt IS NULL` (không loại variant hết hàng). Không có variant -> 0 |
 | `Product.inStock` | Mỗi lần `stock` variant đổi (đặt đơn, hủy, nhập kho, điều chỉnh tồn kho admin) | `EXISTS(variant active, chưa xóa, stock > 0)` |
 | `Product.soldCount` | Đơn chuyển `DELIVERED` (+qty; khi admin chuyển DELIVERED); `RETURNED` (-qty) | Tổng `quantity` theo `productId` |
-| `Product.ratingAvg/ratingCount` | Review tạo/sửa/ẩn/hiện | Trung bình và số lượng review `PUBLISHED` |
+| `Product.ratingAvg/ratingCount` | Review tạo/sửa `rating`/ẩn/hiện (khóa dòng Product trong transaction) | Trung bình (làm tròn 1 chữ số khi trả API; lưu đủ độ chính xác theo kiểu cột) và số lượng review CHỈ `PUBLISHED`; `HIDDEN` không tính. Dữ liệu seed có giá trị giả cho dev; khi có review thật đầu tiên của sản phẩm, tính lại từ review thật (api-contract §14.1) |
 | `Coupon.usedCount` | Tạo đơn có mã (+1, rồi tạo `CouponRedemption`); đơn `CANCELLED` (-1 nếu `UPDATE "CouponRedemption" SET "releasedAt" = now() WHERE "orderId" = $id AND "releasedAt" IS NULL` cập nhật được 1 dòng; idempotent) – D-004 | `UPDATE "Coupon" SET "usedCount" = "usedCount" + 1 WHERE "id" = $id AND "isActive" AND ("usageLimit" IS NULL OR "usedCount" < "usageLimit")`; 0 dòng -> rollback `COUPON_INVALID`. Sau đó đếm `CouponRedemption` chưa `releasedAt` theo `userId`/`email` để kiểm `perUserLimit` |
 
 Hạn chế: `minPrice` không phản ánh realtime flash sale theo khung giờ (xem `architecture.md` §6).

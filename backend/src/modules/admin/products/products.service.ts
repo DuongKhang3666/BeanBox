@@ -1,8 +1,9 @@
-import { Prisma } from '@prisma/client';
+import { Prisma, type ProductStatus } from '@prisma/client';
 import { diffFields, writeAudit, type AuditDiff } from '../../../lib/audit.js';
 import { AppError } from '../../../lib/errors.js';
 import { prisma } from '../../../lib/prisma.js';
 import { slugify, SLUG_REGEX } from '../../../lib/slug.js';
+import { recordSlugChange } from '../../../lib/slugRedirect.js';
 import { escapeLike, normalizeSearch } from '../../../lib/text.js';
 import { refreshProductDenorm } from '../../catalog/catalog.denorm.js';
 import {
@@ -275,6 +276,9 @@ export async function updateProduct(
       if (input.seoTitle !== undefined) data.seoTitle = input.seoTitle;
       if (input.seoDesc !== undefined) data.seoDesc = input.seoDesc;
       if (Object.keys(data).length > 0) await tx.product.update({ where: { id }, data });
+      if (input.slug !== undefined) {
+        await recordSlugChange(tx, 'PRODUCT', id, before.slug, input.slug);
+      }
 
       if (input.coffee === null) {
         await tx.coffeeProfile.deleteMany({ where: { productId: id } });
@@ -327,5 +331,33 @@ export async function deleteProduct(id: string, { actorId, ip }: Actor): Promise
       },
       ip,
     });
+  }, TX_OPTIONS);
+}
+
+/** Khôi phục sản phẩm xóa mềm (api-contract §14.6): DRAFT, biến thể đã xóa giữ nguyên. */
+export async function restoreProduct(id: string, { actorId, ip }: Actor): Promise<AdminProductDto> {
+  checkId(id, productNotFound);
+  return prisma.$transaction(async (tx) => {
+    const rows = await tx.$queryRaw<Array<{ status: ProductStatus; deletedAt: Date | null }>>`
+      SELECT "status", "deletedAt" FROM "Product" WHERE "id" = ${id} FOR UPDATE`;
+    const row = rows[0];
+    if (!row) throw productNotFound();
+    if (!row.deletedAt) {
+      throw new AppError(409, 'CONFLICT', 'Sản phẩm chưa bị xóa nên không cần khôi phục');
+    }
+    await tx.product.update({ where: { id }, data: { deletedAt: null, status: 'DRAFT' } });
+    await refreshProductDenorm(tx, id);
+    await writeAudit(tx, {
+      actorId,
+      action: 'product.restore',
+      entity: 'Product',
+      entityId: id,
+      diff: {
+        ...(row.status !== 'DRAFT' ? { status: [row.status, 'DRAFT'] as [unknown, unknown] } : {}),
+        deletedAt: [row.deletedAt.toISOString(), null],
+      },
+      ip,
+    });
+    return toAdminProduct(await loadDetail(tx, id));
   }, TX_OPTIONS);
 }

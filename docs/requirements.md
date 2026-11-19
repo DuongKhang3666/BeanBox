@@ -180,8 +180,8 @@ Quy ước: **ID** – `FR-<module>-<số>`; **Ưu tiên** – MoSCoW: **M** (Mu
 ### 4.7 Đánh giá (REVIEW)
 | ID | Yêu cầu | Ưu tiên |
 |---|---|---|
-| FR-REV-01 | Chỉ khách **đã mua và đã nhận hàng** mới được đánh giá (1–5 sao, nội dung, tối đa 3 ảnh) | S |
-| FR-REV-02 | Mỗi khách 1 đánh giá / sản phẩm / đơn; được sửa trong 30 ngày | S |
+| FR-REV-01 | Chỉ khách **đã mua và đã nhận hàng** mới được đánh giá (1–5 sao, nội dung; ảnh đánh giá để bản sau, M6 chưa có ảnh) | S |
+| FR-REV-02 | 1 đánh giá/người dùng/sản phẩm (D-017); được sửa trong 30 ngày | S |
 | FR-REV-03 | Hiển thị điểm trung bình, phân bố số sao, lọc theo số sao | S |
 | FR-REV-04 | Staff/Admin ẩn/hiện đánh giá vi phạm; trả lời đánh giá | S |
 
@@ -388,7 +388,7 @@ Base: `/api/v1` · JSON · lỗi thống nhất `{ "error": { "code", "message",
 | Giỏ hàng | `GET /cart`, `POST /cart/items`, `PATCH /cart/items/:id`, `DELETE /cart/items/:id`, `POST /cart/merge`, `POST /cart/apply-coupon` |
 | Checkout | `POST /checkout/quote` (tính giá, phí ship), `POST /orders` (Idempotency-Key), `GET /orders/:code`, `POST /orders/:code/cancel`, `GET /orders/track?code=&phone=` |
 | Thanh toán | `POST /payments/vnpay/create`, `GET /payments/vnpay/ipn`, `GET /payments/vnpay/return`, `POST /payments/stripe/webhook` |
-| Review | `POST /products/:id/reviews`, `PATCH /reviews/:id` |
+| Review | `POST /products/:slug/reviews`, `PATCH /reviews/:id` |
 | Admin | `/admin/dashboard`, `/admin/products`, `/admin/variants`, `/admin/categories`, `/admin/brands`, `/admin/inventory`, `/admin/orders`, `/admin/orders/:id/status`, `/admin/coupons`, `/admin/users`, `/admin/reviews`, `/admin/settings`, `/admin/uploads` |
 
 ---
@@ -430,7 +430,7 @@ Base: `/api/v1` · JSON · lỗi thống nhất `{ "error": { "code", "message",
 | **M3 – Giỏ hàng & Checkout COD** | Giỏ (guest + merge), quote, tạo đơn, tồn kho, email | **MVP mua hàng end-to-end** |
 | **M4 – Admin cơ bản** | CRUD sản phẩm/biến thể/ảnh, danh mục, tồn kho, xử lý đơn | Vận hành được cửa hàng. Quy tắc nghiệp vụ: D-013; chi tiết API: `api-contract.md` §12 |
 | **M5 – Thanh toán online & Khuyến mãi** | VNPay sandbox/Stripe test, IPN/webhook, mã giảm giá | v1 |
-| **M6 – Hoàn thiện v1** | Đánh giá, wishlist, dashboard, SEO, E2E test, audit bảo mật | v1 chạy ổn định trên localhost |
+| **M6 – Hoàn thiện v1** | Đánh giá, wishlist, dashboard, audit log, redirect slug, khôi phục sản phẩm, gợi ý tìm kiếm, SEO, E2E test (Playwright, chạy cục bộ), audit bảo mật. Quyết định: D-017..D-020; chi tiết API: `api-contract.md` §14. **Hoãn M6b (trước deploy):** settings admin, quản lý users, contact/newsletter | v1 chạy ổn định trên localhost |
 | **M7 – Deploy demo** | Chọn nền tảng, cấu hình môi trường, deploy FE/BE/DB, seed dữ liệu demo | Link demo công khai (chỉ làm khi M0–M6 đã ổn) |
 | **v2** | **Subscription (ưu tiên đầu tiên của v2)**, blog, loyalty, đổi trả, Google login, tích hợp GHN | Mở rộng / nâng cao cho CV |
 

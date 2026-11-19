@@ -14,6 +14,7 @@ const LINKS = [
   { href: "/tai-khoan", label: "Hồ sơ", exact: true },
   { href: "/tai-khoan/dia-chi", label: "Sổ địa chỉ", exact: false },
   { href: "/tai-khoan/don-hang", label: "Đơn hàng", exact: false },
+  { href: "/tai-khoan/yeu-thich", label: "Yêu thích", exact: false },
 ] as const;
 
 /** Mobile: tab ngang cuộn được. Từ md: cột dọc. */

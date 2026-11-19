@@ -6,6 +6,7 @@ import { productListQuerySchema, suggestQuerySchema } from './catalog.schema.js'
 export const catalogRouter = Router();
 
 catalogRouter.get('/categories', controller.getCategories);
+catalogRouter.get('/categories/:slug', controller.getCategory);
 catalogRouter.get('/brands', controller.getBrands);
 catalogRouter.get('/products', validate(productListQuerySchema, 'query'), controller.getProducts);
 catalogRouter.get('/products/:slug', controller.getProduct);

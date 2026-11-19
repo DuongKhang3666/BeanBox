@@ -600,8 +600,10 @@ model Review {
   user      User      @relation(fields: [userId], references: [id], onDelete: Restrict)
   orderItem OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
 
+  @@unique([userId, productId]) // m6_slug_redirect: 1 đánh giá/user/sản phẩm (D-017), chặn gửi đồng thời
   @@index([productId, status, createdAt])
   @@index([userId])
+  @@index([status, createdAt]) // m6_slug_redirect: danh sách duyệt của admin
 }
 
 model Setting {
@@ -625,4 +627,23 @@ model AuditLog {
   @@index([entity, entityId])
   @@index([actorId, createdAt])
   @@index([createdAt])
+}
+
+// ───────────── Redirect slug (m6_slug_redirect, D-018) ─────────────
+
+enum SlugEntity {
+  PRODUCT
+  CATEGORY
+}
+
+// Không có FK vì đa hình (targetId trỏ Product hoặc Category tùy entity).
+model SlugRedirect {
+  id        String     @id @default(cuid())
+  entity    SlugEntity
+  fromSlug  String
+  targetId  String
+  createdAt DateTime   @default(now())
+
+  @@unique([entity, fromSlug])
+  @@index([entity, targetId])
 }

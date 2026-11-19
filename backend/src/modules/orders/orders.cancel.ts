@@ -102,3 +102,25 @@ export async function cancelOrderTx(tx: Db, args: CancelOrderArgs): Promise<void
       WHERE "id" = ${released[0]!.couponId} AND "usedCount" > 0`;
   }
 }
+
+/**
+ * Đặt mọi Payment PENDING của đơn thành FAILED (api-contract §13.6, §14.7) và trả về id Checkout
+ * Session Stripe để expire SAU commit. Khóa Payment ngay tại đây: người gọi phải đã khóa Order
+ * trước (D-015) và nên gọi hàm này TRƯỚC `cancelOrderTx` (Order -> Payment -> Variant -> Product).
+ */
+export async function failPendingPaymentsTx(tx: Db, orderId: string): Promise<string[]> {
+  await tx.$queryRaw`SELECT "id" FROM "Payment" WHERE "orderId" = ${orderId} AND "status" = 'PENDING' ORDER BY "id" FOR UPDATE`;
+  const pending = await tx.payment.findMany({
+    where: { orderId, status: 'PENDING' },
+    select: { id: true, provider: true, providerRef: true },
+  });
+  if (pending.length > 0) {
+    await tx.payment.updateMany({
+      where: { id: { in: pending.map((p) => p.id) }, status: 'PENDING' },
+      data: { status: 'FAILED' },
+    });
+  }
+  return pending
+    .filter((p) => p.provider === 'STRIPE' && p.providerRef)
+    .map((p) => p.providerRef as string);
+}

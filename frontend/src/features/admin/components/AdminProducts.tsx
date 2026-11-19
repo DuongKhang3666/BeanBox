@@ -35,6 +35,7 @@ import {
 } from "../productFilters";
 import { AdminPager } from "./AdminPager";
 import { categoryOptions } from "./categoryOptions";
+import { RestoreProductButton } from "./RestoreProductButton";
 
 type Loaded = { data: AdminProductListItem[]; meta: PaginationMeta };
 
@@ -102,7 +103,13 @@ const price = (it: AdminProductListItem) =>
 
 const th = "px-3 py-3 font-medium";
 
-function ProductTable({ items }: { items: AdminProductListItem[] }) {
+function ProductTable({
+  items,
+  onRestored,
+}: {
+  items: AdminProductListItem[];
+  onRestored?: () => void;
+}) {
   return (
     <div className="hidden overflow-x-auto rounded-2xl border border-coffee-200 bg-white md:block">
       <table className="w-full text-left text-sm text-coffee-900">
@@ -136,6 +143,11 @@ function ProductTable({ items }: { items: AdminProductListItem[] }) {
             <th scope="col" className={th}>
               Cập nhật
             </th>
+            {onRestored ? (
+              <th scope="col" className={th}>
+                <span className="sr-only">Thao tác</span>
+              </th>
+            ) : null}
           </tr>
         </thead>
         <tbody className="divide-y divide-coffee-100">
@@ -157,6 +169,15 @@ function ProductTable({ items }: { items: AdminProductListItem[] }) {
               </td>
               <td className="px-3 py-3">{it.isFeatured ? "Nổi bật" : "—"}</td>
               <td className="px-3 py-3 whitespace-nowrap">{formatVnDate(it.updatedAt)}</td>
+              {onRestored ? (
+                <td className="px-3 py-3">
+                  <RestoreProductButton
+                    productId={it.id}
+                    productName={it.name}
+                    onRestored={onRestored}
+                  />
+                </td>
+              ) : null}
             </tr>
           ))}
         </tbody>
@@ -165,7 +186,13 @@ function ProductTable({ items }: { items: AdminProductListItem[] }) {
   );
 }
 
-function ProductCards({ items }: { items: AdminProductListItem[] }) {
+function ProductCards({
+  items,
+  onRestored,
+}: {
+  items: AdminProductListItem[];
+  onRestored?: () => void;
+}) {
   return (
     <ul className="space-y-3 md:hidden">
       {items.map((it) => (
@@ -194,6 +221,9 @@ function ProductCards({ items }: { items: AdminProductListItem[] }) {
             <dt className="text-coffee-700">Cập nhật</dt>
             <dd>{formatVnDate(it.updatedAt)}</dd>
           </dl>
+          {onRestored ? (
+            <RestoreProductButton productId={it.id} productName={it.name} onRestored={onRestored} />
+          ) : null}
         </li>
       ))}
     </ul>
@@ -280,8 +310,8 @@ export function AdminProducts() {
     body = (
       <>
         <p className="mb-3 text-sm text-coffee-700">{meta.total} sản phẩm</p>
-        <ProductTable items={data} />
-        <ProductCards items={data} />
+        <ProductTable items={data} onRestored={deleted ? res.retry : undefined} />
+        <ProductCards items={data} onRestored={deleted ? res.retry : undefined} />
         <AdminPager
           page={meta.page}
           totalPages={meta.totalPages}

@@ -20,6 +20,10 @@
 - [D-014 Thanh toán online M5](#d-014-thanh-toán-online-m5)
 - [D-015 Hoàn tiền thủ công và job hết hạn](#d-015-hoàn-tiền-thủ-công-và-job-hết-hạn)
 - [D-016 Chốt 3 câu hỏi sau M4](#d-016-chốt-3-câu-hỏi-sau-m4)
+- [D-017 Đánh giá sản phẩm](#d-017-đánh-giá-sản-phẩm)
+- [D-018 Redirect slug và khôi phục sản phẩm](#d-018-redirect-slug-và-khôi-phục-sản-phẩm)
+- [D-019 Dashboard và audit log](#d-019-dashboard-và-audit-log)
+- [D-020 Phạm vi M6, E2E và audit bảo mật](#d-020-phạm-vi-m6-e2e-và-audit-bảo-mật)
 
 ---
 
@@ -210,3 +214,59 @@
   3. **Rate limit cấu hình qua env:** `ORDER_RATE_LIMIT_PER_MIN`, `COUPON_RATE_LIMIT_PER_MIN`, `QUOTE_RATE_LIMIT_PER_MIN`, mặc định giữ 10/10/30 (D-011); giúp chạy e2e/demo không chạm giới hạn mà không sửa code.
 - **Hệ quả:** Phải thêm template email cho 4 trạng thái. Link cũ sau khi đổi slug vẫn hỏng tới M6. Giá trị env được validate bằng zod (số nguyên dương).
 - **Docs bị ảnh hưởng:** `api-contract.md` §1, §12.1, §13.0, §13.9, §15 mục 13–14; `architecture.md` §8.
+
+## D-017 Đánh giá sản phẩm
+
+- **Ngày:** 2026-11-11 · **Người chốt:** Tech Lead theo ủy quyền chủ dự án
+- **Trạng thái:** Áp dụng.
+- **Bối cảnh:** FR-REV-01..04 cần quy tắc cụ thể trước khi code: ai được đánh giá, bao nhiêu lần, kiểm duyệt thế nào, hiển thị tên ra sao.
+- **Quyết định:**
+  1. **Điều kiện:** chỉ user có `OrderItem` của sản phẩm thuộc đơn `DELIVERED` của chính mình. Mỗi user tối đa 1 đánh giá/sản phẩm (kể cả mua nhiều lần). Server tự gắn `orderItemId` = dòng `DELIVERED` sớm nhất chưa có review.
+  2. **Hậu kiểm:** đăng ngay (`PUBLISHED`), staff ẩn/hiện sau và có thể trả lời (một câu trả lời, ghi đè được). Review `HIDDEN` không tính vào điểm.
+  3. **Sửa:** trong 30 ngày kể từ lúc tạo; review đang `HIDDEN` vẫn sửa được nhưng giữ `HIDDEN`.
+  4. **Không ảnh ở M6:** `images` luôn `[]`; nội dung là văn bản thuần (không HTML/Markdown) để loại rủi ro XSS/upload.
+  5. **Che tên:** `authorName` = từ cuối của họ tên + chữ cái đầu các từ trước ("Nguyễn Văn An" -> "An N. V."); không trả email/userId ở API công khai.
+  6. **Denormalize:** `Product.ratingAvg/ratingCount` tính lại trong cùng transaction (khóa Product). Giá trị seed là dữ liệu giả cho dev; khi sản phẩm có review thật đầu tiên, giá trị được tính lại từ review thật.
+  7. Rate limit ghi đánh giá 10/phút/IP, store riêng.
+- **Hệ quả:** Không có unique DB `(userId, productId)`; tính duy nhất dựa vào khóa Product trong service (cần test đồng thời). FR-REV-01 "tối đa 3 ảnh" và FR-REV-02 "1 đánh giá/sản phẩm/đơn" được thu hẹp/đổi theo quyết định này. Điểm sản phẩm seed sẽ "nhảy" khi có review thật.
+- **Docs bị ảnh hưởng:** `api-contract.md` §2, §12.0, §14.1; `db-schema.md` §2–3, §4, §5; `requirements.md` §11 (FR-REV-01/02 ở §4 giữ nguyên văn bản gốc, quyết định này ghi đè phần ảnh và phạm vi "1 đánh giá/sản phẩm").
+
+## D-018 Redirect slug và khôi phục sản phẩm
+
+- **Ngày:** 2026-11-11 · **Người chốt:** Tech Lead theo ủy quyền chủ dự án
+- **Trạng thái:** Áp dụng (thay quyết định hoãn ở D-016 mục 2).
+- **Bối cảnh:** Đổi slug làm hỏng link cũ và SEO; sản phẩm xóa mềm chưa có cách khôi phục.
+- **Quyết định:**
+  1. **Bảng `SlugRedirect`** (`entity`, `fromSlug`, `targetId`, unique `(entity, fromSlug)`) ghi khi admin đổi slug sản phẩm/danh mục; lưu theo id nên không có chuỗi redirect; slug mới trùng `fromSlug` cũ cùng loại thì xóa redirect đó; khớp trực tiếp luôn được ưu tiên.
+  2. **API trả 404 `NOT_FOUND` + `details.movedTo`, không trả 301.** Lý do: API là JSON, không phải trang; để FE (Next, SSR) quyết định chuyển hướng 308 vĩnh viễn nhằm giữ SEO, và các client khác không bị chuyển hướng ngầm. Thêm `GET /categories/:slug`.
+  3. **Khôi phục sản phẩm** `POST /admin/products/:id/restore` (Admin): `deletedAt = null`, `status = DRAFT`, biến thể đã xóa mềm giữ nguyên, AuditLog `product.restore`.
+  4. **Hủy đơn và Payment:** hủy đơn thủ công chuyển Payment `PENDING` -> `FAILED` trong cùng transaction, sau commit best-effort expire phiên Stripe (§14.7).
+- **Hệ quả:** Thêm migration `m6_slug_redirect`. Sản phẩm đã xóa vẫn giữ slug; link cũ trỏ tới sản phẩm đã xóa/ẩn trả 404 thường. FE phải xử lý `movedTo` ở trang sản phẩm và danh mục.
+- **Docs bị ảnh hưởng:** `api-contract.md` §4.4, §14.5–14.7, §15 mục 14; `db-schema.md` §2–3.
+
+## D-019 Dashboard và audit log
+
+- **Ngày:** 2026-11-11 · **Người chốt:** Tech Lead theo ủy quyền chủ dự án
+- **Trạng thái:** Áp dụng.
+- **Bối cảnh:** FR-ADM-01 và FR-ADM-11 cần định nghĩa chỉ số và quyền xem.
+- **Quyết định:**
+  1. **Doanh thu theo `paidAt`** của đơn `paymentStatus = PAID` và `status` không thuộc `CANCELLED`/`RETURNED` (đơn COD chỉ tính khi đã giao và thu tiền); số đơn theo `createdAt`, mọi trạng thái. Tính theo ngày giờ VN (UTC+7).
+  2. Top sản phẩm theo số lượng trong 30 ngày (loại đơn `CANCELLED`/`PENDING_PAYMENT`); sắp hết hàng theo `stock <= lowStockThreshold`.
+  3. **Không thêm thư viện biểu đồ:** FE vẽ bằng CSS để giữ bundle nhỏ và giảm bề mặt phụ thuộc.
+  4. **Audit log chỉ Admin xem** (Staff thao tác nhưng không đọc nhật ký); lọc theo action/prefix/entity/actor/khoảng ngày.
+- **Hệ quả:** Doanh thu một ngày có thể đổi nếu đơn sau đó bị hủy/hoàn (số liệu quá khứ không đóng băng). Các truy vấn tổng hợp chạy trực tiếp trên bảng Order (chưa có bảng tổng hợp); đủ cho quy mô demo.
+- **Docs bị ảnh hưởng:** `api-contract.md` §12.0, §14.3–14.4.
+
+## D-020 Phạm vi M6, E2E và audit bảo mật
+
+- **Ngày:** 2026-11-11 · **Người chốt:** Tech Lead theo ủy quyền chủ dự án
+- **Trạng thái:** Áp dụng.
+- **Bối cảnh:** M6 ("Hoàn thiện v1") gồm nhiều hạng mục; cần giới hạn để kịp deploy demo.
+- **Quyết định:**
+  1. **Làm trong M6:** `api-contract.md` §14.1–14.8 (đánh giá, wishlist, dashboard, audit log, redirect slug, khôi phục sản phẩm, hủy đơn + Stripe, gợi ý tìm kiếm), SEO (requirements §6.4), E2E, audit bảo mật.
+  2. **E2E:** Playwright, chỉ chromium, cài làm devDependency của `frontend/`, chạy cục bộ; CHƯA đưa vào CI.
+  3. **Audit bảo mật:** rà soát theo checklist và chạy `npm audit`; chỉ nâng cấp phụ thuộc khi an toàn (không phá build/test, không nâng major khi chưa kiểm).
+  4. **Hoãn M6b (dự kiến trước deploy M7):** settings admin (`/admin/settings`, `/settings/public`), quản lý người dùng, contact/newsletter (§14.9).
+  5. **Nợ kỹ thuật ghi nhận:** gộp các hàm `dateOnly` trùng lặp; thêm file dữ liệu hành chính (`backend/data/provinces-wards.json`) vào `.prettierignore`.
+- **Hệ quả:** Trang vận chuyển vẫn là nội dung tĩnh tới khi có settings công khai (D-013). Quản lý user/khóa tài khoản chưa có UI trong M6. E2E chưa chặn merge.
+- **Docs bị ảnh hưởng:** `api-contract.md` §14.9; `requirements.md` §11; `architecture.md` §2, §6.
