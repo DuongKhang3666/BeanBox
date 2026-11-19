@@ -5,17 +5,20 @@ import { ButtonLink } from "@/components/ui/Button";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { getCategories, getProducts } from "@/features/catalog/api";
 import { ProductGrid } from "@/features/catalog/components/ProductGrid";
+import { HomeBanners } from "@/features/content/components/HomeBanners";
+import { getPublicSettings } from "@/features/content/publicSettings";
 import { ROOT_CATEGORY_SLUGS } from "@/lib/site";
 
 /** Trang chủ cần API lúc chạy; không prerender lúc build (build phải qua được khi backend tắt). */
 export default async function HomePage() {
   await connection();
 
-  const [categories, featured, newest, bestseller] = await Promise.allSettled([
+  const [categories, featured, newest, bestseller, settings] = await Promise.allSettled([
     getCategories(),
     getProducts({ featured: true, pageSize: 8 }),
     getProducts({ sort: "newest", pageSize: 8 }),
     getProducts({ sort: "bestseller", pageSize: 4 }),
+    getPublicSettings(),
   ]);
 
   return (
@@ -51,6 +54,10 @@ export default async function HomePage() {
           </div>
         </Container>
       </section>
+
+      {settings.status === "fulfilled" ? (
+        <HomeBanners banners={settings.value.home.banners} />
+      ) : null}
 
       <Section id="categories" title="Danh mục">
         {categories.status === "fulfilled" ? (

@@ -1,6 +1,7 @@
 # BeanBox – Thiết kế cơ sở dữ liệu
 
-> Phiên bản 0.7 · 2026-11-11 · PostgreSQL + Prisma 6.x.
+> Phiên bản 0.8 · 2026-11-19 · PostgreSQL + Prisma 6.x.
+> Thay đổi 0.8: MIGRATION mới `m6b_contact_message` (D-023): thêm enum `ContactStatus`, model `ContactMessage` và 2 quan hệ ngược ở `User` (`contactMessages`, `handledContactMessages`); cập nhật giải thích `ContactMessage`, `Setting` (§3), ghi chú ràng buộc setting (§6), §7 mục 5. Quy tắc nghiệp vụ: api-contract §14.9–14.11.
 > Thay đổi 0.7: MIGRATION mới `m6_slug_redirect` (D-018): thêm enum `SlugEntity`, model `SlugRedirect`, `Review @@index([status, createdAt])` (danh sách duyệt đánh giá của admin) và `Review @@unique([userId, productId])` (1 đánh giá/user/sản phẩm, chặn gửi đồng thời; Tech Lead chốt); cập nhật giải thích `Review`, `Wishlist`, `SlugRedirect` (§3) và `ratingAvg/ratingCount` chỉ tính `PUBLISHED` (§5). Quy tắc nghiệp vụ: api-contract §14.
 > Thay đổi 0.6: MIGRATION mới `m5_payment_refund` (D-015): thêm vào `Payment` các cột `refundedAt`, `refundNote`, `refundedById` (+ relation `refundedBy`/`User.paymentRefunds`) và `@@index([status])`; cập nhật giải thích `Payment` (§3).
 > Thay đổi 0.5: không đổi schema; quy tắc ghi AuditLog và InventoryMovement cho admin (api-contract §12).
@@ -181,6 +182,8 @@ model User {
   reviews                 Review[]
   auditLogs               AuditLog[]
   paymentRefunds          Payment[] @relation("PaymentRefunds")
+  contactMessages         ContactMessage[] @relation("ContactMessageUser")
+  handledContactMessages  ContactMessage[] @relation("ContactMessageHandler")
 
   @@index([role])
   @@index([createdAt])
@@ -681,6 +684,37 @@ model SlugRedirect {
   @@unique([entity, fromSlug])
   @@index([entity, targetId])
 }
+
+// ───────────── Liên hệ (m6b_contact_message, D-023) ─────────────
+
+enum ContactStatus {
+  NEW
+  IN_PROGRESS
+  RESOLVED
+  SPAM
+}
+
+model ContactMessage {
+  id          String        @id @default(cuid())
+  userId      String?
+  name        String
+  email       String
+  phone       String?
+  subject     String?
+  message     String
+  status      ContactStatus @default(NEW)
+  adminNote   String?
+  handledById String?
+  handledAt   DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  user      User? @relation("ContactMessageUser", fields: [userId], references: [id], onDelete: SetNull)
+  handledBy User? @relation("ContactMessageHandler", fields: [handledById], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([createdAt])
+}
 ```
 
 ## 3. Giải thích model
@@ -708,7 +742,8 @@ model SlugRedirect {
 | `CouponRedemption` | 1 dòng/đơn, tạo cùng lúc tạo đơn (sau khi giữ lượt thành công); `email` (lowercase) để áp `perUserLimit` cho guest; `releasedAt` đặt khi đơn `CANCELLED` (hủy, hết hạn, giao thất bại rồi hủy), đồng thời giảm `usedCount`; đếm lượt đã dùng = dòng có `releasedAt IS NULL` |
 | `Review` | `unique(orderItemId)` = mỗi dòng hàng đã mua tối đa 1 đánh giá. Từ M6 (api-contract §14.1, D-017): mỗi user tối đa 1 đánh giá/sản phẩm (service kiểm tra trong transaction có khóa Product; không có unique DB `(userId, productId)`); `orderItemId` do server gắn = dòng `DELIVERED` sớm nhất của user cho sản phẩm chưa có review; chỉ khi đơn `DELIVERED`; `status` mặc định `PUBLISHED`, staff ẩn sau; sửa trong 30 ngày kể từ `createdAt` (service); `images` luôn `[]` ở M6; `content` là văn bản thuần. Index `(status, createdAt)` phục vụ `GET /admin/reviews` |
 | `SlugRedirect` | Slug cũ của sản phẩm/danh mục sau khi đổi slug: `(entity, fromSlug) -> targetId`. Không FK (đa hình): xóa vĩnh viễn danh mục thì service xóa redirect của nó; sản phẩm chỉ xóa mềm nên giữ. Lưu theo id nên không tạo chuỗi redirect (api-contract §14.5) |
-| `Setting` | Key-value JSON (phí ship, ngưỡng freeship, banner...) |
+| `ContactMessage` | Tin nhắn từ form liên hệ (D-023). Không lưu IP; `email` lowercase, `phone` chuẩn hóa D-007; nội dung text thuần; không xóa ở M6b; thời hạn lưu xem api-contract §15 mục 15 |
+| `Setting` | Key-value JSON (phí ship, ngưỡng freeship, banner...). Key whitelist và ràng buộc ở api-contract §14.9; đọc nới, ghi chặt |
 | `AuditLog` | Nhật ký thao tác admin/staff (`diff` chỉ chứa trường thay đổi, không chứa dữ liệu nhạy cảm) |
 
 ## 4. Ràng buộc & index viết bằng raw SQL
@@ -854,6 +889,8 @@ Tổng >= 38 sản phẩm. Các trường hợp cần có để test UI/logic (c
 }
 ```
 
+Ràng buộc khi ghi các key này (qua admin) nằm ở api-contract §14.9.
+
 Dữ liệu địa chỉ **không** nằm trong DB: `backend/data/provinces-wards.json` (dữ liệu hành chính 2 cấp từ 01/07/2025, nguồn ghi trong `backend/data/README.md`), nạp vào bộ nhớ khi khởi động (fail-fast nếu thiếu/sai; kiểm 34 tỉnh / 3.321 phường). File **do chủ dự án cung cấp**; developer không tự sửa/bịa dữ liệu (D-006). Server phục vụ `/locations` và đối chiếu mã khi lưu địa chỉ.
 
 ## 7. Câu hỏi mở / Giả định
@@ -862,7 +899,7 @@ Dữ liệu địa chỉ **không** nằm trong DB: `backend/data/provinces-ward
 2. **Phân biệt giảm hàng vs. giảm ship:** thêm `Order.shippingDiscount` (requirements chỉ có `discountTotal`, `shippingFee`). Công thức `grandTotal` ghi rõ ở trên.
 3. **`ProductStatus` không có trạng thái "hết hàng"** – hết hàng suy ra từ tồn kho (`inStock`).
 4. **Đã chốt D-006 – Mã tỉnh / vùng nội thành:** "nội thành" = toàn bộ Hà Nội (`"01"`) và TP.HCM (`"79"`) qua `shipping.innerCityProvinceCodes`; **đã đối chiếu 2026-11-11** với file nguồn: `01` = Thành phố Hà Nội, `79` = Thành phố Hồ Chí Minh (mã khớp, không đổi setting). Rủi ro phạm vi của `79` sau sáp nhập: **đã chốt 2026-11-11 (M3)** giữ nguyên cho MVP như hạn chế đã biết; muốn thu hẹp thì bỏ `"79"` khỏi `innerCityProvinceCodes` và liệt kê mã phường vào `shipping.innerCityWardCodes` (không sửa code), xem D-006.
-5. **Thiếu trong requirements:** bảng cho newsletter/liên hệ (FR-CNT-03, mức S) và blog (v2) chưa có; thêm ở milestone tương ứng. `Subscription` để v2 theo chỉ đạo.
+5. **Thiếu trong requirements:** bảng liên hệ đã thêm ở M6b (`m6b_contact_message`, D-023); bảng newsletter (FR-CNT-03, mức S) vẫn chưa có, blog (v2) chưa có; thêm ở milestone tương ứng. `Subscription` để v2 theo chỉ đạo.
 6. **Xóa user:** chưa có luồng xóa tài khoản; nếu cần sẽ ẩn danh hóa thay vì hard-delete (FK `Restrict` ở Review).
 7. **Partial index/CHECK vs Prisma drift** (§4): cần kiểm chứng khi scaffold; phương án dự phòng là chỉ enforce trong service.
 8. **Review thêm ràng buộc "1 đánh giá/sản phẩm/đơn"** (FR-REV-02): `unique(orderItemId)` chỉ chặn trùng theo dòng hàng; nếu đơn có 2 variant của cùng sản phẩm thì service phải chặn đánh giá lần 2 (chưa có unique trong DB).

@@ -12,6 +12,7 @@ import type {
   InventoryMovement,
   OrderStatusCounts,
 } from "@/types/admin";
+import type { AdminSettings } from "@/types/settings";
 import { makeOrder } from "../orders/testing";
 import { emptyStatusCounts } from "./api/orders";
 
@@ -244,6 +245,23 @@ export function makeAdminProduct(over: Partial<AdminProduct> = {}): AdminProduct
     deletedAt: null,
     createdAt: "2026-11-10T08:30:00.000Z",
     updatedAt: "2026-11-10T08:30:00.000Z",
+    ...over,
+  };
+}
+
+export function makeAdminSettings(over: Partial<AdminSettings> = {}): AdminSettings {
+  return {
+    "shipping.rates": {
+      inner: { STANDARD: 20000, EXPRESS: 35000 },
+      other: { STANDARD: 35000, EXPRESS: 55000 },
+    },
+    "shipping.innerCityProvinceCodes": ["01", "79"],
+    "shipping.innerCityWardCodes": [],
+    "shipping.freeShippingThreshold": 500000,
+    "shipping.weightSurcharge": { freeGram: 2000, stepGram: 1000, feePerStep: 5000 },
+    "order.paymentExpiryMinutes": 15,
+    "store.contact": { name: "BeanBox", email: "hello@beanbox.local", phone: "", address: "" },
+    "home.banners": [],
     ...over,
   };
 }

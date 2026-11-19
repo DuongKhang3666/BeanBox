@@ -24,6 +24,10 @@
 - [D-018 Redirect slug và khôi phục sản phẩm](#d-018-redirect-slug-và-khôi-phục-sản-phẩm)
 - [D-019 Dashboard và audit log](#d-019-dashboard-và-audit-log)
 - [D-020 Phạm vi M6, E2E và audit bảo mật](#d-020-phạm-vi-m6-e2e-và-audit-bảo-mật)
+- [D-021 Cài đặt cửa hàng](#d-021-cài-đặt-cửa-hàng)
+- [D-022 Quản lý người dùng](#d-022-quản-lý-người-dùng)
+- [D-023 Form liên hệ](#d-023-form-liên-hệ)
+- [D-024 CSP report-only](#d-024-csp-report-only)
 
 ---
 
@@ -149,6 +153,7 @@
 - **Bối cảnh:** Footer và checkout cần các trang chính sách/điều khoản, nhưng BeanBox không phải cửa hàng thật nên không có thông tin pháp lý để điền.
 - **Quyết định:** BeanBox là dự án demo, không phải cửa hàng thật. Các trang tĩnh `/chinh-sach/van-chuyen`, `/chinh-sach/doi-tra`, `/chinh-sach/bao-mat`, `/chinh-sach/dieu-khoan`, `/gioi-thieu`, `/lien-he` là bản ngắn tiếng Việt, có ghi chú "dự án demo"; không bịa mã số doanh nghiệp, địa chỉ, hotline; liên hệ chỉ dùng email trong setting `store.contact` (`hello@beanbox.local`). Nội dung phải khớp quy tắc nghiệp vụ hiện hành: phí ship theo `requirements.md` §5.3, freeship từ 500.000đ sau giảm giá cho giao Tiêu chuẩn, phụ phí khối lượng (D-003), khách tự hủy được ở `PENDING_PAYMENT`/`PENDING`/`CONFIRMED`; đổi trả online là v2 nên đổi trả do cửa hàng xử lý thủ công qua email trong 7 ngày cho hàng lỗi/giao sai; mỗi đơn dùng 1 mã giảm giá. Ô "đồng ý điều khoản" ở checkout có link tới `/chinh-sach/dieu-khoan` mở tab mới để không mất dữ liệu form.
 - **Hệ quả:** Khi đổi setting phí ship phải cập nhật trang vận chuyển (nội dung tĩnh, chưa đọc từ `/settings/public`; để M6).
+- **Cập nhật 2026-11-19:** từ M6b, trang chính sách vận chuyển và trang liên hệ đọc số liệu thật từ `/settings/public` (D-021).
 - **Docs bị ảnh hưởng:** `requirements.md` FR-CNT-01, FR-CHK-05.
 
 ## D-013 Quy tắc nghiệp vụ Admin M4
@@ -266,7 +271,64 @@
   1. **Làm trong M6:** `api-contract.md` §14.1–14.8 (đánh giá, wishlist, dashboard, audit log, redirect slug, khôi phục sản phẩm, hủy đơn + Stripe, gợi ý tìm kiếm), SEO (requirements §6.4), E2E, audit bảo mật.
   2. **E2E:** Playwright, chỉ chromium, cài làm devDependency của `frontend/`, chạy cục bộ; CHƯA đưa vào CI.
   3. **Audit bảo mật:** rà soát theo checklist và chạy `npm audit`; chỉ nâng cấp phụ thuộc khi an toàn (không phá build/test, không nâng major khi chưa kiểm).
-  4. **Hoãn M6b (dự kiến trước deploy M7):** settings admin (`/admin/settings`, `/settings/public`), quản lý người dùng, contact/newsletter (§14.9).
+  4. **Hoãn M6b (dự kiến trước deploy M7):** settings admin (`/admin/settings`, `/settings/public`), quản lý người dùng, contact/newsletter (§14.9). Cập nhật 2026-11-19: M6b đã chi tiết hóa ở D-021..D-024 (newsletter vẫn hoãn).
   5. **Nợ kỹ thuật ghi nhận:** gộp các hàm `dateOnly` trùng lặp; thêm file dữ liệu hành chính (`backend/data/provinces-wards.json`) vào `.prettierignore`.
 - **Hệ quả:** Trang vận chuyển vẫn là nội dung tĩnh tới khi có settings công khai (D-013). Quản lý user/khóa tài khoản chưa có UI trong M6. E2E chưa chặn merge.
 - **Docs bị ảnh hưởng:** `api-contract.md` §14.9; `requirements.md` §11; `architecture.md` §2, §6.
+
+## D-021 Cài đặt cửa hàng
+
+- **Ngày:** 2026-11-19 · **Người chốt:** Tech Lead theo ủy quyền chủ dự án
+- **Trạng thái:** Áp dụng.
+- **Bối cảnh:** FR-ADM-09 cần cho admin chỉnh phí ship, vùng nội thành, thông tin liên hệ và banner; trang chính sách vận chuyển còn là nội dung tĩnh (D-012, D-020).
+- **Quyết định:**
+  1. **Chỉ Admin** xem và sửa (`GET/PUT /admin/settings`).
+  2. **Whitelist key và ràng buộc ghi** theo `api-contract.md` §14.9; key lạ bị từ chối. Banner chỉ nhận ảnh `/uploads/...` và `href` nội bộ (không URL ngoài) để khớp CSP và tránh open redirect.
+  3. **Đọc nới, ghi chặt:** giá trị đọc từ DB kiểm theo schema nới hơn; sai định dạng thì dùng mặc định và log cảnh báo tên key.
+  4. **Tính giá không cache phía server** nên đổi setting có hiệu lực ngay cho quote/đặt đơn. `GET /settings/public` cache 300 giây; FE ISR 300 giây và có nội dung mặc định khi API lỗi.
+  5. Trang chính sách vận chuyển, footer, trang liên hệ và banner trang chủ đọc số liệu thật từ `/settings/public` (đóng hệ quả còn treo của D-012 và D-020).
+- **Hệ quả/rủi ro:** Ghi đè theo key, người ghi sau thắng (không khóa lạc quan; ít admin). Storefront cập nhật chậm tới khoảng 5 phút. Admin có thể đặt phí bất thường; các giới hạn trần đã chặn bớt.
+- **Docs bị ảnh hưởng:** `api-contract.md` §12.0, §14.9; `db-schema.md` §3, §6; `architecture.md`.
+
+## D-022 Quản lý người dùng
+
+- **Ngày:** 2026-11-19 · **Người chốt:** Tech Lead theo ủy quyền chủ dự án
+- **Trạng thái:** Áp dụng.
+- **Bối cảnh:** FR-ADM-07 cần khóa/mở khóa tài khoản và đổi vai trò; rủi ro chính là admin tự khóa mình hoặc hệ thống mất hết admin.
+- **Quyết định:**
+  1. **Chỉ ADMIN** dùng `/admin/users` (Staff nhận 403).
+  2. Không tự khóa hoặc đổi role chính mình (`CANNOT_MODIFY_SELF`).
+  3. Không làm mất ADMIN `ACTIVE` cuối (`LAST_ADMIN`). Trong transaction: khóa dòng người thao tác và các ADMIN `ACTIVE` bằng `SELECT ... FOR UPDATE`, rồi kiểm lại người thao tác còn là ADMIN `ACTIVE` (không thì 403). Cách này chặn trường hợp hai admin khóa chéo nhau đồng thời.
+  4. Khóa hoặc đổi role thu hồi mọi refresh token; access token bị chặn ngay vì middleware đọc DB mỗi request.
+  5. Mở khóa xóa luôn khóa tạm do đăng nhập sai (`failedLoginCount`, `lockedUntil`).
+  6. Audit `user.status` và `user.role`. Không có xóa user và không đặt lại mật khẩu ở M6b.
+- **Hệ quả/rủi ro:** User bị hạ quyền vẫn còn access token nhưng mất quyền ngay ở request tiếp theo; phiên làm mới bị thu hồi nên phải đăng nhập lại.
+- **Docs bị ảnh hưởng:** `api-contract.md` §2, §12.0, §14.10.
+
+## D-023 Form liên hệ
+
+- **Ngày:** 2026-11-19 · **Người chốt:** Tech Lead theo ủy quyền chủ dự án
+- **Trạng thái:** Áp dụng.
+- **Bối cảnh:** FR-CNT-03 cần form liên hệ; trang `/lien-he` hiện chỉ có email (D-012). Cần chống spam mà không lưu dữ liệu định danh thừa.
+- **Quyết định:**
+  1. Bảng `ContactMessage` (migration `m6b_contact_message`).
+  2. `POST /contact` rate limit 3 request/10 phút/IP; honeypot `website` có giá trị thì trả 201 giả, không lưu, không gửi mail; không lưu IP.
+  3. Email thông báo gửi nền tới `store.contact.email` với `Reply-To` là email người gửi, nội dung escape HTML; KHÔNG gửi email tự động cho người gửi.
+  4. Staff+ xem và xử lý (trạng thái, ghi chú), không xóa; audit `contact.update` không chép nội dung.
+  5. Newsletter vẫn hoãn.
+- **Hệ quả/rủi ro:** Spam qua nhiều IP không bị chặn (chấp nhận cho demo; M7 cân nhắc captcha hoặc rate limit ở edge). Thời hạn lưu chưa tự động (`api-contract.md` §15 mục 15).
+- **Docs bị ảnh hưởng:** `api-contract.md` §14.11, §15 mục 15–16; `db-schema.md` §2–3, §7.
+
+## D-024 CSP report-only
+
+- **Ngày:** 2026-11-19 · **Người chốt:** Tech Lead theo ủy quyền chủ dự án
+- **Trạng thái:** Áp dụng.
+- **Bối cảnh:** Frontend chưa có CSP; bật thực thi ngay có thể làm vỡ trang vì Next chèn inline script không nonce.
+- **Quyết định:**
+  1. Header `Content-Security-Policy-Report-Only` đặt ở Next (`next.config.ts`), không thực thi.
+  2. `'unsafe-inline'` cho script và style là tạm thời.
+  3. `POST /csp-report` chỉ log gọn các trường đã làm sạch, không PII, không lưu DB, rate limit 20 request/phút/IP.
+  4. Kế hoạch M7: thu thập vi phạm, chuyển sang nonce và chế độ thực thi.
+  5. Backend API vẫn giữ CSP mặc định của helmet cho response JSON.
+- **Hệ quả/rủi ro:** Chưa có bảo vệ thực sự từ CSP cho đến M7; log `warn` có thể nhiều ở dev (đã giới hạn bằng rate limit).
+- **Docs bị ảnh hưởng:** `api-contract.md` §14.12; `architecture.md`; `testing.md`.

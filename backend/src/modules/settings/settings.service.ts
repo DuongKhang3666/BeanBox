@@ -2,6 +2,7 @@ import type { Prisma, PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { logger } from '../../lib/logger.js';
 import { prisma } from '../../lib/prisma.js';
+import { isValidImageUrl } from '../admin/admin.schema.js';
 
 /** Cấu hình cửa hàng dùng cho tính giá (api-contract §10). Mặc định trùng seed. */
 
@@ -84,6 +85,126 @@ export function parseShopSettings(rows: readonly SettingRow[]): ShopSettings {
   out.weightSurcharge = read('shipping.weightSurcharge') ?? out.weightSurcharge;
   out.paymentExpiryMinutes = read('order.paymentExpiryMinutes') ?? out.paymentExpiryMinutes;
   return out;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Cài đặt cửa hàng đầy đủ (api-contract §14.9, D-021): 8 key quản lý. Schema ĐỌC nới hơn schema GHI.
+// ---------------------------------------------------------------------------------------------
+
+/** `/uploads/...` an toàn (không https, không `..`, `\`, `//`, khoảng trắng, ký tự điều khiển). */
+export function isSafeUploadUrl(raw: string): boolean {
+  return raw.startsWith('/uploads/') && isValidImageUrl(raw);
+}
+
+/** Đường dẫn tương đối nội bộ: bắt đầu `/`, không `//`, không `\`, khoảng trắng, ký tự điều khiển. */
+export function isSafeHref(raw: string): boolean {
+  if (raw.length === 0 || raw.length > 300) return false;
+  if (!raw.startsWith('/') || raw.startsWith('//')) return false;
+  // eslint-disable-next-line no-control-regex
+  return !/[\\\s\u0000-\u001f\u007f]/.test(raw);
+}
+
+export interface StoreContact {
+  name: string;
+  phone: string;
+  email: string;
+  address: string;
+}
+export interface HomeBanner {
+  imageUrl: string;
+  alt: string;
+  title: string;
+  subtitle: string;
+  href: string | null;
+  isActive: boolean;
+}
+
+const readBanner = z.object({
+  imageUrl: z.string().refine(isSafeUploadUrl),
+  alt: z.string().max(200),
+  title: z.string().max(100).default(''),
+  subtitle: z.string().max(200).default(''),
+  href: z.string().refine(isSafeHref).nullable().default(null),
+  isActive: z.boolean(),
+});
+
+const READ_SCHEMAS = {
+  ...SCHEMAS,
+  'store.contact': z.object({
+    name: z.string().min(1).max(100),
+    phone: z.string().max(30),
+    email: z.string().min(1).max(254),
+    address: z.string().max(300),
+  }),
+  'home.banners': z.array(readBanner).max(5),
+} as const;
+
+export type SettingKey = keyof typeof READ_SCHEMAS;
+export const SETTING_KEYS = Object.keys(READ_SCHEMAS) as SettingKey[];
+
+export const DEFAULT_STORE_CONTACT: Readonly<StoreContact> = Object.freeze({
+  name: 'BeanBox',
+  phone: '',
+  email: 'hello@beanbox.local',
+  address: '',
+});
+
+function defaultValue(key: SettingKey): unknown {
+  const d = DEFAULT_SHOP_SETTINGS;
+  switch (key) {
+    case 'shipping.rates':
+      return structuredClone(d.shippingRates);
+    case 'shipping.innerCityProvinceCodes':
+      return [...d.innerCityProvinceCodes];
+    case 'shipping.innerCityWardCodes':
+      return [...d.innerCityWardCodes];
+    case 'shipping.freeShippingThreshold':
+      return d.freeShippingThreshold;
+    case 'shipping.weightSurcharge':
+      return { ...d.weightSurcharge };
+    case 'order.paymentExpiryMinutes':
+      return d.paymentExpiryMinutes;
+    case 'store.contact':
+      return { ...DEFAULT_STORE_CONTACT };
+    case 'home.banners':
+      return [];
+  }
+}
+
+export interface AllSettings {
+  values: Record<SettingKey, unknown>;
+  updatedAt: Record<SettingKey, string | null>;
+}
+
+/** Đủ 8 key; thiếu/sai định dạng -> mặc định và updatedAt null. Không cache. */
+export async function getAllSettings(
+  db: Prisma.TransactionClient | PrismaClient = prisma,
+): Promise<AllSettings> {
+  const rows = await db.setting.findMany({
+    where: { key: { in: SETTING_KEYS } },
+    select: { key: true, value: true, updatedAt: true },
+  });
+  const byKey = new Map(rows.map((r) => [r.key, r]));
+  const values = {} as Record<SettingKey, unknown>;
+  const updatedAt = {} as Record<SettingKey, string | null>;
+  for (const key of SETTING_KEYS) {
+    const row = byKey.get(key);
+    const parsed = row ? READ_SCHEMAS[key].safeParse(row.value) : undefined;
+    if (row && parsed?.success) {
+      values[key] = parsed.data;
+      updatedAt[key] = row.updatedAt.toISOString();
+    } else {
+      if (row) {
+        logger.warn(
+          { key, issues: parsed?.error?.issues.map((i) => i.path.join('.') || '(root)') },
+          'Setting sai định dạng, dùng giá trị mặc định',
+        );
+      }
+      values[key] = defaultValue(key);
+      updatedAt[key] = null;
+    }
+  }
+  return { values, updatedAt };
 }
 
 /** Đọc cấu hình bằng 1 query, không cache. */

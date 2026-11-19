@@ -1,6 +1,7 @@
 # BeanBox – API Contract
 
-> Phiên bản 0.7 · 2026-11-11 · **Nguồn sự thật cho FE và BE.** Đổi contract phải sửa file này trước và nêu trong báo cáo.
+> Phiên bản 0.8 · 2026-11-19 · **Nguồn sự thật cho FE và BE.** Đổi contract phải sửa file này trước và nêu trong báo cáo.
+> Thay đổi 0.8: chi tiết hóa M6b (D-021..D-024): thay "14.9 Hoãn sau M6" bằng 14.9 Cài đặt cửa hàng (`GET/PUT /admin/settings`, `GET /settings/public`), 14.10 Quản lý người dùng (`/admin/users`), 14.11 Liên hệ (`POST /contact`, `/admin/contact-messages`), 14.12 CSP report-only (`POST /csp-report`); newsletter còn hoãn (14.13). Thêm mã lỗi `CANNOT_MODIFY_SELF`, `LAST_ADMIN` (§2); thêm action audit `settings.update`, `user.status`, `user.role`, `contact.update` (§12.0). Chốt thêm: settings chỉ Admin, ràng buộc ghi chặt/đọc nới, `innerCityWardCount` ở `/settings/public`, banner chỉ ảnh `/uploads/` và `href` nội bộ; khóa dòng + kiểm lại người thao tác ở quản lý người dùng; làm rõ liên hệ và `POST /csp-report`; thêm §15 mục 15–16. Cần migration `m6b_contact_message` (`db-schema.md`).
 > Thay đổi 0.7.1: ghi nhận khi triển khai M6: `Review` có thêm unique `(userId, productId)` (chống tạo trùng khi gửi đồng thời; trùng -> 409 `REVIEW_NOT_ALLOWED` `ALREADY_REVIEWED`); `requirements.md` đổi `POST /products/:id/reviews` thành `:slug`, FR-REV-01 bỏ ảnh ở M6 và FR-REV-02 thành 1 đánh giá/người dùng/sản phẩm; Enter ở ô tìm kiếm tới `/tim-kiem?q=` (§14.8). Không đổi shape API.
 > Thay đổi 0.7: chi tiết hóa M6 (D-017..D-020): §14 đổi thành "Hoàn thiện v1 (M6)" gồm đánh giá (14.1; `POST` dùng `:slug` thay vì `:productId`, `PUT|DELETE /admin/reviews/:id/reply` thay cho `POST .../reply`), wishlist (14.2), dashboard (14.3), audit log (14.4), redirect slug + `GET /categories/:slug` (14.5), khôi phục sản phẩm (14.6), hủy đơn và Payment Stripe (14.7), gợi ý tìm kiếm ở FE (14.8); Settings, Users, Nội dung (contact/newsletter) chuyển vào 14.9 "Hoãn sau M6" (dự kiến M6b). Thêm mã lỗi `REVIEW_NOT_ALLOWED`, `REVIEW_EDIT_EXPIRED`, `WISHLIST_LIMIT` (§2); §4.4 ghi chú slug cũ -> 404 + `details.movedTo`. Cần migration `m6_slug_redirect` (`db-schema.md`). Câu hỏi mở §15 mục 14 đã chốt.
 > Thay đổi 0.6.1: triển khai Stripe (§13.2, §13.4), hoàn tiền, email: `TrackedOrder.expiresAt` (§9.5); `AdminOrderListItem.needsRefund` (§12.1); `POST /admin/orders/:code/refunds` chỉ Admin (§13.7, trước đó ghi Staff); `expires_at` của phiên Stripe = now + 31 phút (đệm 60 giây so với mức tối thiểu 30 phút của Stripe, §13.2); sync Stripe chỉ hỏi Stripe với session id do hệ thống tạo (§13.4).
@@ -14,7 +15,7 @@
 > Thay đổi 0.3: chi tiết hóa M2 Auth & Tài khoản, D-008, D-009.
 > Thay đổi 0.3.1: nạp danh mục hành chính thật (D-006), đóng D-008: triển khai §7 Locations, đối chiếu mã tỉnh/phường khi tạo/sửa địa chỉ (§6.3), thay mã/tên ví dụ bằng mã thật (79/26740 "Phường Sài Gòn").
 > Base URL: `/api/v1` (trình duyệt: same-origin qua Next rewrites; backend: `http://localhost:4000/api/v1`).
-> Chi tiết đầy đủ cho M1–M6; các endpoint hoãn (Settings, Users, Nội dung) chỉ liệt kê ở §14.9.
+> Chi tiết đầy đủ cho M1–M6b; chỉ còn hoãn newsletter (§14.13).
 
 ## Mục lục
 1. [Quy ước chung](#1-quy-ước-chung)
@@ -30,7 +31,8 @@
 11. [Máy trạng thái đơn hàng](#11-máy-trạng-thái-đơn-hàng)
 12. [Admin (M4)](#12-admin-m4)
 13. [Thanh toán online, mã giảm giá admin, hoàn tiền (M5)](#13-thanh-toán-online-mã-giảm-giá-admin-hoàn-tiền-m5)
-14. [Hoàn thiện v1 (M6)](#14-hoàn-thiện-v1-m6)
+14. [Hoàn thiện v1 (M6, M6b)](#14-hoàn-thiện-v1-m6-m6b)
+    - 14.9 Cài đặt cửa hàng · 14.10 Quản lý người dùng · 14.11 Liên hệ · 14.12 CSP report-only · 14.13 Còn hoãn
 15. [Câu hỏi mở / Giả định](#15-câu-hỏi-mở--giả-định)
 
 ## 1. Quy ước chung
@@ -107,6 +109,8 @@ Phân trang: query `page` (>= 1, mặc định 1), `pageSize` (1–100, mặc đ
 | 409 | `REVIEW_NOT_ALLOWED` | Không được viết đánh giá; `details.reason` = `NOT_PURCHASED` \| `ALREADY_REVIEWED` (§14.1) |
 | 409 | `REVIEW_EDIT_EXPIRED` | Quá 30 ngày kể từ lúc tạo, không sửa được đánh giá (§14.1) |
 | 409 | `WISHLIST_LIMIT` | Danh sách yêu thích đã đủ 100 sản phẩm (§14.2) |
+| 409 | `CANNOT_MODIFY_SELF` | Admin không được khóa hoặc đổi vai trò của chính mình (§14.10) |
+| 409 | `LAST_ADMIN` | Thao tác sẽ làm hệ thống không còn ADMIN `ACTIVE` nào (§14.10) |
 | 413 | `PAYLOAD_TOO_LARGE` | Body vượt giới hạn (upload ảnh > 5 MB) |
 | 429 | `RATE_LIMITED` | Vượt giới hạn tần suất |
 | 500 | `INTERNAL_ERROR` | Lỗi hệ thống |
@@ -591,7 +595,7 @@ Quyền: S = Staff+ (STAFF hoặc ADMIN), AD = Admin. Quyết định nền: D-0
 
 - **Chặn quyền ở cấp router.** Mọi `/admin/*` mount dưới một router dùng `requireAuth` + `requireStaff`; role luôn đọc lại từ DB mỗi request (§1). Thiếu/sai token -> 401 `UNAUTHORIZED`; CUSTOMER -> 403 `FORBIDDEN`; user DISABLED -> 403 `ACCOUNT_DISABLED`. Endpoint ghi chú **Admin** thêm `requireAdmin` (STAFF -> 403 `FORBIDDEN`).
 - Admin xem được `stock` chính xác và `id` nội bộ. Phân trang theo §1. Tài nguyên không tồn tại -> 404 `NOT_FOUND`. ID trong path phải là chuỗi 1–50 ký tự `[a-z0-9]` (cuid), sai định dạng -> 404.
-- **Audit log (FR-ADM-11).** MỌI thao tác ghi của admin ghi 1 dòng `AuditLog` trong CÙNG transaction với thay đổi: `actorId`, `action`, `entity`, `entityId`, `diff`, `ip` (`req.ip`). `diff` chỉ chứa trường thay đổi, dạng `{ "field": [old, new] }`; tạo mới: `{ "field": [null, new] }` cho các trường chính. Không chứa mật khẩu/token; với đơn hàng không ghi địa chỉ/SĐT. Danh sách `action`: `order.status`, `inventory.adjust`, `product.create|update|delete`, `variant.create|update|delete`, `image.create|update|delete|reorder`, `category.create|update|delete`, `brand.create|update|delete`, `upload.create`; từ 0.6 thêm `coupon.create|update|delete`, `payment.refund` (§13) và `payment.late` (actorId null, hệ thống ghi, §13.5); từ 0.7 thêm `review.hide|show|reply|reply_delete` (§14.1) và `product.restore` (§14.6).
+- **Audit log (FR-ADM-11).** MỌI thao tác ghi của admin ghi 1 dòng `AuditLog` trong CÙNG transaction với thay đổi: `actorId`, `action`, `entity`, `entityId`, `diff`, `ip` (`req.ip`). `diff` chỉ chứa trường thay đổi, dạng `{ "field": [old, new] }`; tạo mới: `{ "field": [null, new] }` cho các trường chính. Không chứa mật khẩu/token; với đơn hàng không ghi địa chỉ/SĐT. Danh sách `action`: `order.status`, `inventory.adjust`, `product.create|update|delete`, `variant.create|update|delete`, `image.create|update|delete|reorder`, `category.create|update|delete`, `brand.create|update|delete`, `upload.create`; từ 0.6 thêm `coupon.create|update|delete`, `payment.refund` (§13) và `payment.late` (actorId null, hệ thống ghi, §13.5); từ 0.7 thêm `review.hide|show|reply|reply_delete` (§14.1) và `product.restore` (§14.6); từ 0.8 thêm `settings.update` (§14.9), `user.status|role` (§14.10) và `contact.update` (§14.11).
 - **Rate limit.** Chung 100/phút/IP (§1); `POST /admin/uploads` thêm 30/phút/IP (store riêng).
 - **Không cache.** Mọi response admin có `Cache-Control: no-store`.
 - Ngày lọc `from`, `to` dạng `YYYY-MM-DD`, tính theo giờ Việt Nam (UTC+7), bao gồm cả hai đầu, yêu cầu `from <= to`, sai -> 400 `VALIDATION_ERROR`.
@@ -945,9 +949,9 @@ AuditLog `coupon.create|update|delete` (§12.0). Thay đổi có hiệu lực ng
 
 Sau commit, gửi nền tới `contactEmail` khi đơn sang: `CONFIRMED`; `SHIPPING` (kèm mã vận đơn và đơn vị vận chuyển nếu có); `DELIVERED`; `CANCELLED` (kèm lý do; áp dụng cho khách tự hủy, staff hủy và hết hạn thanh toán). Không gửi cho các chuyển khác (`PROCESSING`, `FAILED_DELIVERY`...). Áp dụng cho mọi nguồn chuyển trạng thái (admin, khách, SYSTEM từ thanh toán, job). Link trong email giống email xác nhận đơn (§9.2): user -> `${WEB_APP_URL}/tai-khoan/don-hang/<code>`, guest -> `${WEB_APP_URL}/tra-cuu-don-hang?code=<code>`, KHÔNG đưa SĐT vào URL. Lỗi gửi mail chỉ ghi log, không ảnh hưởng đơn (D-016).
 
-## 14. Hoàn thiện v1 (M6)
+## 14. Hoàn thiện v1 (M6, M6b)
 
-Quyền: P = Public, O = Optional, A = Auth, S = Staff+, AD = Admin. Quyết định nền: D-017..D-020. Quy ước chung ở §1, mã lỗi ở §2, máy trạng thái ở §11, quy ước admin (không cache, audit, ngày lọc giờ VN) ở §12.0 áp dụng nguyên cho các endpoint dưới đây.
+Mục 14.1–14.8 thuộc M6; 14.9–14.12 thuộc M6b (D-021..D-024); chỉ newsletter còn hoãn (14.13). Quyền: P = Public, O = Optional, A = Auth, S = Staff+, AD = Admin. Quyết định nền: D-017..D-020. Quy ước chung ở §1, mã lỗi ở §2, máy trạng thái ở §11, quy ước admin (không cache, audit, ngày lọc giờ VN) ở §12.0 áp dụng nguyên cho các endpoint dưới đây.
 
 ### 14.1 Đánh giá sản phẩm (FR-REV)
 
@@ -1072,15 +1076,141 @@ Khi admin hoặc khách hủy đơn (§9.4, §12.1) mà đơn có `Payment` `PEN
 
 Không đổi API. FE dùng `GET /search/suggest` (§4.5) ở ô tìm kiếm trên header: combobox (a11y `role="combobox"`, `aria-expanded`, điều hướng bàn phím), chỉ gọi khi đủ tối thiểu 2 ký tự (sau trim), debounce khoảng 250 ms, hủy request cũ khi gõ tiếp, `limit` mặc định; Enter không chọn mục nào thì chuyển tới `/tim-kiem?q=...` (không phải `/san-pham?q=`).
 
-### 14.9 Hoãn sau M6
+### 14.9 Cài đặt cửa hàng (FR-ADM-09)
 
-Chưa làm trong M6, dự kiến M6b (trước deploy M7); chi tiết sẽ chốt khi vào M6b (D-020).
+Quyết định: D-021. Chỉ **Admin** (cả `GET` và `PUT /admin/settings`; Staff nhận 403 `FORBIDDEN`). Mọi giá trị nằm trong bảng `Setting` (key-value JSON). Key quản lý và ràng buộc khi GHI (`PUT`):
 
-| Nhóm | Endpoint | Mô tả | Quyền | Ghi chú |
-|---|---|---|---|---|
-| Settings | `GET/PUT /admin/settings`, `GET /settings/public` | Phí ship, freeship, liên hệ, banner; bản công khai chỉ whitelist key | AD / P | Dự kiến M6b trước deploy |
-| Users | `GET /admin/users`, `PATCH /admin/users/:id/status`, `PATCH /admin/users/:id/role` | Quản lý người dùng | AD (đổi role) | Dự kiến M6b trước deploy |
-| Nội dung | `POST /contact`, `POST /newsletter/subscribe` | Form liên hệ, bản tin (cần thêm bảng) | P | Dự kiến M6b trước deploy |
+| Key                               | Giá trị / ràng buộc                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `shipping.rates`                  | `{ inner: { STANDARD, EXPRESS }, other: { STANDARD, EXPRESS } }`, mỗi giá trị số nguyên 0–1.000.000                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `shipping.innerCityProvinceCodes` | Mảng tối đa 34 phần tử, mỗi mã `^\d{2}$` và phải tồn tại trong danh mục tỉnh (§7); server bỏ trùng; có thể rỗng                                                                                                                                                                                                                                                                                                                                                                                              |
+| `shipping.innerCityWardCodes`     | Mảng tối đa 500 phần tử, mỗi mã `^\d{5}$` và phải tồn tại trong danh mục phường; server bỏ trùng                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `shipping.freeShippingThreshold`  | Số nguyên 0–100.000.000                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `shipping.weightSurcharge`        | `{ freeGram 0–100.000, stepGram 1–100.000, feePerStep 0–1.000.000 }` (số nguyên; shape như `db-schema.md` §6)                                                                                                                                                                                                                                                                                                                                                                                                |
+| `order.paymentExpiryMinutes`      | Số nguyên 5–120                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `store.contact`                   | `{ name 1–100, email hợp lệ <= 254 (lowercase), phone "" hoặc SĐT chuẩn hóa D-007, address 0–300 }`; `name`/`address` không chứa ký tự điều khiển (CR/LF...)                                                                                                                                                                                                                                                                                                                                                 |
+| `home.banners`                    | Mảng tối đa 5 phần tử `{ imageUrl, alt 1–200, title 0–100, subtitle 0–200, href, isActive }`. `imageUrl` CHỈ chấp nhận đường dẫn tương đối `/uploads/...` theo quy tắc (a) của §12.3 (không nhận `https://` ngoài vì CSP `img-src 'self'` và `next/image` chỉ cho ảnh nội bộ). `href` là `null` hoặc đường dẫn tương đối bắt đầu bằng `/`, không bắt đầu bằng `//`, không chứa `\` hay ký tự điều khiển, <= 300 ký tự (không nhận URL ngoài để tránh open redirect/link lạ từ trang chủ). `isActive` boolean |
+
+Giá trị ĐỌC từ DB được kiểm theo schema nới hơn (giá trị cũ hợp lệ trước đây không làm hỏng tính giá); giá trị DB sai định dạng thì dùng mặc định và log cảnh báo (chỉ tên key).
+
+**`GET /admin/settings` – Admin.** `{ data: { "<key>": value, ... }, meta: { updatedAt: { "<key>": "<iso>" | null } } }`. `data` luôn đủ mọi key ở bảng trên; key chưa có trong DB hoặc có giá trị sai định dạng trả giá trị mặc định (`db-schema.md` §6) và `updatedAt` của key đó là `null`.
+
+**`PUT /admin/settings` – Admin.** Body là object chỉ chứa các key cần đổi (>= 1 key). Key lạ (ngoài bảng trên) -> 400 `VALIDATION_ERROR` với `details[].field` = tên key. Mỗi key validate theo bảng ràng buộc ghi ở trên; lỗi lồng nhau báo `details[].field` là đường dẫn đầy đủ, ví dụ `shipping.rates.inner.STANDARD`, `home.banners.0.imageUrl`. Key có giá trị mới giống hệt giá trị hiện tại thì bỏ qua; không có key nào đổi -> 200, không ghi audit. Ghi trong 1 transaction cùng 1 dòng AuditLog `settings.update` cho cả request (`entity = "Setting"`, `entityId = null`, `diff = { "<key>": [old, new] }` chỉ gồm key đổi; không chứa dữ liệu nhạy cảm). Ghi đè theo key, người ghi sau thắng (không có khóa lạc quan; chấp nhận vì ít admin). Thành công 200, response giống `GET /admin/settings`. Tính giá (quote/đặt đơn) có hiệu lực ngay: `getShopSettings` không cache giữa các request.
+
+**`GET /settings/public` – Public** (không cần auth). Chỉ trả whitelist:
+
+```json
+{
+  "data": {
+    "shipping": {
+      "rates": {
+        "inner": { "STANDARD": 20000, "EXPRESS": 35000 },
+        "other": { "STANDARD": 35000, "EXPRESS": 55000 }
+      },
+      "freeShippingThreshold": 500000,
+      "innerCityWardCount": 0,
+      "weightSurcharge": {
+        "freeGram": 2000,
+        "stepGram": 1000,
+        "feePerStep": 5000
+      },
+      "innerCityProvinces": [
+        { "code": "01", "name": "Thành phố Hà Nội" },
+        { "code": "79", "name": "Thành phố Hồ Chí Minh" }
+      ]
+    },
+    "order": { "paymentExpiryMinutes": 15 },
+    "store": {
+      "contact": {
+        "name": "BeanBox",
+        "email": "hello@beanbox.local",
+        "phone": "",
+        "address": ""
+      }
+    },
+    "home": { "banners": [] }
+  }
+}
+```
+
+`innerCityProvinces` được dựng từ `innerCityProvinceCodes` + tên trong danh mục tỉnh. `home.banners` chỉ gồm phần tử `isActive`. `innerCityWardCount` là số nguyên, bằng số mã trong `innerCityWardCodes`, để trang chính sách nói đúng khi nội thành gồm thêm phường riêng; vẫn KHÔNG trả danh sách mã phường hay bất kỳ key nào khác. Header `Cache-Control: public, max-age=300`. FE dùng cho trang chính sách vận chuyển, footer, trang liên hệ và banner trang chủ (SSR, revalidate 300 giây); API lỗi thì FE dùng nội dung mặc định viết sẵn. Do cache, trang storefront (chính sách, footer, liên hệ, banner) cập nhật chậm tối đa khoảng 5 phút sau khi admin lưu.
+
+### 14.10 Quản lý người dùng (FR-ADM-07)
+
+Quyết định: D-022. Toàn bộ endpoint dưới đây chỉ **Admin** (Staff nhận 403 `FORBIDDEN`).
+
+- `GET /admin/users`: query `q` (2–100 ký tự; khớp email/họ tên/SĐT, escape LIKE), `role` (một hoặc nhiều, phân cách phẩy), `status` (một hoặc nhiều), `sort` = `newest` (mặc định) | `oldest` | `lastLogin` (`lastLoginAt DESC NULLS LAST`, rồi `createdAt DESC`), `page`, `pageSize`. Item: `{ id, email, fullName, phone, role, status, emailVerified, lastLoginAt, lockedUntil, createdAt, orderCount }`.
+- `GET /admin/users/:id`: item như trên cộng `addressCount`, `orders: { count, paidTotal, recent }` (`paidTotal` = Σ `grandTotal` của đơn `paymentStatus = PAID` có `status` không thuộc `CANCELLED`/`RETURNED`; `recent` = 5 đơn mới nhất `{ code, status, grandTotal, createdAt }`) và `activeSessions` (số refresh token chưa thu hồi, chưa hết hạn). Không bao giờ trả `passwordHash` hay token.
+- `PATCH /admin/users/:id/status` body `{ status: "ACTIVE" | "DISABLED", reason?: 0–255 ký tự }`.
+- `PATCH /admin/users/:id/role` body `{ role: "CUSTOMER" | "STAFF" | "ADMIN" }`.
+
+Quy tắc (hai PATCH), thực hiện trong 1 transaction. Thứ tự kiểm: 404 (user không tồn tại) -> `CANNOT_MODIFY_SELF` -> 403 người thao tác -> `LAST_ADMIN` -> no-op. 0. Đọc lại người thao tác bằng `SELECT ... FOR UPDATE` cùng các ADMIN `ACTIVE`; nếu người thao tác không còn là ADMIN `ACTIVE` -> 403 `FORBIDDEN`. Lý do: hai admin khóa chéo nhau đồng thời; nhờ khóa dòng và kiểm lại người thao tác, yêu cầu thứ hai bị chặn, hệ thống luôn còn >= 1 ADMIN `ACTIVE`.
+
+1. Không thao tác lên chính mình (khóa hoặc đổi role) -> 409 `CANNOT_MODIFY_SELF`.
+2. Thao tác khiến hệ thống không còn ADMIN `ACTIVE` nào (khóa admin cuối, hạ role admin cuối) -> 409 `LAST_ADMIN`.
+3. Đặt giá trị bằng giá trị hiện tại -> 200, không ghi audit, không thu hồi phiên. Ngoại lệ: `PATCH status` với `ACTIVE` trên user đang `ACTIVE` nhưng còn khóa tạm (`lockedUntil > now`) thì xóa khóa tạm (`failedLoginCount = 0`, `lockedUntil = null`), ghi audit `user.status` với `diff = { lockedUntil: ["<iso cũ>", null] }`, không thu hồi phiên.
+4. Khóa (`DISABLED`) hoặc đổi role -> thu hồi MỌI refresh token của user (phải đăng nhập lại). Access token còn hạn bị chặn ngay vì middleware đọc `role`/`status` từ DB mỗi request (§1).
+5. Mở khóa (`ACTIVE`) đồng thời đặt lại `failedLoginCount = 0`, `lockedUntil = null`.
+6. AuditLog trong cùng transaction: `user.status` (`entity = "User"`, `diff = { status: [old, new], reason?: [null, "<reason>"] }`) và `user.role` (`diff = { role: [old, new] }`).
+
+Ghi chú: `LAST_ADMIN` là kiểm tra phòng thủ: qua API, người thao tác luôn là ADMIN `ACTIVE` khác đích nên thực tế không thể kích hoạt; khi hai admin khóa/hạ quyền chéo nhau đồng thời, yêu cầu thua bị chặn bằng 403 (`FORBIDDEN` nếu bị chặn trong transaction, hoặc `ACCOUNT_DISABLED` nếu middleware xác thực đã thấy người gọi bị khóa). Body sai -> 400 được kiểm trước 404.
+
+Thành công 200 trả item chi tiết (như `GET /admin/users/:id`). Không tồn tại -> 404. Không có xóa user, không đặt lại mật khẩu, không sửa email/họ tên từ admin ở M6b.
+
+### 14.11 Liên hệ (FR-CNT-03, phần form liên hệ)
+
+Quyết định: D-023. Bảng `ContactMessage` (`db-schema.md`, migration `m6b_contact_message`).
+
+**`POST /contact` – Public** (Optional auth: có Bearer hợp lệ thì gắn `userId`; Bearer sai -> 401 như §1). Rate limit riêng 3 request/10 phút/IP (store riêng, đặt trước bước xác thực). Body:
+
+| Trường    | Quy tắc                                                                                    |
+| --------- | ------------------------------------------------------------------------------------------ |
+| `name`    | 2–100 ký tự, không chứa ký tự điều khiển (CR/LF, tab...) -> 400                            |
+| `email`   | Email hợp lệ, <= 254 ký tự (lowercase)                                                     |
+| `phone`   | Tùy chọn; chuẩn hóa D-007; rỗng lưu `null`                                                 |
+| `subject` | Tùy chọn, 0–150 ký tự, không chứa ký tự điều khiển (CR/LF, tab...) -> 400; rỗng lưu `null` |
+| `message` | 10–2000 ký tự; cho phép xuống dòng                                                         |
+| `website` | Honeypot (ô ẩn, người thật để trống); chuỗi tùy chọn tối đa 200 ký tự                      |
+
+- Lỗi: 400 `VALIDATION_ERROR`, 401 (Bearer sai), 429 `RATE_LIMITED`.
+- Thứ tự xử lý `POST /contact`: rate limit -> xác thực tùy chọn -> validate (400) -> honeypot (201 giả) -> lưu.
+- `website` có giá trị khác rỗng -> trả 201 giống thành công nhưng KHÔNG lưu và KHÔNG gửi mail. Honeypot dính vẫn bị tính vào rate limit (limiter đứng trước).
+- Nội dung lưu dạng text thuần (không diễn giải HTML); FE hiển thị bằng text (không `dangerouslySetInnerHTML`).
+- 201 `{ "data": { "received": true } }` (không trả `id`).
+- Sau commit, gửi nền email thông báo tới `store.contact.email`, `Reply-To` = email người gửi, nội dung đã escape HTML; lỗi gửi chỉ ghi log, không ảnh hưởng 201. KHÔNG gửi email tự động cho người gửi (tránh bị lợi dụng để gửi thư rác tới địa chỉ của người khác).
+- Không lưu IP.
+
+**Admin (Staff+):**
+
+- `GET /admin/contact-messages`: query `status` (`NEW` | `IN_PROGRESS` | `RESOLVED` | `SPAM`; nhiều giá trị phân cách phẩy), `q` (khớp tên/email/tiêu đề/nội dung, escape LIKE), `page`, `pageSize`; sắp `createdAt DESC`. Item đầy đủ: `{ id, userId, name, email, phone, subject, message, status, adminNote, handledBy: { id, fullName } | null, handledAt, createdAt, updatedAt }`.
+- `GET /admin/contact-messages/:id`: một item như trên.
+- `PATCH /admin/contact-messages/:id` body `{ status?, adminNote?: 0–1000 ký tự }`, ít nhất 1 trường. Mỗi khi `status` đổi sang giá trị khác hiện tại (kể cả đổi về `NEW`), đặt `handledById` = người thao tác và `handledAt` = now. `status` giống hiện tại và `adminNote` không đổi -> 200, không ghi audit. AuditLog `contact.update` (`entity = "ContactMessage"`, `diff` gồm `status: [old, new]` nếu đổi và `adminNote: [null, "đã cập nhật"]` nếu có sửa (đúng chuỗi này, không chép ghi chú thật); KHÔNG chép nội dung tin nhắn hay ghi chú). 200 trả item.
+- Admin `PATCH` body không có `status` lẫn `adminNote` (kể cả chỉ có trường lạ) -> 400.
+- Không có xóa (lưu trữ); thời hạn lưu xem §15 mục 15.
+
+### 14.12 CSP report-only
+
+Quyết định: D-024.
+
+**Header ở frontend.** Next gửi `Content-Security-Policy-Report-Only` cho mọi trang:
+
+```
+default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; report-uri /api/v1/csp-report
+```
+
+Chỉ khi chạy development thêm `'unsafe-eval'` vào `script-src`. `'unsafe-inline'` cho script là tạm thời vì Next chèn inline script không có nonce; chuyển sang nonce và chế độ thực thi ở M7. Chế độ này KHÔNG chặn gì, chỉ báo cáo; mục tiêu là thu thập vi phạm thực tế trước khi thực thi. FE chỉ dùng `report-uri` (chưa dùng `report-to`/`Reporting-Endpoints`).
+
+**`POST /csp-report` – Public.**
+
+- Chấp nhận `Content-Type` `application/csp-report`, `application/reports+json` hoặc `application/json`; body tối đa 10 KB. Body sai định dạng, quá lớn hoặc sai Content-Type -> bỏ qua, vẫn 204.
+- Rate limit riêng 20 request/phút/IP (store riêng, đặt trước mọi xử lý); vượt -> 429 `RATE_LIMITED` như §1 (trình duyệt bỏ qua phản hồi).
+- Thành công luôn 204, không body.
+- Chỉ ghi log mức `warn` các trường đã làm sạch: `effectiveDirective`, origin của `blockedUri` (bỏ path và query; giá trị `inline`, `eval`, `data` giữ nguyên), pathname của `documentUri` (bỏ query và hash), `disposition`. Không lưu DB; không log IP, user agent, `script-sample` hay query.
+- Ghi chú làm sạch: `blockedUri` chỉ giữ origin (hoặc từ khóa `inline`/`eval`/`data`..., hoặc `scheme:`); `documentPath` là pathname; báo cáo rỗng sau làm sạch thì không log; `effectiveDirective` lấy token đầu.
+
+### 14.13 Còn hoãn: newsletter (FR-CNT-03 phần bản tin)
+
+`POST /newsletter/subscribe` chưa làm (cần thêm bảng); chưa xếp milestone.
 
 ## 15. Câu hỏi mở / Giả định
 
@@ -1098,3 +1228,5 @@ Chưa làm trong M6, dự kiến M6b (trước deploy M7); chi tiết sẽ chố
 12. **`GET /health`** nằm dưới `/api/v1` theo chỉ đạo; Docker healthcheck gọi `/api/v1/health` trực tiếp ở cổng 4000.
 13. **Đã chốt – xem decisions.md D-016.** Email đổi trạng thái đơn gửi từ M5 cho `CONFIRMED`, `SHIPPING`, `DELIVERED`, `CANCELLED` (§13.9).
 14. **Đã chốt – xem decisions.md D-018.** Redirect khi đổi slug và khôi phục sản phẩm xóa mềm làm ở M6 (§14.5, §14.6).
+15. **Thời hạn lưu tin nhắn liên hệ (giả định).** M6b chưa tự xóa `ContactMessage`; không lưu IP. Đề xuất M7: xóa hoặc ẩn danh tin `RESOLVED`/`SPAM` sau 12 tháng bằng job; trang chính sách bảo mật đã nêu việc lưu tin nhắn liên hệ.
+16. **Newsletter** vẫn hoãn (§14.13).

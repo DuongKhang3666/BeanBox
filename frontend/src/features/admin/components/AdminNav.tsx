@@ -22,7 +22,10 @@ export const ADMIN_NAV: readonly NavItem[] = [
   { href: "/admin/danh-muc", label: "Danh mục" },
   { href: "/admin/thuong-hieu", label: "Thương hiệu" },
   { href: "/admin/danh-gia", label: "Đánh giá" },
+  { href: "/admin/lien-he", label: "Liên hệ" },
+  { href: "/admin/nguoi-dung", label: "Người dùng", adminOnly: true },
   { href: "/admin/nhat-ky", label: "Nhật ký", adminOnly: true },
+  { href: "/admin/cai-dat", label: "Cài đặt", adminOnly: true },
 ];
 
 /** Sidebar trên desktop; trên mobile là menu thu gọn bằng nút. */

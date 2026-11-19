@@ -7,6 +7,8 @@ export interface MailMessage {
   subject: string;
   text: string;
   html: string;
+  /** Địa chỉ trả lời (Reply-To), tùy chọn. */
+  replyTo?: string;
 }
 
 export interface Mailer {

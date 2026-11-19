@@ -147,6 +147,8 @@ model User {
   reviews                 Review[]
   auditLogs               AuditLog[]
   paymentRefunds          Payment[]                @relation("PaymentRefunds")
+  contactMessages         ContactMessage[]         @relation("ContactMessageUser")
+  handledContactMessages  ContactMessage[]         @relation("ContactMessageHandler")
 
   @@index([role])
   @@index([createdAt])
@@ -646,4 +648,35 @@ model SlugRedirect {
 
   @@unique([entity, fromSlug])
   @@index([entity, targetId])
+}
+
+// ───────────── Liên hệ (m6b_contact_message, D-023) ─────────────
+
+enum ContactStatus {
+  NEW
+  IN_PROGRESS
+  RESOLVED
+  SPAM
+}
+
+model ContactMessage {
+  id          String        @id @default(cuid())
+  userId      String?
+  name        String
+  email       String
+  phone       String?
+  subject     String?
+  message     String
+  status      ContactStatus @default(NEW)
+  adminNote   String?
+  handledById String?
+  handledAt   DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  user      User? @relation("ContactMessageUser", fields: [userId], references: [id], onDelete: SetNull)
+  handledBy User? @relation("ContactMessageHandler", fields: [handledById], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([createdAt])
 }

@@ -58,6 +58,7 @@ BeanBox/
 │  │        # modules: health, catalog, auth, me, locations, cart, checkout, orders, admin (M4), payments (M5), reviews, wishlist (M6)
 │  │        # modules/admin/: orders, inventory, catalog (categories/brands), products (gồm variants, images, restore), uploads; một router duy nhất mount /admin
 │  │        # M6 thêm: modules/reviews (công khai + của tôi), modules/wishlist (/me/wishlist), modules/admin/dashboard, modules/admin/audit (chỉ Admin), modules/admin/reviews; slug redirect nằm trong catalog + admin/catalog + admin/products (bảng SlugRedirect)
+│  │        # M6b thêm (D-021..D-024): modules/settings (`GET /settings/public`), modules/contact (`POST /contact`), `POST /csp-report`; modules/admin/settings (chỉ Admin), modules/admin/users (chỉ Admin), modules/admin/contact-messages (Staff+)
 │  └─ tests/            # unit (pricing, shipping, state machine) + integration (supertest)
 ├─ docker-compose.yml, .env.example, .github/workflows/ci.yml
 ```
@@ -84,6 +85,7 @@ Quy tắc phân lớp backend: `routes` (khai báo + middleware) -> `controller`
 | CSRF | Endpoint dùng cookie (`/auth/refresh`, `/auth/logout`): `SameSite=Strict` + kiểm tra header `Origin` thuộc whitelist (thiếu hoặc sai -> 403) |
 | Khóa tài khoản | 5 lần sai liên tiếp trong 15 phút -> `lockedUntil = now + 15 phút` (FR-AUTH-08) |
 | RBAC | `CUSTOMER`, `STAFF`, `ADMIN`; middleware `requireAuth` đọc lại `role/status` từ DB MỌI request đã xác thực (không chỉ admin), `requireRole` dùng role đó. User không tồn tại -> 401; `DISABLED` -> 403 |
+| CSP (D-024) | Frontend gửi `Content-Security-Policy-Report-Only` qua `headers()` trong `next.config.ts` (chỉ báo cáo, không chặn; `'unsafe-inline'` cho script/style là tạm thời, chuyển nonce + thực thi ở M7). Trình duyệt báo vi phạm tới `POST /api/v1/csp-report` (rate limit 20/phút/IP, log `warn` đã làm sạch, không lưu DB, không PII). Backend API vẫn giữ CSP mặc định của helmet cho response JSON. Chi tiết: api-contract §14.12 |
 | Admin | Router `/admin` áp `requireAuth` + `requireStaff` ở cấp router (mọi endpoint con tự động được bảo vệ); xóa sản phẩm/danh mục/brand cần thêm `requireAdmin`. Mọi thao tác ghi ghi `AuditLog` cùng transaction (`lib/audit.ts`) |
 | Frontend | Fetch wrapper tự gắn Bearer; gặp 401 -> refresh **single-flight** trong tab (nhiều request chờ chung 1 lần refresh) -> retry 1 lần. Giữa các tab: khóa bằng Web Locks API (`navigator.locks`) nếu trình duyệt hỗ trợ |
 | Hạn chế đã chấp nhận | Đổi/đặt lại mật khẩu không vô hiệu access token đang sống (tối đa 15 phút); refresh token thì bị thu hồi ngay |

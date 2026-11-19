@@ -3,12 +3,15 @@ import { UPLOADS_DIR } from '../../config/paths.js';
 import { requireAuth, requireStaff } from '../../middlewares/auth.js';
 import { adminAuditRouter } from './audit/audit.routes.js';
 import { adminCatalogRouter } from './catalog/catalog.routes.js';
+import { adminContactRouter } from './contact/contact.routes.js';
 import { adminCouponsRouter } from './coupons/coupons.routes.js';
 import { adminDashboardRouter } from './dashboard/dashboard.routes.js';
 import { inventoryRouter } from './inventory/inventory.routes.js';
 import { adminOrdersRouter } from './orders/orders.routes.js';
 import { adminProductsRouter } from './products/products.routes.js';
 import { adminReviewsRouter } from './reviews/reviews.routes.js';
+import { adminSettingsRouter } from './settings/settings.routes.js';
+import { adminUsersRouter } from './users/users.routes.js';
 import { createUploadsRouter } from './uploads/uploads.routes.js';
 
 export interface AdminRouterOptions {
@@ -34,6 +37,9 @@ export function createAdminRouter({ uploadLimiter, uploadsDir }: AdminRouterOpti
   router.use('/reviews', adminReviewsRouter);
   router.use('/dashboard', adminDashboardRouter);
   router.use('/audit-logs', adminAuditRouter);
+  router.use('/settings', adminSettingsRouter);
+  router.use('/users', adminUsersRouter);
+  router.use('/contact-messages', adminContactRouter);
   // Stub: các task sau điền route; mount ở gốc vì route tự khai báo đường dẫn đầy đủ.
   router.use(inventoryRouter);
   router.use(adminCatalogRouter);

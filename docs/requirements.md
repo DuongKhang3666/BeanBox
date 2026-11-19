@@ -430,7 +430,8 @@ Base: `/api/v1` · JSON · lỗi thống nhất `{ "error": { "code", "message",
 | **M3 – Giỏ hàng & Checkout COD** | Giỏ (guest + merge), quote, tạo đơn, tồn kho, email | **MVP mua hàng end-to-end** |
 | **M4 – Admin cơ bản** | CRUD sản phẩm/biến thể/ảnh, danh mục, tồn kho, xử lý đơn | Vận hành được cửa hàng. Quy tắc nghiệp vụ: D-013; chi tiết API: `api-contract.md` §12 |
 | **M5 – Thanh toán online & Khuyến mãi** | VNPay sandbox/Stripe test, IPN/webhook, mã giảm giá | v1 |
-| **M6 – Hoàn thiện v1** | Đánh giá, wishlist, dashboard, audit log, redirect slug, khôi phục sản phẩm, gợi ý tìm kiếm, SEO, E2E test (Playwright, chạy cục bộ), audit bảo mật. Quyết định: D-017..D-020; chi tiết API: `api-contract.md` §14. **Hoãn M6b (trước deploy):** settings admin, quản lý users, contact/newsletter | v1 chạy ổn định trên localhost |
+| **M6 – Hoàn thiện v1** | Đánh giá, wishlist, dashboard, audit log, redirect slug, khôi phục sản phẩm, gợi ý tìm kiếm, SEO, E2E test (Playwright, chạy cục bộ), audit bảo mật. Quyết định: D-017..D-020; chi tiết API: `api-contract.md` §14. Phần còn lại xem M6b | v1 chạy ổn định trên localhost |
+| **M6b – Cài đặt, người dùng, liên hệ (trước deploy)** | Cài đặt cửa hàng trong admin và `GET /settings/public`, quản lý người dùng (chỉ Admin), form liên hệ, CSP report-only. Quyết định: D-021..D-024; chi tiết API: `api-contract.md` §14.9–14.12. Newsletter còn hoãn (§14.13) | Admin chỉnh được phí ship/banner/liên hệ; storefront đọc số liệu thật |
 | **M7 – Deploy demo** | Chọn nền tảng, cấu hình môi trường, deploy FE/BE/DB, seed dữ liệu demo | Link demo công khai (chỉ làm khi M0–M6 đã ổn) |
 | **v2** | **Subscription (ưu tiên đầu tiên của v2)**, blog, loyalty, đổi trả, Google login, tích hợp GHN | Mở rộng / nâng cao cho CV |
 

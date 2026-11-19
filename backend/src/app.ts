@@ -13,6 +13,8 @@ import { notFound } from './middlewares/notFound.js';
 import { requestId } from './middlewares/requestId.js';
 import { createAdminRouter } from './modules/admin/admin.routes.js';
 import { createAuthRouter } from './modules/auth/auth.routes.js';
+import { createCspRouter } from './modules/csp/csp.routes.js';
+import { createContactRouter } from './modules/contact/contact.routes.js';
 import { createCartRouter } from './modules/cart/cart.routes.js';
 import { catalogRouter } from './modules/catalog/catalog.routes.js';
 import { createCheckoutRouter } from './modules/checkout/checkout.routes.js';
@@ -24,6 +26,7 @@ import { meRouter } from './modules/me/me.routes.js';
 import { createPaymentsRouter } from './modules/payments/payments.routes.js';
 import { createReviewsRouter } from './modules/reviews/reviews.routes.js';
 import type { StripeHttp } from './modules/payments/stripe.js';
+import { settingsRouter } from './modules/settings/settings.routes.js';
 import { wishlistRouter } from './modules/wishlist/wishlist.routes.js';
 
 const API_PREFIX = '/api/v1';
@@ -65,6 +68,10 @@ export interface AppOptions {
   stripeHttp?: StripeHttp;
   /** Số request/phút/IP của POST /products/:slug/reviews và PATCH /reviews/:id (mặc định 10). Chỉ đổi trong test. */
   reviewRateLimit?: number;
+  /** Số request/10 phút/IP của POST /contact (mặc định 3). Chỉ đổi trong test. */
+  contactRateLimit?: number;
+  /** Số request/phút/IP của POST /csp-report (mặc định 20). Chỉ đổi trong test. */
+  cspReportRateLimit?: number;
   /** Thư mục lưu/phục vụ ảnh upload (mặc định backend/uploads). Chỉ đổi trong test. */
   uploadsDir?: string;
 }
@@ -117,6 +124,10 @@ export function createApp(options: AppOptions = {}): Express {
     }),
     // Ghi đánh giá (§14.1): store riêng, theo IP, đứng trước xác thực.
     reviewWrite: createRateLimiter({ windowMs: 60_000, limit: options.reviewRateLimit ?? 10 }),
+    // Form liên hệ (§14.11): 3/10 phút/IP, store riêng, tính mọi request (kể cả honeypot/Bearer).
+    contact: createRateLimiter({ windowMs: 600_000, limit: options.contactRateLimit ?? 3 }),
+    // Báo cáo CSP (§14.12): 20/phút/IP, store riêng, đứng trước parser body.
+    cspReport: createRateLimiter({ windowMs: 60_000, limit: options.cspReportRateLimit ?? 20 }),
     // Chỉ áp cho /admin/uploads (store riêng), đứng sau requireAuth/requireStaff.
     upload: createRateLimiter({ windowMs: 60_000, limit: options.uploadRateLimit ?? 30 }),
   };
@@ -172,6 +183,8 @@ export function createApp(options: AppOptions = {}): Express {
     `${API_PREFIX}/payments/stripe/webhook`,
     express.raw({ type: 'application/json', limit: '1mb' }),
   );
+  // CSP report: parser riêng (nuốt mọi lỗi thành 204), PHẢI trước express.json() toàn cục.
+  app.use(API_PREFIX, createCspRouter({ limiter: limiters.cspReport }));
   app.use(express.json({ limit: '100kb' }));
   app.use(cookieParser());
 
@@ -181,7 +194,9 @@ export function createApp(options: AppOptions = {}): Express {
   app.use(API_PREFIX, wishlistRouter);
   app.use(API_PREFIX, catalogRouter);
   app.use(API_PREFIX, createReviewsRouter({ writeLimiter: limiters.reviewWrite }));
+  app.use(API_PREFIX, createContactRouter({ contactLimiter: limiters.contact }));
   app.use(API_PREFIX, locationsRouter);
+  app.use(API_PREFIX, settingsRouter);
   app.use(API_PREFIX, createCartRouter({ couponLimiter: limiters.coupon }));
   app.use(API_PREFIX, createCheckoutRouter({ quoteLimiter: limiters.quote }));
   app.use(

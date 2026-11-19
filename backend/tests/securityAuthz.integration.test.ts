@@ -82,6 +82,8 @@ const PUBLIC = new Set<string>([
   `GET ${A}/locations/provinces`,
   `GET ${A}/locations/provinces/:code/wards`,
   `GET ${A}/orders/track`,
+  `GET ${A}/settings/public`,
+  `POST ${A}/csp-report`,
   `POST ${A}/auth/register`,
   `POST ${A}/auth/login`,
   `POST ${A}/auth/forgot-password`,
@@ -108,6 +110,7 @@ const OPTIONAL = new Set<string>([
   `POST ${A}/orders/:code/cancel`,
   `POST ${A}/payments/vnpay/create`,
   `POST ${A}/payments/stripe/create-session`,
+  `POST ${A}/contact`,
 ]);
 /** Bắt buộc đăng nhập, nêu tường minh trong yêu cầu M6 (chặn ai đó chuyển nhầm sang OPTIONAL). */
 const MUST_BE_AUTH = [
@@ -140,6 +143,12 @@ const ADMIN_ONLY = new Set<string>([
   `POST ${A}/admin/products/:id/restore`,
   `POST ${A}/admin/orders/:code/refunds`,
   `GET ${A}/admin/audit-logs`,
+  `GET ${A}/admin/settings`,
+  `PUT ${A}/admin/settings`,
+  `GET ${A}/admin/users`,
+  `GET ${A}/admin/users/:id`,
+  `PATCH ${A}/admin/users/:id/status`,
+  `PATCH ${A}/admin/users/:id/role`,
 ]);
 
 const ADMIN_PREFIX = `${API}/admin/`;
@@ -172,6 +181,8 @@ beforeAll(async () => {
     orderRateLimit: BIG,
     uploadRateLimit: BIG,
     reviewRateLimit: BIG,
+    contactRateLimit: BIG,
+    cspReportRateLimit: BIG,
     paymentCreateRateLimit: BIG,
     paymentReturnRateLimit: BIG,
     paymentSyncRateLimit: BIG,
