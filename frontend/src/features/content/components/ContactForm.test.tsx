@@ -1,8 +1,9 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { errRes, jsonRes, makeUser } from "@/features/account/testing";
 import { tokenStore } from "@/lib/api/client";
+import { DEFAULT_PUBLIC_SETTINGS } from "../publicSettingsDefaults";
 import { ContactForm } from "./ContactForm";
 
 let authUser: ReturnType<typeof makeUser> | null = null;
@@ -10,17 +11,37 @@ vi.mock("@/features/auth/AuthProvider", () => ({
   useAuth: () => ({ status: authUser ? "authenticated" : "anonymous", user: authUser }),
 }));
 
+// Phản hồi của GET /settings/public (captcha phía server); null = tắt, "fail" = lỗi mạng.
+let serverCaptcha: { provider: "turnstile"; siteKey: string } | null | "fail" = null;
+const settingsCalls = vi.fn();
+
+/** Trả mock chỉ đếm các request tới /contact; /settings/public được xử lý riêng. */
 function stub(res: () => Response = () => jsonRes(201, { data: { received: true } })) {
-  const mock = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(async () => res());
-  vi.stubGlobal("fetch", mock);
-  return mock;
+  const contact = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(async () => res());
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith("/settings/public")) {
+        settingsCalls();
+        if (serverCaptcha === "fail") throw new TypeError("network");
+        return jsonRes(200, {
+          data: { ...DEFAULT_PUBLIC_SETTINGS, contactCaptcha: serverCaptcha },
+        });
+      }
+      return contact(url, init);
+    }),
+  );
+  return contact;
 }
 
 const MSG = "Cho mình hỏi về máy xay cà phê nhé.";
 
 beforeEach(() => {
   authUser = null;
+  serverCaptcha = null;
+  settingsCalls.mockClear();
   tokenStore.clear();
+  stub();
 });
 afterEach(() => vi.unstubAllGlobals());
 
@@ -175,5 +196,150 @@ describe("ContactForm", () => {
       "href",
       "/chinh-sach/bao-mat",
     );
+  });
+
+  describe("captcha Turnstile (D-028)", () => {
+    interface Opts {
+      sitekey: string;
+      callback: (t: string) => void;
+      "expired-callback": () => void;
+    }
+    let opts: Opts;
+    const turnstile = {
+      render: vi.fn((_el: HTMLElement, o: Opts) => {
+        opts = o;
+        return "widget-1";
+      }),
+      reset: vi.fn(),
+      remove: vi.fn(),
+    };
+
+    beforeEach(() => {
+      turnstile.render.mockClear();
+      turnstile.reset.mockClear();
+      turnstile.remove.mockClear();
+      // Mặc định API khớp giá trị SSR dùng trong hầu hết test bên dưới.
+      serverCaptcha = { provider: "turnstile", siteKey: "test-site-key" };
+      (window as unknown as { turnstile?: unknown }).turnstile = turnstile;
+    });
+    afterEach(() => {
+      delete (window as unknown as { turnstile?: unknown }).turnstile;
+    });
+
+    async function fill(user: ReturnType<typeof userEvent.setup>) {
+      await user.type(screen.getByLabelText("Họ và tên"), "Bình");
+      await user.type(screen.getByLabelText("Email"), "binh@example.com");
+      await user.type(screen.getByLabelText("Nội dung"), MSG);
+    }
+
+    it("tắt (null): không render widget, không tải script, nút bật sẵn", () => {
+      serverCaptcha = null;
+      render(<ContactForm captcha={null} />);
+      expect(turnstile.render).not.toHaveBeenCalled();
+      expect(document.querySelector('script[src*="challenges.cloudflare.com"]')).toBeNull();
+      expect(screen.getByRole("button", { name: "Gửi tin nhắn" })).toBeEnabled();
+    });
+
+    it("bật: nút vô hiệu tới khi có token, body có captchaToken; token hết hạn thì vô hiệu lại", async () => {
+      const mock = stub();
+      const user = userEvent.setup();
+      render(<ContactForm captcha={{ provider: "turnstile", siteKey: "test-site-key" }} />);
+      await waitFor(() => expect(turnstile.render).toHaveBeenCalledTimes(1));
+      expect(opts.sitekey).toBe("test-site-key");
+      const btn = screen.getByRole("button", { name: "Gửi tin nhắn" });
+      expect(btn).toBeDisabled();
+
+      act(() => opts.callback("tok-abc"));
+      expect(btn).toBeEnabled();
+      act(() => opts["expired-callback"]());
+      expect(btn).toBeDisabled();
+      act(() => opts.callback("tok-abc"));
+
+      await fill(user);
+      await user.click(btn);
+      await screen.findByText(/Cảm ơn bạn!/);
+      expect(JSON.parse(mock.mock.calls[0]![1]!.body as string).captchaToken).toBe("tok-abc");
+    });
+
+    it("CAPTCHA_FAILED: báo lỗi tiếng Việt, reset widget, giữ dữ liệu, nút vô hiệu tới token mới", async () => {
+      stub(() => errRes(400, "CAPTCHA_FAILED"));
+      const user = userEvent.setup();
+      render(<ContactForm captcha={{ provider: "turnstile", siteKey: "test-site-key" }} />);
+      await waitFor(() => expect(turnstile.render).toHaveBeenCalled());
+      act(() => opts.callback("tok-1"));
+      await fill(user);
+      await user.click(screen.getByRole("button", { name: "Gửi tin nhắn" }));
+      expect(await screen.findByRole("alert")).toHaveTextContent("Xác minh chưa thành công");
+      expect(turnstile.reset).toHaveBeenCalledWith("widget-1");
+      expect(screen.getByRole("button", { name: "Gửi tin nhắn" })).toBeDisabled();
+      expect(screen.getByLabelText("Nội dung")).toHaveValue(MSG);
+    });
+
+    it("503: báo chưa xác minh được, thử lại sau", async () => {
+      stub(() => errRes(503, "SERVICE_UNAVAILABLE"));
+      const user = userEvent.setup();
+      render(<ContactForm captcha={{ provider: "turnstile", siteKey: "test-site-key" }} />);
+      await waitFor(() => expect(turnstile.render).toHaveBeenCalled());
+      act(() => opts.callback("tok-1"));
+      await fill(user);
+      await user.click(screen.getByRole("button", { name: "Gửi tin nhắn" }));
+      expect(await screen.findByRole("alert")).toHaveTextContent("chưa xác minh được");
+      expect(turnstile.reset).toHaveBeenCalled();
+    });
+
+    it("mount: SSR null nhưng API đã bật captcha -> hiện widget, nút vô hiệu", async () => {
+      serverCaptcha = { provider: "turnstile", siteKey: "fresh-key" };
+      render(<ContactForm captcha={null} />);
+      await waitFor(() => expect(turnstile.render).toHaveBeenCalledTimes(1));
+      expect(opts.sitekey).toBe("fresh-key");
+      expect(settingsCalls).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole("button", { name: "Gửi tin nhắn" })).toBeDisabled();
+    });
+
+    it("mount: SSR bật nhưng API đã tắt -> bỏ widget, nút bật", async () => {
+      serverCaptcha = null;
+      render(<ContactForm captcha={{ provider: "turnstile", siteKey: "old-key" }} />);
+      await waitFor(() => expect(settingsCalls).toHaveBeenCalledTimes(1));
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Gửi tin nhắn" })).toBeEnabled(),
+      );
+      expect(turnstile.remove).toHaveBeenCalled();
+    });
+
+    it("mount: lỗi mạng khi lấy settings -> giữ giá trị SSR, không hiện lỗi", async () => {
+      serverCaptcha = "fail";
+      render(<ContactForm captcha={{ provider: "turnstile", siteKey: "ssr-key" }} />);
+      await waitFor(() => expect(settingsCalls).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(turnstile.render).toHaveBeenCalledTimes(1));
+      expect(opts.sitekey).toBe("ssr-key");
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(turnstile.remove).not.toHaveBeenCalled();
+    });
+
+    it("CAPTCHA_FAILED khi form đang tắt captcha: gọi lại settings và bật widget", async () => {
+      serverCaptcha = null;
+      const contact = stub(() => errRes(400, "CAPTCHA_FAILED"));
+      const user = userEvent.setup();
+      render(<ContactForm captcha={null} />);
+      await waitFor(() => expect(settingsCalls).toHaveBeenCalledTimes(1));
+      await fill(user);
+      serverCaptcha = { provider: "turnstile", siteKey: "late-key" };
+      await user.click(screen.getByRole("button", { name: "Gửi tin nhắn" }));
+      expect(contact).toHaveBeenCalledTimes(1);
+      await waitFor(() => expect(turnstile.render).toHaveBeenCalledTimes(1));
+      expect(opts.sitekey).toBe("late-key");
+      expect(settingsCalls).toHaveBeenCalledTimes(2);
+      expect(screen.getByRole("button", { name: "Gửi tin nhắn" })).toBeDisabled();
+      expect(screen.getByLabelText("Nội dung")).toHaveValue(MSG);
+    });
+
+    it("dọn widget khi unmount", async () => {
+      const { unmount } = render(
+        <ContactForm captcha={{ provider: "turnstile", siteKey: "test-site-key" }} />,
+      );
+      await waitFor(() => expect(turnstile.render).toHaveBeenCalled());
+      unmount();
+      expect(turnstile.remove).toHaveBeenCalledWith("widget-1");
+    });
   });
 });

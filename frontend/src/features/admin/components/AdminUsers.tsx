@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { buttonClasses } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
@@ -31,6 +31,7 @@ import {
 } from "../userFilters";
 import { AdminPager } from "./AdminPager";
 import { UserRoleBadge, UserStatusBadges } from "./UserBadges";
+import { useDebouncedUrlInput } from "../useDebouncedUrlInput";
 
 type Loaded = { data: AdminUserItem[]; meta: PaginationMeta };
 
@@ -185,14 +186,9 @@ export function AdminUsers() {
   const [qInput, setQInput] = useState(urlQ);
 
   // Debounce ô tìm kiếm -> URL.
-  useEffect(() => {
-    const t = qInput.trim();
-    if (t === urlQ) return;
-    const id = setTimeout(() => {
-      router.replace(userFiltersHref({ ...filters, q: t || undefined, page: undefined }));
-    }, 400);
-    return () => clearTimeout(id);
-  }, [qInput, urlQ, filters, router]);
+  useDebouncedUrlInput(qInput, urlQ, (v) =>
+    router.replace(userFiltersHref({ ...filters, q: v, page: undefined })),
+  );
 
   const qTooShort = urlQ.length > 0 && urlQ.length < USER_Q_MIN;
   // Chỉ gọi API khi là ADMIN và q hợp lệ; STAFF thấy thông báo (backend vẫn chặn 403).

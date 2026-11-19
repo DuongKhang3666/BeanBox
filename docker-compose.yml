@@ -1,5 +1,6 @@
 # Dev thường chỉ cần: docker compose up -d db mailpit
-# Chạy cả backend trong container: docker compose --profile app up -d --build
+# Chạy cả backend + frontend trong container: docker compose --profile app up -d --build
+# (đặt JWT_ACCESS_SECRET và INTERNAL_API_SECRET, >= 32 ký tự, trong .env ở thư mục gốc hoặc môi trường shell)
 services:
   db:
     image: postgres:17
@@ -44,6 +45,8 @@ services:
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-}
       HOST: 0.0.0.0
       TRUST_PROXY: uniquelocal
+      # Bắt buộc khi NODE_ENV=production: nếu để trống backend dừng ngay khi khởi động. Không dùng `:?` vì
+      # compose nội suy cả service của profile chưa bật, sẽ làm hỏng `docker compose up -d db mailpit`.
       INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:-}
       WEB_APP_URL: ${WEB_APP_URL:-http://localhost:3000}
       SMTP_HOST: mailpit
@@ -61,6 +64,23 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+
+  frontend:
+    profiles: ['app']
+    build:
+      context: ./frontend
+      args:
+        API_INTERNAL_URL: http://backend:4000
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      API_INTERNAL_URL: http://backend:4000
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:-}
+    ports:
+      - '127.0.0.1:3000:3000'
 
 volumes:
   pgdata:

@@ -17,7 +17,8 @@ export const revalidate = 300;
 const linkClass = "font-medium text-moss-700 underline underline-offset-2 hover:text-moss-600";
 
 export default async function ContactPage() {
-  const { contact } = (await getPublicSettings()).store;
+  const settings = await getPublicSettings();
+  const { contact } = settings.store;
   return (
     <Container className="py-8">
       <div className="mx-auto max-w-3xl space-y-6">
@@ -71,7 +72,7 @@ export default async function ContactPage() {
           <h2 id="contact-form" className="font-serif text-xl font-bold text-coffee-900">
             Gửi tin nhắn cho BeanBox
           </h2>
-          <ContactForm />
+          <ContactForm captcha={settings.contactCaptcha} storeEmail={contact.email} />
         </section>
       </div>
     </Container>

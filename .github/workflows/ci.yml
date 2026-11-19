@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -12,6 +15,7 @@ concurrency:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: backend
@@ -20,19 +24,23 @@ jobs:
         image: postgres:17
         env:
           POSTGRES_USER: beanbox
-          POSTGRES_PASSWORD: beanbox
-          POSTGRES_DB: beanbox_test
+          POSTGRES_PASSWORD: ci-pg-password
+          POSTGRES_DB: beanbox_ci
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U beanbox -d beanbox_test"
+          --health-cmd "pg_isready -U beanbox -d beanbox_ci"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
     env:
-      DATABASE_URL: postgresql://beanbox:beanbox@localhost:5432/beanbox_test
-      TEST_DATABASE_URL: postgresql://beanbox:beanbox@localhost:5432/beanbox_test
+      # Chuỗi giả chỉ dành cho CI, không dùng ở môi trường thật.
+      DATABASE_URL: postgresql://beanbox:ci-pg-password@localhost:5432/beanbox_ci
+      SHADOW_DATABASE_URL: postgresql://beanbox:ci-pg-password@localhost:5432/beanbox_shadow
+      TEST_DATABASE_URL: postgresql://beanbox:ci-pg-password@localhost:5432/beanbox_test
       JWT_ACCESS_SECRET: ci-only-secret-0123456789abcdefghijklmnop
+      INTERNAL_API_SECRET: ci-only-internal-0123456789abcdefghijklm
+      PGPASSWORD: ci-pg-password
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -42,7 +50,27 @@ jobs:
           cache-dependency-path: backend/package-lock.json
       - run: npm ci
       - run: npx prisma generate
-      - run: npx prisma migrate deploy
+      - name: Tạo DB shadow và DB test trống
+        run: |
+          psql -h localhost -U beanbox -d beanbox_ci -v ON_ERROR_STOP=1 \
+            -c 'CREATE DATABASE beanbox_shadow' \
+            -c 'CREATE DATABASE beanbox_test'
+      - name: Áp migration lên DB trống
+        run: npx prisma migrate deploy
+      - name: Kiểm drift giữa migrations và schema.prisma
+        run: |
+          set +e
+          npx prisma migrate diff \
+            --from-migrations prisma/migrations \
+            --to-schema-datamodel prisma/schema.prisma \
+            --shadow-database-url "$SHADOW_DATABASE_URL" \
+            --exit-code
+          code=$?
+          if [ "$code" -eq 2 ]; then
+            echo "::error::schema.prisma khác với migrations (drift). Hãy tạo migration mới (prisma migrate dev)."
+            exit 1
+          fi
+          exit "$code"
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
@@ -50,6 +78,7 @@ jobs:
 
   frontend:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: frontend
@@ -65,3 +94,124 @@ jobs:
       - run: npm run typecheck
       - run: npm run test
       - run: npm run build
+
+  e2e:
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: beanbox
+          POSTGRES_PASSWORD: ci-pg-password
+          POSTGRES_DB: beanbox
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U beanbox -d beanbox"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      mailpit:
+        image: axllent/mailpit
+        ports:
+          - 1025:1025
+    env:
+      # Giá trị giả chỉ dành cho CI. Playwright webServer kế thừa các biến này.
+      DATABASE_URL: postgresql://beanbox:ci-pg-password@localhost:5432/beanbox
+      JWT_ACCESS_SECRET: ci-only-secret-0123456789abcdefghijklmnop
+      INTERNAL_API_SECRET: ci-only-internal-0123456789abcdefghijklm
+      SMTP_HOST: localhost
+      SMTP_PORT: "1025"
+      ORDER_RATE_LIMIT_PER_MIN: "200"
+      COUPON_RATE_LIMIT_PER_MIN: "200"
+      QUOTE_RATE_LIMIT_PER_MIN: "200"
+      SEED_ADMIN_PASSWORD: CiAdmin12345
+      SEED_STAFF_PASSWORD: CiStaff12345
+      SEED_CUSTOMER_PASSWORD: CiCustomer12345
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+      - name: Cài phụ thuộc backend
+        working-directory: backend
+        run: npm ci
+      - name: Cài phụ thuộc frontend
+        working-directory: frontend
+        run: npm ci
+      - name: Chuẩn bị DB (generate, migrate, seed)
+        working-directory: backend
+        run: |
+          npx prisma generate
+          npx prisma migrate deploy
+          npm run prisma:seed
+      - name: Cài Chromium cho Playwright
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Chạy E2E
+        working-directory: frontend
+        run: npm run test:e2e
+      - name: Upload báo cáo Playwright khi lỗi
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            frontend/playwright-report
+            frontend/test-results
+          if-no-files-found: ignore
+          retention-days: 7
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Quét lịch sử git bằng gitleaks
+        run: |
+          docker run --rm --entrypoint sh \
+            -v "$GITHUB_WORKSPACE:/repo:ro" \
+            zricethezav/gitleaks:v8.30.0 \
+            -c 'git config --global --add safe.directory /repo && gitleaks git --config /repo/.gitleaks.toml --redact --no-banner --verbose /repo'
+
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: npm audit (chỉ báo cáo, không làm fail)
+        continue-on-error: true
+        run: |
+          {
+            echo "## npm audit (mức high trở lên)"
+            for dir in backend frontend; do
+              echo ""
+              echo "### $dir"
+              echo '```'
+              (cd "$dir" && npm audit --audit-level=high 2>&1) || true
+              echo '```'
+            done
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image backend
+        run: docker build --target runtime -t beanbox-backend:ci backend
+      - name: Build image frontend
+        run: docker build -t beanbox-frontend:ci frontend
+      - name: Build image Caddy
+        run: docker build -t beanbox-caddy:ci deploy/caddy

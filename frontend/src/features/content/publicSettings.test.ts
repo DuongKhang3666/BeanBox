@@ -32,6 +32,22 @@ describe("getPublicSettings", () => {
     expect(r.home.banners).toHaveLength(1);
   });
 
+  it("contactCaptcha: có -> giữ; thiếu/sai shape -> null", async () => {
+    const data = structuredClone(DEFAULT_PUBLIC_SETTINGS) as unknown as Record<string, unknown>;
+    serverGet.mockResolvedValue({
+      data: { ...data, contactCaptcha: { provider: "turnstile", siteKey: "test-site-key" } },
+    });
+    expect((await getPublicSettings()).contactCaptcha).toEqual({
+      provider: "turnstile",
+      siteKey: "test-site-key",
+    });
+    delete data.contactCaptcha;
+    serverGet.mockResolvedValue({ data });
+    expect((await getPublicSettings()).contactCaptcha).toBeNull();
+    serverGet.mockResolvedValue({ data: { ...data, contactCaptcha: { provider: "x" } } });
+    expect((await getPublicSettings()).contactCaptcha).toBeNull();
+  });
+
   it("lỗi mạng -> mặc định", async () => {
     serverGet.mockImplementation(async () => {
       throw new ApiError(0, "NETWORK_ERROR", "x");

@@ -32,9 +32,19 @@ export type CleanupResult =
       refreshTokens: number;
       passwordResetTokens: number;
       emailVerificationTokens: number;
+      contactMessages: number;
     };
 
-export async function runCleanupOnce(now: Date = new Date()): Promise<CleanupResult> {
+export interface CleanupOptions {
+  /** Số ngày giữ tin liên hệ RESOLVED/SPAM (mặc định env.CONTACT_RETENTION_DAYS; 0 = không xóa). */
+  contactRetentionDays?: number;
+}
+
+export async function runCleanupOnce(
+  now: Date = new Date(),
+  opts: CleanupOptions = {},
+): Promise<CleanupResult> {
+  const retentionDays = opts.contactRetentionDays ?? env.CONTACT_RETENTION_DAYS;
   const result = await prisma.$transaction(
     async (tx): Promise<CleanupResult> => {
       const rows = await tx.$queryRaw<Array<{ locked: boolean }>>`
@@ -51,8 +61,19 @@ export async function runCleanupOnce(now: Date = new Date()): Promise<CleanupRes
       const emailVerificationTokens = await tx.emailVerificationToken.deleteMany({
         where: expired,
       });
+      // D-029: chỉ tin đã xử lý xong (RESOLVED/SPAM); NEW/IN_PROGRESS không bao giờ bị xóa.
+      const contactMessages =
+        retentionDays > 0
+          ? await tx.contactMessage.deleteMany({
+              where: {
+                status: { in: ['RESOLVED', 'SPAM'] },
+                createdAt: { lt: new Date(now.getTime() - retentionDays * DAY_MS) },
+              },
+            })
+          : { count: 0 };
       return {
         skipped: false,
+        contactMessages: contactMessages.count,
         guestCarts: guestCarts.count,
         refreshTokens: refreshTokens.count,
         passwordResetTokens: passwordResetTokens.count,
@@ -68,7 +89,8 @@ export async function runCleanupOnce(now: Date = new Date()): Promise<CleanupRes
     logger.info(
       `Job dọn dẹp: xóa ${result.guestCarts} giỏ guest, ${result.refreshTokens} refresh token, ` +
         `${result.passwordResetTokens} token đặt lại mật khẩu, ` +
-        `${result.emailVerificationTokens} token xác minh email`,
+        `${result.emailVerificationTokens} token xác minh email, ` +
+        `${result.contactMessages} tin liên hệ cũ`,
     );
   }
   return result;

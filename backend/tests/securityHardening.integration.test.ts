@@ -287,7 +287,10 @@ describe('cookie refresh bb_rt', () => {
       DATABASE_URL: 'postgresql://x',
       JWT_ACCESS_SECRET: 'x'.repeat(40),
     } as unknown as NodeJS.ProcessEnv;
-    expect(parseEnv({ ...base, NODE_ENV: 'production' }).COOKIE_SECURE).toBe(true);
+    expect(
+      parseEnv({ ...base, NODE_ENV: 'production', INTERNAL_API_SECRET: 'x'.repeat(40) })
+        .COOKIE_SECURE,
+    ).toBe(true);
     expect(parseEnv({ ...base, NODE_ENV: 'development' }).COOKIE_SECURE).toBe(false);
   });
 

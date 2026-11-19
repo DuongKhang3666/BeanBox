@@ -20,6 +20,7 @@
     "src",
     "tests",
     "prisma/seed.ts",
+    "prisma/seedGuard.ts",
     "prisma/seed-data",
     "vitest.config.ts",
     "eslint.config.js"

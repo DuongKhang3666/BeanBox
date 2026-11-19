@@ -1,0 +1,4 @@
+# Script/cấu hình chạy trong container phải là LF (checkout CRLF trên Windows làm hỏng chúng)
+*.sh text eol=lf
+Caddyfile text eol=lf
+Dockerfile text eol=lf

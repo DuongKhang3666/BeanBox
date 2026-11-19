@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Button, buttonClasses } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
@@ -32,6 +32,7 @@ import { formatVnDateTime } from "../format";
 import { ADMIN_PAGE_SIZE } from "../orderFilters";
 import { AdminModal } from "./AdminModal";
 import { AdminPager } from "./AdminPager";
+import { useDebouncedUrlInput } from "../useDebouncedUrlInput";
 
 type Loaded = { data: AuditLogItem[]; meta: PaginationMeta };
 
@@ -281,14 +282,9 @@ export function AdminAuditLog() {
   const [detail, setDetail] = useState<AuditLogItem | null>(null);
 
   // Debounce ô đối tượng -> URL.
-  useEffect(() => {
-    const t = entityInput.trim();
-    if (t === urlEntity) return;
-    const id = setTimeout(() => {
-      router.replace(auditHref({ ...filters, entity: t || undefined, page: undefined }));
-    }, 400);
-    return () => clearTimeout(id);
-  }, [entityInput, urlEntity, filters, router]);
+  useDebouncedUrlInput(entityInput, urlEntity, (v) =>
+    router.replace(auditHref({ ...filters, entity: v, page: undefined })),
+  );
 
   // Chỉ gọi API khi là ADMIN; STAFF thấy thông báo (backend vẫn chặn 403).
   const res = useResource<Loaded>(isAdmin ? JSON.stringify(filters) : null, load);

@@ -18,6 +18,7 @@ export const DEFAULT_PUBLIC_SETTINGS: PublicSettings = {
   order: { paymentExpiryMinutes: 15 },
   store: { contact: { name: "BeanBox", email: "hello@beanbox.local", phone: "", address: "" } },
   home: { banners: [] },
+  contactCaptcha: null,
 };
 
 const isObj = (v: unknown): v is Record<string, unknown> =>
@@ -61,7 +62,14 @@ export function normalizePublicSettings(raw: unknown): PublicSettings | null {
       isActive: b.isActive !== false,
     });
   }
+  // Thiếu/sai shape -> coi như tắt (backend cũ chưa có field này).
+  const cc = raw.contactCaptcha;
+  const contactCaptcha =
+    isObj(cc) && cc.provider === "turnstile" && isStr(cc.siteKey) && cc.siteKey.trim() !== ""
+      ? ({ provider: "turnstile", siteKey: cc.siteKey } as const)
+      : null;
   return {
+    contactCaptcha,
     shipping: {
       rates: {
         inner: { STANDARD: inner.STANDARD as number, EXPRESS: inner.EXPRESS as number },

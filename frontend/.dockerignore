@@ -5,3 +5,7 @@ coverage
 .env.*
 !.env.example
 Dockerfile
+.git
+e2e
+test-results
+playwright-report

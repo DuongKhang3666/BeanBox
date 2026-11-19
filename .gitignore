@@ -5,6 +5,10 @@ node_modules/
 .env
 .env.*
 !.env.example
+!.env.production.example
+
+# Backup DB/uploads chạy bằng deploy/backup (docker-compose.prod.yml)
+backups/
 
 # Build output
 dist/

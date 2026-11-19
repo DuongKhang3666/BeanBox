@@ -1,8 +1,12 @@
 node_modules
 dist
 coverage
+.git
 .env
 .env.*
 !.env.example
 tests
 *.log
+# Ảnh người dùng tải lên không vào image; giữ ảnh seed
+uploads/*
+!uploads/seed

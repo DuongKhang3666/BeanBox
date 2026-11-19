@@ -1,6 +1,7 @@
 # BeanBox – API Contract
 
-> Phiên bản 0.8 · 2026-11-19 · **Nguồn sự thật cho FE và BE.** Đổi contract phải sửa file này trước và nêu trong báo cáo.
+> Phiên bản 0.9 · 2026-11-19 · **Nguồn sự thật cho FE và BE.** Đổi contract phải sửa file này trước và nêu trong báo cáo.
+> Thay đổi 0.9 (M7, D-025..D-034): thêm `GET /health/live` (liveness) và ghi rõ `GET /health` là readiness (§3, §15 mục 12); captcha tùy chọn cho form liên hệ: `contactCaptcha` ở `GET /settings/public` (§14.9), trường `captchaToken` và mã lỗi `400 CAPTCHA_FAILED` (§2, §14.11; `503 SERVICE_UNAVAILABLE` khi gọi Turnstile lỗi); job tự xóa tin liên hệ `RESOLVED`/`SPAM` theo `CONTACT_RETENTION_DAYS` (§14.11, §15 mục 15, D-029); CSP thêm header thực thi tập con và Turnstile ở report-only (§14.12, D-032). Rate limit ở edge (Caddy, D-026) không đổi shape API; lỗi do edge sinh ra ở `/api/v1/*` (429, 413, 502-504) trả JSON theo format lỗi §1 (xem phần Rate limit ở §1). Không cần migration.
 > Thay đổi 0.8: chi tiết hóa M6b (D-021..D-024): thay "14.9 Hoãn sau M6" bằng 14.9 Cài đặt cửa hàng (`GET/PUT /admin/settings`, `GET /settings/public`), 14.10 Quản lý người dùng (`/admin/users`), 14.11 Liên hệ (`POST /contact`, `/admin/contact-messages`), 14.12 CSP report-only (`POST /csp-report`); newsletter còn hoãn (14.13). Thêm mã lỗi `CANNOT_MODIFY_SELF`, `LAST_ADMIN` (§2); thêm action audit `settings.update`, `user.status`, `user.role`, `contact.update` (§12.0). Chốt thêm: settings chỉ Admin, ràng buộc ghi chặt/đọc nới, `innerCityWardCount` ở `/settings/public`, banner chỉ ảnh `/uploads/` và `href` nội bộ; khóa dòng + kiểm lại người thao tác ở quản lý người dùng; làm rõ liên hệ và `POST /csp-report`; thêm §15 mục 15–16. Cần migration `m6b_contact_message` (`db-schema.md`).
 > Thay đổi 0.7.1: ghi nhận khi triển khai M6: `Review` có thêm unique `(userId, productId)` (chống tạo trùng khi gửi đồng thời; trùng -> 409 `REVIEW_NOT_ALLOWED` `ALREADY_REVIEWED`); `requirements.md` đổi `POST /products/:id/reviews` thành `:slug`, FR-REV-01 bỏ ảnh ở M6 và FR-REV-02 thành 1 đánh giá/người dùng/sản phẩm; Enter ở ô tìm kiếm tới `/tim-kiem?q=` (§14.8). Không đổi shape API.
 > Thay đổi 0.7: chi tiết hóa M6 (D-017..D-020): §14 đổi thành "Hoàn thiện v1 (M6)" gồm đánh giá (14.1; `POST` dùng `:slug` thay vì `:productId`, `PUT|DELETE /admin/reviews/:id/reply` thay cho `POST .../reply`), wishlist (14.2), dashboard (14.3), audit log (14.4), redirect slug + `GET /categories/:slug` (14.5), khôi phục sản phẩm (14.6), hủy đơn và Payment Stripe (14.7), gợi ý tìm kiếm ở FE (14.8); Settings, Users, Nội dung (contact/newsletter) chuyển vào 14.9 "Hoãn sau M6" (dự kiến M6b). Thêm mã lỗi `REVIEW_NOT_ALLOWED`, `REVIEW_EDIT_EXPIRED`, `WISHLIST_LIMIT` (§2); §4.4 ghi chú slug cũ -> 404 + `details.movedTo`. Cần migration `m6_slug_redirect` (`db-schema.md`). Câu hỏi mở §15 mục 14 đã chốt.
@@ -68,6 +69,8 @@ Phân trang: query `page` (>= 1, mặc định 1), `pageSize` (1–100, mặc đ
 
 **Rate limit.** Chung 100 req/phút/IP. Nhóm nhạy cảm 5 req/phút/IP: `POST /auth/login`, `/auth/register`, `/auth/forgot-password`, `/auth/reset-password`, `/auth/change-password`, `POST /orders/:code/cancel` (guest), `GET /orders/track` (10/phút). Ba limiter riêng cho mã giảm giá và đặt đơn (D-011): `POST /cart/apply-coupon` 10/phút, `POST /checkout/quote` 30/phút, `POST /orders` 10/phút (từ 0.6 cấu hình được qua env `COUPON_RATE_LIMIT_PER_MIN`, `QUOTE_RATE_LIMIT_PER_MIN`, `ORDER_RATE_LIMIT_PER_MIN`, mặc định giữ nguyên, D-016); endpoint thanh toán có limiter riêng (§13); mỗi limiter có store riêng, theo IP, kể cả request có Bearer (và không miễn `X-Internal-Secret`), đặt trước bước xác thực. Vượt -> 429 `RATE_LIMITED` + header `Retry-After` (giây) và `error.details: { "retryAfterSec": <int> }` (cùng giá trị với header). Response có `RateLimit-Limit/Remaining/Reset`. IP client xác định theo `TRUST_PROXY` (D-009); request SSR nội bộ có `X-Internal-Secret` hợp lệ được miễn rate limit chung, không miễn nhóm nhạy cảm (xem `architecture.md` §3).
 
+Ở production có thêm rate limit ở edge (Caddy, D-026) theo IP, độc lập với các limiter trên (mặc định `POST /auth/*` 30/phút, `/api/v1/*` 300/phút). Lỗi do chính edge sinh ra ở `/api/v1/*` cũng theo format lỗi ở trên: 429 `RATE_LIMITED` (giữ `Retry-After`), 413 `PAYLOAD_TOO_LARGE` ở `/api/v1/admin/uploads*` và `VALIDATION_ERROR` ở các path khác khi thân request quá lớn, 502/503/504 `SERVICE_UNAVAILABLE` khi backend không phản hồi. Chi tiết: `deployment.md`.
+
 **CORS / CSRF.** CORS chỉ cho origin trong `FRONTEND_ORIGINS`, `credentials: true`; header `X-Cart-Token` được expose qua `Access-Control-Expose-Headers` (FE đọc được token mới cấp). `POST /auth/refresh` và `POST /auth/logout` dùng cookie nên bắt buộc header `Origin` khớp CHÍNH XÁC một giá trị trong `FRONTEND_ORIGINS`; thiếu hoặc `null` -> 403 `INVALID_ORIGIN`.
 
 **Chuẩn hóa input.** Chuỗi được `trim`; email lowercase; SĐT được chuẩn hóa (D-007): bỏ khoảng trắng, dấu chấm, gạch ngang; `+84` đầu -> `0`; sau đó phải khớp `^0(3|5|7|8|9)\d{8}$`, sai -> 400 `VALIDATION_ERROR`. Mọi nơi lưu SĐT (`User.phone`, `Address.phone`, `Order.contactPhone`, `shippingAddress.phone`) lưu dạng chuẩn hóa `0xxxxxxxxx`; response trả đúng dạng đã lưu. Trường lạ trong body bị bỏ qua.
@@ -82,6 +85,7 @@ Phân trang: query `page` (>= 1, mặc định 1), `pageSize` (1–100, mặc đ
 | 400 | `TOKEN_INVALID` | Token reset/verify sai, hết hạn hoặc đã dùng |
 | 400 | `INVALID_PASSWORD` | Mật khẩu hiện tại không đúng (đổi mật khẩu) |
 | 400 | `PAYMENT_SIGNATURE_INVALID` | Chữ ký VNPay return / Stripe webhook sai hoặc quá hạn (§13.3, §13.4) |
+| 400 | `CAPTCHA_FAILED` | Captcha form liên hệ thiếu hoặc không hợp lệ (§14.11, D-028) |
 | 401 | `UNAUTHORIZED` | Thiếu/hết hạn/sai access token |
 | 401 | `INVALID_CREDENTIALS` | Sai email hoặc mật khẩu (thông báo chung, không nói cái nào sai) |
 | 401 | `INVALID_REFRESH_TOKEN` | Refresh token thiếu/sai/hết hạn/đã thu hồi (kể cả phát hiện reuse); cookie bị xóa |
@@ -118,12 +122,15 @@ Phân trang: query `page` (>= 1, mặc định 1), `pageSize` (1–100, mặc đ
 
 ## 3. Health
 
-### `GET /health` – Public
+### `GET /health` – Public (readiness)
 200:
 ```json
 { "data": { "status": "ok", "db": "up", "version": "0.1.0", "uptimeSec": 1234, "time": "2026-11-10T08:30:00.000Z" } }
 ```
 503 `SERVICE_UNAVAILABLE` khi không truy vấn được DB (`SELECT 1`). Không yêu cầu auth, không rate limit chung (dùng cho healthcheck Docker).
+
+### `GET /health/live` – Public (liveness)
+200 `{ "data": { "status": "ok" } }`. Không chạm DB nên luôn 200 khi tiến trình còn sống. Không yêu cầu auth, không rate limit chung, không log truy cập (D-030).
 
 ## 4. Catalog
 
@@ -1128,10 +1135,13 @@ Giá trị ĐỌC từ DB được kiểm theo schema nới hơn (giá trị cũ
         "address": ""
       }
     },
-    "home": { "banners": [] }
+    "home": { "banners": [] },
+    "contactCaptcha": { "provider": "turnstile", "siteKey": "<site key>" }
   }
 }
 ```
+
+`contactCaptcha` (D-028): `{ "provider": "turnstile", "siteKey": "<site key>" }` khi backend có ĐỦ cả `TURNSTILE_SITE_KEY` và `TURNSTILE_SECRET_KEY`; thiếu một hoặc cả hai thì captcha tắt và trả `null` (mặc định). FE đọc giá trị lúc chạy, không nhúng lúc build; secret không bao giờ xuất hiện trong response.
 
 `innerCityProvinces` được dựng từ `innerCityProvinceCodes` + tên trong danh mục tỉnh. `home.banners` chỉ gồm phần tử `isActive`. `innerCityWardCount` là số nguyên, bằng số mã trong `innerCityWardCodes`, để trang chính sách nói đúng khi nội thành gồm thêm phường riêng; vẫn KHÔNG trả danh sách mã phường hay bất kỳ key nào khác. Header `Cache-Control: public, max-age=300`. FE dùng cho trang chính sách vận chuyển, footer, trang liên hệ và banner trang chủ (SSR, revalidate 300 giây); API lỗi thì FE dùng nội dung mặc định viết sẵn. Do cache, trang storefront (chính sách, footer, liên hệ, banner) cập nhật chậm tối đa khoảng 5 phút sau khi admin lưu.
 
@@ -1171,9 +1181,11 @@ Quyết định: D-023. Bảng `ContactMessage` (`db-schema.md`, migration `m6b_
 | `subject` | Tùy chọn, 0–150 ký tự, không chứa ký tự điều khiển (CR/LF, tab...) -> 400; rỗng lưu `null` |
 | `message` | 10–2000 ký tự; cho phép xuống dòng                                                         |
 | `website` | Honeypot (ô ẩn, người thật để trống); chuỗi tùy chọn tối đa 200 ký tự                      |
+| `captchaToken` | Chuỗi tùy chọn, tối đa 2048 ký tự; bắt buộc khi captcha bật (`contactCaptcha` khác `null`, §14.9), bỏ qua khi tắt |
 
-- Lỗi: 400 `VALIDATION_ERROR`, 401 (Bearer sai), 429 `RATE_LIMITED`.
-- Thứ tự xử lý `POST /contact`: rate limit -> xác thực tùy chọn -> validate (400) -> honeypot (201 giả) -> lưu.
+- Lỗi: 400 `VALIDATION_ERROR`, 400 `CAPTCHA_FAILED`, 401 (Bearer sai), 429 `RATE_LIMITED`, 503 `SERVICE_UNAVAILABLE` (chỉ khi captcha bật).
+- Thứ tự xử lý `POST /contact`: rate limit -> xác thực tùy chọn -> validate (400) -> honeypot (201 giả) -> captcha (khi bật; 400 `CAPTCHA_FAILED` hoặc 503) -> lưu.
+- Captcha (D-028): thiếu `captchaToken` hoặc Cloudflare trả `success: false` -> 400 `CAPTCHA_FAILED`; gọi siteverify lỗi mạng, quá 5 giây hoặc phản hồi không hợp lệ -> 503 `SERVICE_UNAVAILABLE` (fail closed). Honeypot dính trả 201 giả trước bước captcha, không gọi Cloudflare. Server không gửi IP client và không log token/secret.
 - `website` có giá trị khác rỗng -> trả 201 giống thành công nhưng KHÔNG lưu và KHÔNG gửi mail. Honeypot dính vẫn bị tính vào rate limit (limiter đứng trước).
 - Nội dung lưu dạng text thuần (không diễn giải HTML); FE hiển thị bằng text (không `dangerouslySetInnerHTML`).
 - 201 `{ "data": { "received": true } }` (không trả `id`).
@@ -1186,19 +1198,19 @@ Quyết định: D-023. Bảng `ContactMessage` (`db-schema.md`, migration `m6b_
 - `GET /admin/contact-messages/:id`: một item như trên.
 - `PATCH /admin/contact-messages/:id` body `{ status?, adminNote?: 0–1000 ký tự }`, ít nhất 1 trường. Mỗi khi `status` đổi sang giá trị khác hiện tại (kể cả đổi về `NEW`), đặt `handledById` = người thao tác và `handledAt` = now. `status` giống hiện tại và `adminNote` không đổi -> 200, không ghi audit. AuditLog `contact.update` (`entity = "ContactMessage"`, `diff` gồm `status: [old, new]` nếu đổi và `adminNote: [null, "đã cập nhật"]` nếu có sửa (đúng chuỗi này, không chép ghi chú thật); KHÔNG chép nội dung tin nhắn hay ghi chú). 200 trả item.
 - Admin `PATCH` body không có `status` lẫn `adminNote` (kể cả chỉ có trường lạ) -> 400.
-- Không có xóa (lưu trữ); thời hạn lưu xem §15 mục 15.
+- Admin không xóa thủ công; job nền tự xóa cứng tin `RESOLVED`/`SPAM` quá `CONTACT_RETENTION_DAYS` ngày (D-029, §15 mục 15).
 
 ### 14.12 CSP report-only
 
-Quyết định: D-024.
+Quyết định: D-024, D-032.
 
-**Header ở frontend.** Next gửi `Content-Security-Policy-Report-Only` cho mọi trang:
+**Header ở frontend.** Next gửi `Content-Security-Policy-Report-Only` cho mọi trang. Từ M7 còn gửi thêm header `Content-Security-Policy` THỰC THI một tập con không cần nonce: `frame-ancestors 'none'; base-uri 'self'; object-src 'none'` (D-032). Policy report-only (đã thêm Turnstile theo D-028 vào `script-src` và `frame-src`):
 
 ```
-default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; report-uri /api/v1/csp-report
+default-src 'self'; script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-src 'self' https://challenges.cloudflare.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; report-uri /api/v1/csp-report
 ```
 
-Chỉ khi chạy development thêm `'unsafe-eval'` vào `script-src`. `'unsafe-inline'` cho script là tạm thời vì Next chèn inline script không có nonce; chuyển sang nonce và chế độ thực thi ở M7. Chế độ này KHÔNG chặn gì, chỉ báo cáo; mục tiêu là thu thập vi phạm thực tế trước khi thực thi. FE chỉ dùng `report-uri` (chưa dùng `report-to`/`Reporting-Endpoints`).
+Chỉ khi chạy development thêm `'unsafe-eval'` vào `script-src`. `'unsafe-inline'` cho script là tạm thời vì Next chèn inline script không có nonce; việc có chuyển sang nonce hay không xem D-032 (M7 không chuyển). Chế độ report-only KHÔNG chặn gì, chỉ báo cáo; mục tiêu là thu thập vi phạm thực tế trước khi thực thi. FE chỉ dùng `report-uri` (chưa dùng `report-to`/`Reporting-Endpoints`).
 
 **`POST /csp-report` – Public.**
 
@@ -1225,8 +1237,8 @@ Chỉ khi chạy development thêm `'unsafe-eval'` vào `script-src`. `'unsafe-i
 9. **Không có `facets` (đếm theo bộ lọc)** trong `GET /products`; FE lấy thương hiệu từ `/brands`, các giá trị enum cố định. Thêm `GET /products/filters` nếu UI cần số đếm.
 10. **Concurrent refresh:** không có grace window; FE bắt buộc single-flight trong tab và khóa giữa các tab bằng Web Locks API (`architecture.md` §4). Hai request đồng thời cùng token thì bên thua bị thu hồi cả family (§5.3). Nếu vẫn gây đăng xuất ngoài ý muốn, cân nhắc grace 10 giây cho token vừa xoay.
 11. **Đã chốt ở M2:** đã thêm trang FE xác thực email `/xac-thuc-email` vào sitemap (requirements §9). Đăng nhập Google, loyalty, subscription, blog, đổi/trả: v2, ngoài contract này.
-12. **`GET /health`** nằm dưới `/api/v1` theo chỉ đạo; Docker healthcheck gọi `/api/v1/health` trực tiếp ở cổng 4000.
+12. **`GET /health`** (readiness) và `GET /health/live` (liveness) nằm dưới `/api/v1` theo chỉ đạo (D-030); Docker healthcheck backend gọi `/api/v1/health` trong mạng Docker (cổng 4000, không publish). Frontend có `/healthz` là route của Next, không thuộc API contract.
 13. **Đã chốt – xem decisions.md D-016.** Email đổi trạng thái đơn gửi từ M5 cho `CONFIRMED`, `SHIPPING`, `DELIVERED`, `CANCELLED` (§13.9).
 14. **Đã chốt – xem decisions.md D-018.** Redirect khi đổi slug và khôi phục sản phẩm xóa mềm làm ở M6 (§14.5, §14.6).
-15. **Thời hạn lưu tin nhắn liên hệ (giả định).** M6b chưa tự xóa `ContactMessage`; không lưu IP. Đề xuất M7: xóa hoặc ẩn danh tin `RESOLVED`/`SPAM` sau 12 tháng bằng job; trang chính sách bảo mật đã nêu việc lưu tin nhắn liên hệ.
+15. **Đã chốt – xem decisions.md D-029.** Job xóa cứng tin `RESOLVED`/`SPAM` quá `CONTACT_RETENTION_DAYS` ngày (mặc định 365; 0 = tắt); tin `NEW`/`IN_PROGRESS` giữ tới khi xử lý; không lưu IP.
 16. **Newsletter** vẫn hoãn (§14.13).

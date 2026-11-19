@@ -164,8 +164,16 @@ describe('env helpers', () => {
       accessTokenTtlSec: 900,
       WEB_APP_URL: 'http://localhost:3000',
     });
-    expect(parseEnv({ ...base, NODE_ENV: 'production' }).COOKIE_SECURE).toBe(true);
-    const off = parseEnv({ ...base, NODE_ENV: 'production', COOKIE_SECURE: 'false' });
+    expect(
+      parseEnv({ ...base, NODE_ENV: 'production', INTERNAL_API_SECRET: 'x'.repeat(40) })
+        .COOKIE_SECURE,
+    ).toBe(true);
+    const off = parseEnv({
+      ...base,
+      NODE_ENV: 'production',
+      COOKIE_SECURE: 'false',
+      INTERNAL_API_SECRET: 'x'.repeat(40),
+    });
     expect(off.COOKIE_SECURE).toBe(false);
   });
 });

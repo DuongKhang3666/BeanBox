@@ -132,6 +132,59 @@ describe('runCleanupOnce', () => {
   });
 });
 
+describe('runCleanupOnce: tin liên hệ cũ (D-029)', () => {
+  const CPREFIX = 'tm7r-';
+  const cleanContacts = () =>
+    prisma.contactMessage.deleteMany({ where: { email: { startsWith: CPREFIX } } });
+  const mk = (tag: string, status: 'NEW' | 'IN_PROGRESS' | 'RESOLVED' | 'SPAM', daysAgo: number) =>
+    prisma.contactMessage.create({
+      data: {
+        name: 'Khách',
+        email: `${CPREFIX}${tag}@example.test`,
+        message: 'Nội dung thử nghiệm dọn dẹp.',
+        status,
+        createdAt: new Date(NOW.getTime() - daysAgo * DAY),
+      },
+    });
+  const exists = async (id: string) =>
+    (await prisma.contactMessage.findUnique({ where: { id } })) !== null;
+
+  afterAll(cleanContacts);
+
+  it('xóa RESOLVED/SPAM quá hạn; giữ NEW/IN_PROGRESS cũ và RESOLVED còn mới', async () => {
+    await cleanContacts();
+    const oldResolved = await mk('r', 'RESOLVED', 400);
+    const oldSpam = await mk('s', 'SPAM', 400);
+    const oldNew = await mk('n', 'NEW', 400);
+    const oldProgress = await mk('p', 'IN_PROGRESS', 400);
+    const freshResolved = await mk('f', 'RESOLVED', 364);
+
+    const r = await runCleanupOnce(NOW, { contactRetentionDays: 365 });
+    expect(r.skipped).toBe(false);
+    if (r.skipped) return;
+    expect(r.contactMessages).toBeGreaterThanOrEqual(2);
+
+    expect(await exists(oldResolved.id)).toBe(false);
+    expect(await exists(oldSpam.id)).toBe(false);
+    expect(await exists(oldNew.id)).toBe(true);
+    expect(await exists(oldProgress.id)).toBe(true);
+    expect(await exists(freshResolved.id)).toBe(true);
+  });
+
+  it('retention 0 -> không xóa gì', async () => {
+    await cleanContacts();
+    const oldResolved = await mk('r0', 'RESOLVED', 3000);
+    const oldSpam = await mk('s0', 'SPAM', 3000);
+
+    const r = await runCleanupOnce(NOW, { contactRetentionDays: 0 });
+    expect(r.skipped).toBe(false);
+    if (r.skipped) return;
+    expect(r.contactMessages).toBe(0);
+    expect(await exists(oldResolved.id)).toBe(true);
+    expect(await exists(oldSpam.id)).toBe(true);
+  });
+});
+
 describe('startBackgroundJobs', () => {
   it('trả hàm dừng và không giữ process sống', () => {
     const stop = startBackgroundJobs();

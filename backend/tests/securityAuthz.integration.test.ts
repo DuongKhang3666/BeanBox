@@ -72,6 +72,7 @@ const A = `${API}`;
 /** Public thật sự: không cần đăng nhập. IPN/webhook xác thực bằng chữ ký; track/forgot... có rate limit. */
 const PUBLIC = new Set<string>([
   `GET ${A}/health`,
+  `GET ${A}/health/live`,
   `GET ${A}/categories`,
   `GET ${A}/categories/:slug`,
   `GET ${A}/brands`,

@@ -1,6 +1,7 @@
 # BeanBox – Kiến trúc hệ thống
 
-> Phiên bản 0.5 · 2026-11-11 · Nguồn: `docs/requirements.md` + quyết định của Tech Lead.
+> Phiên bản 0.6 · 2026-11-20 · Nguồn: `docs/requirements.md` + quyết định của Tech Lead.
+> Thay đổi 0.6 (M7, D-025..D-035): triển khai production bằng Docker Compose với Caddy (TLS tự động, rate limit edge) ở §1, §2, §3; job dọn dẹp thêm xóa tin liên hệ cũ (D-029, §7); biến môi trường mới (Turnstile, `CONTACT_RETENTION_DAYS`, `SEED_ALLOW_PRODUCTION`, `INTERNAL_API_SECRET` bắt buộc ở production, biến compose prod) ở §8; thêm ADR 11-13 ở §9 (Caddy + edge rate limit, một instance không Redis, CSP tập con thực thi). Hướng dẫn vận hành: [`deployment.md`](deployment.md).
 > Thay đổi 0.5: M5 thanh toán online (D-014), hoàn tiền thủ công và job hết hạn mỗi 60 giây (D-015), biến môi trường mới và rate limit cấu hình được (D-016) ở §7, §8. Hướng dẫn cấu hình: [`payments-setup.md`](payments-setup.md).
 > Thay đổi 0.4: M4 Admin (D-013): module backend `modules/admin/` và `lib/audit.ts`, FE `features/admin/` (§2); router `/admin` chặn quyền ở cấp router, xóa cần `requireAdmin` (§4).
 > Thay đổi 0.3: xác định IP client & rate limit sau proxy (D-009, §3, §8, ADR 10); chi tiết hóa phiên/token và RBAC cho M2 (§4).
@@ -33,6 +34,17 @@ Trình duyệt ──► Next.js :3000 ──(rewrites /api/v1/*)──► Expre
 | Backend | Express + TypeScript + Prisma + zod | 4000 |
 | Database | PostgreSQL (extension `pg_trgm`) | 5432 |
 
+**Production / demo (D-025, D-026)** chạy bằng `docker-compose.prod.yml`; chỉ Caddy publish cổng ra host, các service còn lại chỉ nằm trong mạng Docker:
+
+```
+Internet ──► Caddy :80/:443 ──┬─ /api/v1/*, /uploads/* ──────────────► Express :4000 ──► PostgreSQL :5432
+ (TLS tự động,                └─ còn lại (trang, /_next/*, /healthz) ─► Next.js :3000
+  rate limit edge)                                                          │
+                                                                            └─ SSR gọi backend qua API_INTERNAL_URL (http://backend:4000)
+```
+
+Chi tiết triển khai và vận hành: [`deployment.md`](deployment.md).
+
 - Node >= 22 LTS, package manager `npm`. `frontend/` và `backend/` là hai project độc lập (không workspace, mỗi nơi có `package.json` + `package-lock.json` riêng).
 - Dev chạy bằng Docker Compose (Postgres bắt buộc; app tùy chọn). Email dev: Mailpit. Thanh toán: COD, VNPay sandbox, Stripe test.
 
@@ -60,7 +72,13 @@ BeanBox/
 │  │        # M6 thêm: modules/reviews (công khai + của tôi), modules/wishlist (/me/wishlist), modules/admin/dashboard, modules/admin/audit (chỉ Admin), modules/admin/reviews; slug redirect nằm trong catalog + admin/catalog + admin/products (bảng SlugRedirect)
 │  │        # M6b thêm (D-021..D-024): modules/settings (`GET /settings/public`), modules/contact (`POST /contact`), `POST /csp-report`; modules/admin/settings (chỉ Admin), modules/admin/users (chỉ Admin), modules/admin/contact-messages (Staff+)
 │  └─ tests/            # unit (pricing, shipping, state machine) + integration (supertest)
-├─ docker-compose.yml, .env.example, .github/workflows/ci.yml
+├─ deploy/
+│  ├─ caddy/            # Caddyfile (TLS, rate limit edge, header, log JSON) + Dockerfile (xcaddy + caddy-ratelimit), D-026
+│  └─ backup/           # backup.sh, restore.sh, loop.sh (D-034)
+├─ docker-compose.yml           # dev: db, mailpit; profile app: backend + frontend
+├─ docker-compose.prod.yml      # production/demo: caddy, frontend, backend, db; profile backup, tools (D-025)
+├─ .env.production.example      # mẫu biến production (sao chép thành .env.production, không commit)
+├─ .env.example, .github/workflows/ci.yml, .gitleaks.toml
 ```
 
 Quy tắc phân lớp backend: `routes` (khai báo + middleware) -> `controller` (parse request/format response, mỏng) -> `service` (nghiệp vụ, transaction, không biết Express) -> Prisma. Logic thuần (tính giá, phí ship, state machine) tách thành hàm thuần để test unit không cần DB.
@@ -71,6 +89,7 @@ Quy tắc phân lớp backend: `routes` (khai báo + middleware) -> `controller`
 - **SSR / Server Components** (trang danh mục, chi tiết sản phẩm, SEO) gọi thẳng `${API_INTERNAL_URL}/api/v1/...`, chỉ cho dữ liệu công khai (catalog). Dữ liệu cần đăng nhập (giỏ, tài khoản, đơn) lấy ở client component.
 - Backend **vẫn bật CORS** với whitelist origin (`FRONTEND_ORIGINS`) để phòng khi gọi trực tiếp (test, Postman, tương lai tách domain).
 - **IP client & rate limit (D-009).** Backend lắng nghe `HOST` (mặc định `127.0.0.1`; docker-compose bind cổng 4000, 5432, 1025, 8025 vào `127.0.0.1`). `trust proxy` đọc từ env `TRUST_PROXY` (mặc định `loopback`, Docker dùng `uniquelocal`; cấm giá trị `true`). Next rewrites tự thêm `X-Forwarded-For` nên IP thật của trình duyệt đi qua được tới backend. Request SSR gửi header `X-Internal-Secret` (= `INTERNAL_API_SECRET`) để được MIỄN rate limit chung (không miễn nhóm nhạy cảm auth); không chuyển tiếp IP client từ SSR vì làm trang thành dynamic và phân mảnh cache fetch của Next. Rủi ro còn lại: lưu lượng SSR không bị giới hạn ở backend nên khi deploy (M7) phải đặt rate limit ở reverse proxy/edge trước Next; lộ `INTERNAL_API_SECRET` cho phép lách rate limit chung (không lách được nhóm auth).
+- **Production (D-026).** Trình duyệt chỉ nói chuyện với Caddy. Caddy định tuyến `/api/v1/*` và `/uploads/*` THẲNG tới `backend:4000` (không đi qua rewrites của Next), còn lại tới `frontend:3000`; SSR của Next vẫn gọi backend nội bộ bằng `API_INTERNAL_URL` kèm `X-Internal-Secret`. Caddy đặt `X-Forwarded-For` = IP kết nối thật (bỏ XFF do client gửi, trừ khi cấu hình `trusted_proxies` sau Cloudflare), backend tin hop Docker bằng `TRUST_PROXY=uniquelocal`, nên cookie vẫn first-party. Rate limit edge theo IP bảo vệ cả lưu lượng SSR mà backend miễn (đóng rủi ro còn lại của D-009). Lỗi do chính Caddy sinh ra ở `/api/v1/*` trả JSON theo format lỗi chuẩn (`api-contract.md` §1).
 
 ## 4. Xác thực & phiên
 
@@ -85,7 +104,7 @@ Quy tắc phân lớp backend: `routes` (khai báo + middleware) -> `controller`
 | CSRF | Endpoint dùng cookie (`/auth/refresh`, `/auth/logout`): `SameSite=Strict` + kiểm tra header `Origin` thuộc whitelist (thiếu hoặc sai -> 403) |
 | Khóa tài khoản | 5 lần sai liên tiếp trong 15 phút -> `lockedUntil = now + 15 phút` (FR-AUTH-08) |
 | RBAC | `CUSTOMER`, `STAFF`, `ADMIN`; middleware `requireAuth` đọc lại `role/status` từ DB MỌI request đã xác thực (không chỉ admin), `requireRole` dùng role đó. User không tồn tại -> 401; `DISABLED` -> 403 |
-| CSP (D-024) | Frontend gửi `Content-Security-Policy-Report-Only` qua `headers()` trong `next.config.ts` (chỉ báo cáo, không chặn; `'unsafe-inline'` cho script/style là tạm thời, chuyển nonce + thực thi ở M7). Trình duyệt báo vi phạm tới `POST /api/v1/csp-report` (rate limit 20/phút/IP, log `warn` đã làm sạch, không lưu DB, không PII). Backend API vẫn giữ CSP mặc định của helmet cho response JSON. Chi tiết: api-contract §14.12 |
+| CSP (D-024) | Frontend gửi `Content-Security-Policy-Report-Only` qua `headers()` trong `next.config.ts` (chỉ báo cáo, không chặn; `'unsafe-inline'` cho script/style là tạm thời; M7 KHÔNG chuyển sang nonce mà thêm header `Content-Security-Policy` thực thi tập con `frame-ancestors 'none'; base-uri 'self'; object-src 'none'`, D-032). Trình duyệt báo vi phạm tới `POST /api/v1/csp-report` (rate limit 20/phút/IP, log `warn` đã làm sạch, không lưu DB, không PII). Backend API vẫn giữ CSP mặc định của helmet cho response JSON. Chi tiết: api-contract §14.12 |
 | Admin | Router `/admin` áp `requireAuth` + `requireStaff` ở cấp router (mọi endpoint con tự động được bảo vệ); xóa sản phẩm/danh mục/brand cần thêm `requireAdmin`. Mọi thao tác ghi ghi `AuditLog` cùng transaction (`lib/audit.ts`) |
 | Frontend | Fetch wrapper tự gắn Bearer; gặp 401 -> refresh **single-flight** trong tab (nhiều request chờ chung 1 lần refresh) -> retry 1 lần. Giữa các tab: khóa bằng Web Locks API (`navigator.locks`) nếu trình duyệt hỗ trợ |
 | Hạn chế đã chấp nhận | Đổi/đặt lại mật khẩu không vô hiệu access token đang sống (tối đa 15 phút); refresh token thì bị thu hồi ngay |
@@ -117,7 +136,7 @@ Quy tắc phân lớp backend: `routes` (khai báo + middleware) -> `controller`
   - VNPay/Stripe bật theo env (thiếu thì tắt, §8); khóa `sk_live_` bị từ chối khi khởi động.
   - Hoàn tiền: thủ công. Admin hoàn trên cổng rồi ghi nhận (`POST /admin/orders/:code/refunds`, D-015).
 - Tác vụ nền (trong tiến trình backend, `setInterval`): 
-  - Job dọn dẹp (M3): xóa giỏ guest không hoạt động > 30 ngày; xóa `RefreshToken`/`PasswordResetToken`/`EmailVerificationToken` đã hết hạn. Chạy mỗi 60 phút, dùng `pg_try_advisory_xact_lock` để chỉ 1 instance chạy mỗi lượt; bật/tắt bằng env `JOBS_ENABLED` (mặc định `true`, luôn tắt khi `NODE_ENV=test`).
+  - Job dọn dẹp (M3): xóa giỏ guest không hoạt động > 30 ngày; xóa `RefreshToken`/`PasswordResetToken`/`EmailVerificationToken` đã hết hạn; xóa cứng `ContactMessage` có `status` `RESOLVED`/`SPAM` và `createdAt` cũ hơn `CONTACT_RETENTION_DAYS` ngày (D-029, mặc định 365, `0` = tắt). Chạy mỗi 60 phút, dùng `pg_try_advisory_xact_lock` để chỉ 1 instance chạy mỗi lượt; bật/tắt bằng env `JOBS_ENABLED` (mặc định `true`, luôn tắt khi `NODE_ENV=test`).
   - Job hết hạn thanh toán (M5, D-015): chạy mỗi 60 giây, advisory lock riêng, tối đa 50 đơn `PENDING_PAYMENT` có `expiresAt < now` mỗi lượt (kể cả `paymentStatus=FAILED`); mỗi đơn 1 transaction: `cancelOrderTx` (actor SYSTEM, hoàn kho, hoàn lượt mã), Payment `PENDING` -> `FAILED`; sau commit gửi email hủy và best-effort expire phiên Stripe (lỗi chỉ log). Cùng cờ `JOBS_ENABLED`.
 - Email: Nodemailer (Mailpit khi dev); gửi sau commit, lỗi gửi mail không làm hỏng đơn (log + retry đơn giản). Từ M5 gửi cả email đổi trạng thái (`CONFIRMED`, `SHIPPING`, `DELIVERED`, `CANCELLED`, D-016; `api-contract.md` §13.9).
 
@@ -132,7 +151,7 @@ Quy tắc phân lớp backend: `routes` (khai báo + middleware) -> `controller`
 | `FRONTEND_ORIGINS` | `http://localhost:3000` (phân tách dấu phẩy; dùng cho CORS + kiểm tra Origin) |
 | `HOST` | `127.0.0.1` (mặc định; địa chỉ backend lắng nghe, D-009) |
 | `TRUST_PROXY` | mặc định `loopback`; Docker dùng `uniquelocal`; cấm `true` (D-009) |
-| `INTERNAL_API_SECRET` (backend + frontend server, tùy chọn) | chuỗi >= 32 ký tự; SSR gửi qua `X-Internal-Secret`; chỉ ở server, không bao giờ `NEXT_PUBLIC_` (D-009) |
+| `INTERNAL_API_SECRET` (backend + frontend server) | chuỗi >= 32 ký tự; SSR gửi qua `X-Internal-Secret`; chỉ ở server, không bao giờ `NEXT_PUBLIC_` (D-009). Tùy chọn ở dev, BẮT BUỘC khi `NODE_ENV=production` (thiếu thì backend không khởi động; D-026) |
 | `WEB_APP_URL` | gốc link trong email, mặc định `http://localhost:3000`; không dựng link từ header Host/Origin |
 | `JOBS_ENABLED` | mặc định `true`; bật/tắt job nền dọn dẹp (§7); luôn tắt khi `NODE_ENV=test` |
 | `COOKIE_SECURE` | mặc định `true` khi production |
@@ -146,7 +165,11 @@ Quy tắc phân lớp backend: `routes` (khai báo + middleware) -> `controller`
 | `STRIPE_SECRET_KEY` | Có thì bật Stripe; CHỈ dạng `sk_test_...` (`sk_live_` -> backend từ chối khởi động) |
 | `STRIPE_WEBHOOK_SECRET` | `whsec_...`, tùy chọn; thiếu thì webhook trả 503, vẫn xác nhận qua `POST /payments/stripe/sync` |
 | `ORDER_RATE_LIMIT_PER_MIN`, `COUPON_RATE_LIMIT_PER_MIN`, `QUOTE_RATE_LIMIT_PER_MIN` | mặc định `10`, `10`, `30` (D-011, D-016); số nguyên dương |
-| `SEED_ADMIN_PASSWORD`, `SEED_STAFF_PASSWORD`, `SEED_CUSTOMER_PASSWORD` | mật khẩu dev cho seed; seed từ chối chạy khi `NODE_ENV=production` |
+| `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY` | captcha form liên hệ (D-028); có ĐỦ cả hai mới bật, chỉ một trong hai thì backend không khởi động; trống = tắt |
+| `CONTACT_RETENTION_DAYS` | mặc định `365`; số ngày giữ tin liên hệ `RESOLVED`/`SPAM` trước khi job xóa cứng; `0` = tắt (D-029) |
+| `SEED_ADMIN_PASSWORD`, `SEED_STAFF_PASSWORD`, `SEED_CUSTOMER_PASSWORD` | mật khẩu cho seed; mặc định seed từ chối chạy khi `NODE_ENV=production` |
+| `SEED_ALLOW_PRODUCTION` | `true` để cho phép seed ở production (D-031); khi đó cả 3 mật khẩu phải >= 12 ký tự, có chữ và số, khác giá trị mẫu |
+| Biến compose production (`PUBLIC_URL`, `SITE_ADDRESS`, `ACME_EMAIL`, `HTTP_PORT`, `HTTPS_PORT`, `POSTGRES_*`, `EDGE_RATE_*`, `BACKUP_*`) | chỉ dùng ở `docker-compose.prod.yml` / `.env.production`; `PUBLIC_URL` được compose gán cho `WEB_APP_URL`, `FRONTEND_ORIGINS` và `NEXT_PUBLIC_SITE_URL` (nhúng lúc build frontend). Bảng đầy đủ: [`deployment.md`](deployment.md) §4 |
 
 Backend validate toàn bộ env bằng zod khi khởi động, thiếu/sai thì dừng ngay.
 
@@ -164,6 +187,9 @@ Backend validate toàn bộ env bằng zod khi khởi động, thiếu/sai thì 
 | 8 | Hai project độc lập, không monorepo | Đơn giản CI/Docker; chấp nhận không chia sẻ type (type API viết tay ở FE theo contract) |
 | 9 | Giữ lượt mã khi tạo đơn bằng UPDATE có điều kiện | Không bao giờ vượt `usageLimit`/`perUserLimit` kể cả khi đồng thời; hoàn lượt idempotent khi `CANCELLED` (D-004) |
 | 10 | IP client & rate limit sau proxy (D-009) | `TRUST_PROXY` cấu hình được thay cho `trust proxy = 1`, backend bind `127.0.0.1`, SSR dùng `X-Internal-Secret` để không dồn chung một IP; chấp nhận rủi ro rate limit SSR phải đặt ở edge khi deploy |
+| 11 | Caddy làm reverse proxy + rate limit ở edge (D-026) | TLS Let's Encrypt tự động, một chỗ đặt header bảo mật/giới hạn body/log JSON, rate limit theo IP cho cả lưu lượng SSR; đánh đổi: plugin `caddy-ratelimit` bên thứ ba (ghim commit), bộ đếm trong bộ nhớ, reset khi restart |
+| 12 | Một instance backend, MemoryStore, không Redis (D-027) | Đủ cho demo, ít thành phần phải vận hành; job nền đã an toàn nhiều instance nhờ advisory lock, nhưng rate limit thì chưa, nên scale ngang cần store dùng chung |
+| 13 | CSP: chỉ thực thi tập con, phần còn lại report-only (D-024, D-032) | Nonce buộc mọi trang render động (mất ISR/cache catalog). Thực thi `frame-ancestors 'none'; base-uri 'self'; object-src 'none'`; `script-src`/`style-src` đầy đủ vẫn ở `Content-Security-Policy-Report-Only` với `'unsafe-inline'`, xem lại khi cần chặn XSS bằng nonce hoặc hash |
 
 ## 10. Câu hỏi mở / Giả định
 

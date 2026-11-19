@@ -3,6 +3,7 @@ import 'dotenv/config';
 import argon2 from 'argon2';
 import { Prisma, PrismaClient, Role, CouponType } from '@prisma/client';
 import { resolveLocation } from '../src/modules/locations/locations.data.js';
+import { checkSeedAllowed } from './seedGuard.js';
 import { SEED_ADDRESSES, SEED_CUSTOMER_EMAIL } from './seed-data/addresses.js';
 import { BRANDS, CATEGORIES } from './seed-data/catalog.js';
 import { seedProducts } from './seed-data/seed-products.js';
@@ -176,9 +177,8 @@ async function seedCoupons() {
 }
 
 async function main() {
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('Seed bị từ chối khi NODE_ENV=production');
-  }
+  const guardErrors = checkSeedAllowed(process.env);
+  if (guardErrors.length > 0) throw new Error(guardErrors.join('\n'));
   await seedUsers();
   const addressCount = await seedAddresses();
   await seedCategories();

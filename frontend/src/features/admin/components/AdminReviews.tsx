@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Button, buttonClasses } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
@@ -27,6 +27,7 @@ import { PRODUCTS_BASE } from "../productFilters";
 import { REVIEW_STATUS_LABEL, parseReviewFilters, reviewsHref } from "../reviewFilters";
 import { AdminModal } from "./AdminModal";
 import { AdminPager } from "./AdminPager";
+import { useDebouncedUrlInput } from "../useDebouncedUrlInput";
 
 type Loaded = { data: AdminReview[]; meta: PaginationMeta };
 
@@ -290,14 +291,9 @@ export function AdminReviews() {
   const [qInput, setQInput] = useState(urlQ);
   const [announce, setAnnounce] = useState("");
 
-  useEffect(() => {
-    const t = qInput.trim();
-    if (t === urlQ) return;
-    const id = setTimeout(() => {
-      router.replace(reviewsHref({ ...filters, q: t || undefined, page: undefined }));
-    }, 400);
-    return () => clearTimeout(id);
-  }, [qInput, urlQ, filters, router]);
+  useDebouncedUrlInput(qInput, urlQ, (v) =>
+    router.replace(reviewsHref({ ...filters, q: v, page: undefined })),
+  );
 
   const res = useResource<Loaded>(JSON.stringify(filters), load);
   const { setData } = res;

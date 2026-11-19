@@ -1,5 +1,5 @@
 import type { NextConfig } from "next";
-import { buildCspReportOnly } from "./src/lib/csp";
+import { buildCspEnforced, buildCspReportOnly } from "./src/lib/csp";
 
 const apiInternalUrl = (process.env.API_INTERNAL_URL ?? "http://localhost:4000").replace(/\/$/, "");
 
@@ -31,7 +31,7 @@ const nextConfig: NextConfig = {
   async headers() {
     // Header an toàn cho mọi route. Đặt TRƯỚC các rule riêng bên dưới vì khi trùng key, rule sau
     // thắng (Referrer-Policy: no-referrer ở trang có token/chữ ký trên URL).
-    // CSP chỉ ở chế độ report-only (D-024): chưa thực thi vì Next inline script cần nonce (M7).
+    // CSP đầy đủ ở report-only (D-024); header thực thi chỉ là tập con không cần nonce (D-032).
     return [
       {
         source: "/:path*",
@@ -40,6 +40,7 @@ const nextConfig: NextConfig = {
             key: "Content-Security-Policy-Report-Only",
             value: buildCspReportOnly(process.env.NODE_ENV !== "production"),
           },
+          { key: "Content-Security-Policy", value: buildCspEnforced() },
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "X-Frame-Options", value: "DENY" },

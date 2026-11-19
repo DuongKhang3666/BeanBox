@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Button, buttonClasses } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
@@ -36,6 +36,7 @@ import {
 import { AdminPager } from "./AdminPager";
 import { categoryOptions } from "./categoryOptions";
 import { RestoreProductButton } from "./RestoreProductButton";
+import { useDebouncedUrlInput } from "../useDebouncedUrlInput";
 
 type Loaded = { data: AdminProductListItem[]; meta: PaginationMeta };
 
@@ -239,14 +240,9 @@ export function AdminProducts() {
   const [qInput, setQInput] = useState(urlQ);
 
   // Debounce ô tìm kiếm -> URL.
-  useEffect(() => {
-    const t = qInput.trim();
-    if (t === urlQ) return;
-    const id = setTimeout(() => {
-      router.replace(productsHref({ ...filters, q: t || undefined, page: undefined }));
-    }, 400);
-    return () => clearTimeout(id);
-  }, [qInput, urlQ, filters, router]);
+  useDebouncedUrlInput(qInput, urlQ, (v) =>
+    router.replace(productsHref({ ...filters, q: v, page: undefined })),
+  );
 
   const res = useResource<Loaded>(JSON.stringify(filters), load);
   const cats = useResource<AdminCategory[]>("categories", loadCategories);

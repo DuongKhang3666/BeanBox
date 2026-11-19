@@ -22,6 +22,11 @@ RUN addgroup -S nodejs && adduser -S nextjs -G nodejs
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+# Cache ảnh tối ưu (next/image) và ISR ghi vào .next/cache: thư mục phải ghi được bởi nextjs
+RUN mkdir -p .next/cache && chown -R nextjs:nodejs .next
 USER nextjs
 EXPOSE 3000
+# Runtime tự đọc env API_INTERNAL_URL/INTERNAL_API_SECRET khi chạy (rewrites đã cố định lúc build)
+HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=5 \
+  CMD ["node", "-e", "fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
 CMD ["node", "server.js"]

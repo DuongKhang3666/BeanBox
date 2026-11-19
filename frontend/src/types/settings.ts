@@ -27,8 +27,15 @@ export interface PublicBanner {
   isActive: boolean;
 }
 
+/** Captcha form liên hệ (D-028). `null` = tắt. */
+export interface ContactCaptcha {
+  provider: "turnstile";
+  siteKey: string;
+}
+
 /** GET /settings/public. */
 export interface PublicSettings {
+  contactCaptcha: ContactCaptcha | null;
   shipping: {
     rates: ShippingRates;
     freeShippingThreshold: number;

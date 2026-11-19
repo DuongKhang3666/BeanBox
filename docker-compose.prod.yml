@@ -1,0 +1,175 @@
+# Production / demo trên VPS (D-025). Biến lấy từ .env.production:
+#   docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
+# Chỉ service `caddy` publish cổng ra ngoài; db/backend/frontend chỉ nằm trong mạng Docker nội bộ.
+name: beanbox-prod
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: '5'
+
+services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    init: true
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?Đặt POSTGRES_USER trong .env.production}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Đặt POSTGRES_PASSWORD trong .env.production}
+      POSTGRES_DB: ${POSTGRES_DB:?Đặt POSTGRES_DB trong .env.production}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    logging: *default-logging
+
+  backend:
+    build:
+      context: ./backend
+      target: runtime
+    restart: unless-stopped
+    init: true
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: '4000'
+      TRUST_PROXY: uniquelocal
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?Đặt JWT_ACCESS_SECRET (>= 32 ký tự) trong .env.production}
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:?Đặt INTERNAL_API_SECRET (>= 32 ký tự) trong .env.production}
+      WEB_APP_URL: ${PUBLIC_URL:?Đặt PUBLIC_URL (https://domain) trong .env.production}
+      FRONTEND_ORIGINS: ${PUBLIC_URL}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      MAIL_FROM: ${MAIL_FROM:-BeanBox <no-reply@beanbox.local>}
+      VNPAY_TMN_CODE: ${VNPAY_TMN_CODE:-}
+      VNPAY_HASH_SECRET: ${VNPAY_HASH_SECRET:-}
+      VNPAY_PAYMENT_URL: ${VNPAY_PAYMENT_URL:-}
+      VNPAY_RETURN_URL: ${VNPAY_RETURN_URL:-}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
+      CONTACT_RETENTION_DAYS: ${CONTACT_RETENTION_DAYS:-365}
+      JOBS_ENABLED: ${JOBS_ENABLED:-true}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      ORDER_RATE_LIMIT_PER_MIN: ${ORDER_RATE_LIMIT_PER_MIN:-10}
+      COUPON_RATE_LIMIT_PER_MIN: ${COUPON_RATE_LIMIT_PER_MIN:-10}
+      QUOTE_RATE_LIMIT_PER_MIN: ${QUOTE_RATE_LIMIT_PER_MIN:-30}
+    volumes:
+      - uploads:/app/uploads
+    logging: *default-logging
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Cố định lúc build: đổi domain thì phải build lại image frontend
+        API_INTERNAL_URL: http://backend:4000
+        NEXT_PUBLIC_SITE_URL: ${PUBLIC_URL:?Đặt PUBLIC_URL (https://domain) trong .env.production}
+    restart: unless-stopped
+    init: true
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      API_INTERNAL_URL: http://backend:4000
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:?Đặt INTERNAL_API_SECRET trong .env.production}
+    logging: *default-logging
+
+  caddy:
+    build:
+      context: ./deploy/caddy
+    restart: unless-stopped
+    init: true
+    depends_on:
+      frontend:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    ports:
+      - '${HTTP_PORT:-80}:80'
+      - '${HTTPS_PORT:-443}:443'
+      - '${HTTPS_PORT:-443}:443/udp'
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?Đặt SITE_ADDRESS (domain, hoặc localhost để thử) trong .env.production}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+      EDGE_RATE_AUTH_PER_MIN: ${EDGE_RATE_AUTH_PER_MIN:-30}
+      EDGE_RATE_API_PER_MIN: ${EDGE_RATE_API_PER_MIN:-300}
+      EDGE_RATE_WEB_PER_MIN: ${EDGE_RATE_WEB_PER_MIN:-600}
+    volumes:
+      - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    healthcheck:
+      # Admin API của Caddy chỉ nghe 127.0.0.1 trong container, không publish ra ngoài.
+      test: ['CMD-SHELL', 'wget -q -O- http://127.0.0.1:2019/config/ >/dev/null || exit 1']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging: *default-logging
+
+  # Sao lưu hằng ngày (D-034). Bật: docker compose ... --profile backup up -d backup
+  backup:
+    profiles: ['backup']
+    image: postgres:17
+    restart: unless-stopped
+    init: true
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGHOST: db
+      PGUSER: ${POSTGRES_USER:?Đặt POSTGRES_USER trong .env.production}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?Đặt POSTGRES_PASSWORD trong .env.production}
+      PGDATABASE: ${POSTGRES_DB:?Đặt POSTGRES_DB trong .env.production}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-7}
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+    entrypoint: ['sh', '/deploy/backup/loop.sh']
+    volumes:
+      - ./deploy/backup:/deploy/backup:ro
+      - ./backups:/backups
+      - uploads:/app/uploads:ro
+    logging: *default-logging
+
+  # Seed dữ liệu demo (D-031): docker compose ... --profile tools run --rm seed
+  seed:
+    profiles: ['tools']
+    build:
+      context: ./backend
+      target: tools
+    restart: 'no'
+    init: true
+    depends_on:
+      db:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?Đặt JWT_ACCESS_SECRET trong .env.production}
+      SEED_ALLOW_PRODUCTION: 'true'
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:?Đặt INTERNAL_API_SECRET trong .env.production}
+      # Không dùng `:?` ở đây vì compose nội suy cả service của profile chưa bật; seed tự từ chối nếu thiếu/yếu
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
+      SEED_STAFF_PASSWORD: ${SEED_STAFF_PASSWORD:-}
+      SEED_CUSTOMER_PASSWORD: ${SEED_CUSTOMER_PASSWORD:-}
+    logging: *default-logging
+
+volumes:
+  pgdata:
+  uploads:
+  caddy_data:
+  caddy_config:

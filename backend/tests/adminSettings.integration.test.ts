@@ -241,7 +241,7 @@ describe('GET /settings/public', () => {
     expect(res.headers['cache-control']).toBe('public, max-age=300');
     const d = dataOf(res);
     expect(Object.keys(res.body as object)).toEqual(['data']);
-    expect(Object.keys(d).sort()).toEqual(['home', 'order', 'shipping', 'store']);
+    expect(Object.keys(d).sort()).toEqual(['contactCaptcha', 'home', 'order', 'shipping', 'store']);
     expect(Object.keys(d.shipping).sort()).toEqual([
       'freeShippingThreshold',
       'innerCityProvinces',

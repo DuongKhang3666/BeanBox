@@ -7,6 +7,12 @@ import { env } from './config/env.js';
 import { getPaymentConfig, type PaymentConfig } from './config/payments.js';
 import { UPLOADS_DIR } from './config/paths.js';
 import { logger } from './lib/logger.js';
+import {
+  createTurnstileVerifier,
+  getCaptchaConfig,
+  type CaptchaConfig,
+  type TurnstileVerifier,
+} from './lib/turnstile.js';
 import { errorHandler } from './middlewares/errorHandler.js';
 import { createRateLimiter, isTrustedInternalRequest } from './middlewares/rateLimit.js';
 import { notFound } from './middlewares/notFound.js';
@@ -72,6 +78,10 @@ export interface AppOptions {
   contactRateLimit?: number;
   /** Số request/phút/IP của POST /csp-report (mặc định 20). Chỉ đổi trong test. */
   cspReportRateLimit?: number;
+  /** Cấu hình captcha form liên hệ (D-028). Mặc định đọc từ env; `null` = tắt. Test tiêm giá trị giả. */
+  captchaConfig?: CaptchaConfig | null;
+  /** Hàm xác minh token Turnstile (mặc định gọi Cloudflare). Test tiêm bản giả, không đi qua mạng. */
+  captchaVerify?: TurnstileVerifier;
   /** Thư mục lưu/phục vụ ảnh upload (mặc định backend/uploads). Chỉ đổi trong test. */
   uploadsDir?: string;
 }
@@ -83,6 +93,12 @@ export function createApp(options: AppOptions = {}): Express {
   app.disable('x-powered-by');
   app.set('trust proxy', env.TRUST_PROXY);
   const paymentConfig = options.paymentConfig ?? getPaymentConfig();
+  const captchaConfig =
+    options.captchaConfig === undefined ? getCaptchaConfig() : options.captchaConfig;
+  app.locals.captchaConfig = captchaConfig;
+  app.locals.captchaVerify =
+    options.captchaVerify ??
+    (captchaConfig ? createTurnstileVerifier(captchaConfig.secretKey) : undefined);
   app.locals.stripeHttp = options.stripeHttp;
   app.locals.paymentConfig = paymentConfig; // controller checkout/orders đọc để tính enabled/canPay
 
@@ -174,7 +190,10 @@ export function createApp(options: AppOptions = {}): Express {
     createRateLimiter({
       windowMs: 60_000,
       limit: options.generalRateLimit ?? 100,
-      skip: (req) => req.path === `${API_PREFIX}/health` || isTrustedInternalRequest(req),
+      skip: (req) =>
+        req.path === `${API_PREFIX}/health` ||
+        req.path === `${API_PREFIX}/health/live` ||
+        isTrustedInternalRequest(req),
     }),
   );
   // Webhook Stripe cần RAW body (chữ ký tính trên byte gốc): PHẢI đứng trước express.json().

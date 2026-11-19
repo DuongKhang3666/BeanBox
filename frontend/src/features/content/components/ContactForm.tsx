@@ -11,14 +11,31 @@ import { TextField } from "@/features/auth/components/Fields";
 import { focusFirstInvalid } from "@/features/auth/components/focus";
 import { normalizeEmail, normalizePhone } from "@/features/auth/validation";
 import { ApiError, api } from "@/lib/api/client";
+import type { ContactCaptcha } from "@/types/settings";
+import { fetchContactCaptcha, sameCaptcha } from "../contactCaptcha";
 import { CONTACT_MESSAGE_MAX, validateContact } from "../contactValidation";
+import { TurnstileWidget, type TurnstileHandle } from "./TurnstileWidget";
 
 const FIELDS = ["name", "email", "phone", "subject", "message"] as const;
 const GENERIC_ERROR = "Không gửi được tin nhắn. Vui lòng thử lại sau ít phút.";
 const RATE_LIMIT_ERROR = "Bạn đã gửi quá nhiều tin nhắn, vui lòng thử lại sau ít phút.";
 
-export function ContactForm() {
+const CAPTCHA_FAILED_ERROR =
+  "Xác minh chưa thành công. Vui lòng hoàn tất lại bước xác minh rồi gửi lại.";
+const CAPTCHA_UNAVAILABLE_ERROR = "Hiện chưa xác minh được, vui lòng thử lại sau ít phút.";
+
+interface ContactFormProps {
+  /** Từ GET /settings/public; null/undefined = captcha tắt. */
+  captcha?: ContactCaptcha | null;
+  /** Email cửa hàng, gợi ý khi không tải được captcha. */
+  storeEmail?: string;
+}
+
+export function ContactForm({ captcha: initialCaptcha = null, storeEmail }: ContactFormProps) {
   const { user } = useAuth();
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaBroken, setCaptchaBroken] = useState(false);
+  const turnstile = useRef<TurnstileHandle>(null);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -31,6 +48,28 @@ export function ContactForm() {
   const [sent, setSent] = useState(false);
   const busy = useRef(false);
   const touchedIdentity = useRef(false);
+
+  // Giá trị SSR (có thể cũ do ISR) làm khởi tạo; mount xong lấy bản mới nhất từ API.
+  const [captcha, setCaptcha] = useState<ContactCaptcha | null>(initialCaptcha);
+  const captchaRef = useRef(captcha);
+  useEffect(() => {
+    captchaRef.current = captcha;
+  }, [captcha]);
+
+  async function refreshCaptcha(signal?: AbortSignal) {
+    const latest = await fetchContactCaptcha(signal);
+    if (signal?.aborted || latest === undefined) return;
+    if (!sameCaptcha(latest, captchaRef.current)) {
+      setCaptchaToken(null);
+      setCaptcha(latest);
+    }
+  }
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    void refreshCaptcha(ctrl.signal);
+    return () => ctrl.abort();
+  }, []);
 
   // Điền sẵn họ tên/email khi đã đăng nhập (chỉ khi người dùng chưa tự sửa hai ô này).
   useEffect(() => {
@@ -61,11 +100,20 @@ export function ContactForm() {
         ...(subject.trim() ? { subject: subject.trim() } : {}),
         message: message.trim(),
         website,
+        ...(captcha && captchaToken ? { captchaToken } : {}),
       });
       setSent(true);
     } catch (err) {
       if (err instanceof ApiError && err.status === 429) {
         setFormError(RATE_LIMIT_ERROR);
+      } else if (err instanceof ApiError && err.status === 400 && err.code === "CAPTCHA_FAILED") {
+        setFormError(CAPTCHA_FAILED_ERROR);
+        turnstile.current?.reset();
+        // Form đang tắt captcha mà server đã bật (HTML ISR cũ): lấy lại cấu hình để hiện widget.
+        if (!captchaRef.current) await refreshCaptcha();
+      } else if (err instanceof ApiError && err.status === 503) {
+        setFormError(CAPTCHA_UNAVAILABLE_ERROR);
+        turnstile.current?.reset();
       } else if (err instanceof ApiError && err.status === 400) {
         const mapped = fieldErrorsOf(err);
         const known: Record<string, string> = {};
@@ -75,6 +123,13 @@ export function ContactForm() {
         else setFormError("Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.");
       } else {
         setFormError(GENERIC_ERROR);
+      }
+      // Token Turnstile chỉ dùng được một lần: sau mỗi lần gửi thất bại khác cũng cần token mới.
+      if (
+        captcha &&
+        !(err instanceof ApiError && (err.code === "CAPTCHA_FAILED" || err.status === 503))
+      ) {
+        turnstile.current?.reset();
       }
     } finally {
       busy.current = false;
@@ -89,6 +144,8 @@ export function ContactForm() {
     setErrors({});
     setFormError(undefined);
     setSent(false);
+    setCaptchaToken(null);
+    setCaptchaBroken(false);
   }
 
   if (sent) {
@@ -202,7 +259,40 @@ export function ContactForm() {
         />
       </div>
 
-      <Button type="submit" size="lg" className="w-full" loading={submitting}>
+      {captcha ? (
+        <div className="space-y-2">
+          <TurnstileWidget
+            ref={turnstile}
+            siteKey={captcha.siteKey}
+            onToken={setCaptchaToken}
+            onUnavailable={() => setCaptchaBroken(true)}
+          />
+          {captchaBroken ? (
+            <p role="alert" className="text-sm text-danger-600">
+              Không tải được bước xác minh (có thể do trình duyệt hoặc tiện ích đang chặn). Bạn có
+              thể tải lại trang hoặc gửi email trực tiếp cho cửa hàng
+              {storeEmail ? (
+                <>
+                  {" "}
+                  tại{" "}
+                  <a href={`mailto:${storeEmail}`} className="font-medium underline">
+                    {storeEmail}
+                  </a>
+                </>
+              ) : null}
+              .
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      <Button
+        type="submit"
+        size="lg"
+        className="w-full"
+        loading={submitting}
+        disabled={captcha !== null && !captchaToken}
+      >
         {submitting ? "Đang gửi..." : "Gửi tin nhắn"}
       </Button>
       <p className="text-sm text-coffee-700">

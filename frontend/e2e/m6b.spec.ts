@@ -26,9 +26,8 @@ test("admin xử lý tin nhắn, xem cài đặt và người dùng", async ({ p
   await page.getByLabel("Tìm theo tên, email, tiêu đề hoặc nội dung").fill(token);
   const row = page.getByRole("row", { name: new RegExp(token) });
   await expect(row).toBeVisible();
-  const href = await row.getByRole("link").getAttribute("href");
-  expect(href).toMatch(/^\/admin\/lien-he\/[^/?]+$/);
-  await page.goto(href!);
+  await row.getByRole("link").click();
+  await expect(page).toHaveURL(/\/admin\/lien-he\/[^/?]+$/);
   await expect(page.getByRole("heading", { name: "Nội dung" })).toBeVisible();
   await expect(page.getByText(`Tin nhắn kiểm thử tự động ${token}`)).toBeVisible();
   await page.getByLabel("Trạng thái", { exact: true }).selectOption({ label: "Đã xử lý" });
@@ -54,17 +53,24 @@ test("admin xử lý tin nhắn, xem cài đặt và người dùng", async ({ p
   await page.getByLabel("Tìm theo email, họ tên hoặc SĐT").fill("admin@beanbox.local");
   const adminRow = page.getByRole("row", { name: /admin@beanbox\.local/ });
   await expect(adminRow).toBeVisible();
-  const adminHref = await adminRow.getByRole("link").getAttribute("href");
-  expect(adminHref).toMatch(/^\/admin\/nguoi-dung\/[^/?]+$/);
-  await page.goto(adminHref!);
+  await adminRow.getByRole("link").click();
+  await expect(page).toHaveURL(/\/admin\/nguoi-dung\/[^/?]+$/);
   await expect(page.getByText("Bạn không thể khóa hoặc đổi vai trò của chính mình.")).toBeVisible();
 });
 
-test("chính sách vận chuyển hiển thị phí và trang chủ có CSP report-only", async ({ page }) => {
+test("chính sách vận chuyển hiển thị phí và trang chủ có CSP report-only và CSP thực thi", async ({
+  page,
+}) => {
   await page.goto("/chinh-sach/van-chuyen");
   await expect(page.getByText(/Tiêu chuẩn/).first()).toBeVisible();
 
   const res = await page.request.get("/");
   expect(res.status()).toBe(200);
-  expect(res.headers()["content-security-policy-report-only"]).toContain("default-src 'self'");
+  const reportOnly = res.headers()["content-security-policy-report-only"];
+  expect(reportOnly).toContain("default-src 'self'");
+  expect(reportOnly).toContain("https://challenges.cloudflare.com");
+  expect(reportOnly).toContain("frame-src 'self' https://challenges.cloudflare.com");
+  expect(res.headers()["content-security-policy"]).toBe(
+    "frame-ancestors 'none'; base-uri 'self'; object-src 'none'",
+  );
 });

@@ -1,0 +1,43 @@
+# Cấu hình gitleaks cho BeanBox (D-033). Chạy trong CI bằng Docker image ghim phiên bản.
+# Chỉ allowlist các giá trị mẫu/giả đã biết, theo cặp (đường dẫn + giá trị). KHÔNG allowlist cả thư mục.
+title = "BeanBox gitleaks"
+
+[extend]
+useDefault = true
+
+# Giá trị mẫu dev trong file .env.example (không phải bí mật thật).
+[[allowlists]]
+description = "Giá trị mẫu dev trong .env.example"
+condition = "AND"
+paths = ['''^(backend|frontend)/\.env\.example$''']
+regexes = [
+  '''dev-only-secret-change-me-[0-9a-f]+''',
+  '''dev-internal-secret-change-me-[0-9a-f]+''',
+  '''(Admin|Staff|Customer)12345''',
+]
+
+# Chuỗi giả dùng trong CI (chỉ để chạy test, không dùng ở môi trường thật).
+[[allowlists]]
+description = "Chuỗi giả của workflow CI"
+condition = "AND"
+paths = ['''^\.github/workflows/ci\.yml$''']
+regexes = ['''ci-only-[A-Za-z0-9-]+''']
+
+# Fixture test: khóa/chữ ký giả, từng bị rule generic/stripe bắt nhầm (đã rà soát, không phải bí mật thật).
+[[allowlists]]
+description = "Fixture test: secret VNPay giả"
+condition = "AND"
+paths = ['''^backend/tests/securityHardening\.integration\.test\.ts$''']
+regexes = ['''vnpay-test-secret-0123456789''', '''CHUKY-BI-MAT-XYZ-456''']
+
+[[allowlists]]
+description = "Fixture test: khóa Stripe live giả (kiểm tra backend từ chối sk_live_)"
+condition = "AND"
+paths = ['''^backend/tests/paymentsConfig\.test\.ts$''']
+regexes = ['''sk_live_FAKEFAKEFAKE''']
+
+[[allowlists]]
+description = "Fixture test: INTERNAL_API_SECRET giả cho môi trường test"
+condition = "AND"
+paths = ['''^backend/tests/testEnv\.ts$''']
+regexes = ['''test-internal-secret-0123456789abcdefghij''']

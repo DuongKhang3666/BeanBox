@@ -1,8 +1,9 @@
+import type { CaptchaConfig } from '../../lib/turnstile.js';
 import { loadLocations } from '../locations/locations.data.js';
 import { getAllSettings, type HomeBanner, type StoreContact } from './settings.service.js';
 
 /** Whitelist công khai: KHÔNG trả innerCityWardCodes, isActive hay key nào khác. */
-export async function getPublicSettings() {
+export async function getPublicSettings(captcha: CaptchaConfig | null = null) {
   const { values: v } = await getAllSettings();
   const { provinces } = loadLocations();
   const provinceCodes = v['shipping.innerCityProvinceCodes'] as string[];
@@ -28,6 +29,8 @@ export async function getPublicSettings() {
         address: contact.address,
       },
     },
+    // D-028: chỉ site key (công khai); KHÔNG bao giờ trả secret.
+    contactCaptcha: captcha ? { provider: 'turnstile' as const, siteKey: captcha.siteKey } : null,
     home: {
       banners: banners
         .filter((b) => b.isActive)

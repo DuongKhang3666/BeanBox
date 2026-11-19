@@ -3,8 +3,9 @@ import path from "node:path";
 import { defineConfig, devices } from "@playwright/test";
 
 /**
- * E2E cục bộ (chưa chạy trong CI, D-020). Cần Postgres dev đã migrate + seed.
- * Mật khẩu tài khoản seed đọc từ backend/.env (SEED_*_PASSWORD), không hardcode, không in ra.
+ * E2E cục bộ và trong CI (D-033). Cần Postgres đã migrate + seed.
+ * Mật khẩu tài khoản seed: ưu tiên biến môi trường (CI), nếu thiếu thì đọc từ backend/.env
+ * (SEED_*_PASSWORD), không hardcode, không in ra.
  */
 const BACKEND_DIR = path.resolve(__dirname, "../backend");
 
@@ -25,17 +26,20 @@ function loadSeedPasswords(): void {
 }
 loadSeedPasswords();
 
+const IS_CI = !!process.env.CI;
+
 const FRONTEND_URL = "http://localhost:3000";
 const BACKEND_HEALTH = "http://127.0.0.1:4000/api/v1/health";
 
 export default defineConfig({
+  forbidOnly: IS_CI,
   testDir: "./e2e",
   workers: 1, // rate limit đăng nhập 5/phút/IP
   fullyParallel: false,
-  retries: 0,
+  retries: IS_CI ? 1 : 0,
   timeout: 90_000,
   expect: { timeout: 15_000 },
-  reporter: [["list"]],
+  reporter: IS_CI ? [["list"], ["html", { open: "never" }]] : [["list"]],
   use: {
     baseURL: FRONTEND_URL,
     locale: "vi-VN",
@@ -58,7 +62,7 @@ export default defineConfig({
       command: "npm run dev",
       cwd: BACKEND_DIR,
       url: BACKEND_HEALTH,
-      reuseExistingServer: true,
+      reuseExistingServer: !IS_CI,
       timeout: 120_000,
       env: { JOBS_ENABLED: "false" },
     },
@@ -66,7 +70,7 @@ export default defineConfig({
       command: "npm run dev",
       cwd: __dirname,
       url: FRONTEND_URL,
-      reuseExistingServer: true,
+      reuseExistingServer: !IS_CI,
       timeout: 180_000,
     },
   ],

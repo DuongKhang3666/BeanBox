@@ -180,6 +180,7 @@ function buildPrivacy(email: string): Policy {
         ],
         paragraphs: [
           "BeanBox không lưu địa chỉ IP của bạn khi bạn gửi form liên hệ.",
+          "Tin nhắn liên hệ đã được xử lý hoặc bị đánh dấu là spam sẽ được tự động xóa sau 12 tháng.",
           "BeanBox không bán hay chia sẻ dữ liệu của bạn cho bên thứ ba ngoài mục đích giao hàng.",
         ],
       },

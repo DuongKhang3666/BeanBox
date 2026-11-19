@@ -123,13 +123,40 @@ const schema = z
     ORDER_RATE_LIMIT_PER_MIN: z.coerce.number().int().positive().default(10),
     COUPON_RATE_LIMIT_PER_MIN: z.coerce.number().int().positive().default(10),
     QUOTE_RATE_LIMIT_PER_MIN: z.coerce.number().int().positive().default(30),
+    // D-028: captcha bật khi có ĐỦ cả hai; chỉ một trong hai là lỗi cấu hình.
+    TURNSTILE_SITE_KEY: z.string().optional(),
+    TURNSTILE_SECRET_KEY: z.string().optional(),
+    // D-029: 0 = tắt job xóa tin liên hệ cũ.
+    CONTACT_RETENTION_DAYS: z.coerce
+      .number()
+      .int('CONTACT_RETENTION_DAYS phải là số nguyên >= 0')
+      .min(0, 'CONTACT_RETENTION_DAYS phải là số nguyên >= 0')
+      .default(365),
     SEED_ADMIN_PASSWORD: z.string().optional(),
     SEED_STAFF_PASSWORD: z.string().optional(),
     SEED_CUSTOMER_PASSWORD: z.string().optional(),
   })
   .superRefine((v, ctx) => {
+    const missing = (['TURNSTILE_SITE_KEY', 'TURNSTILE_SECRET_KEY'] as const).filter((k) => !v[k]);
+    if (missing.length === 1) {
+      ctx.addIssue({
+        code: 'custom',
+        path: [missing[0]!],
+        message: `Thiếu ${missing[0]!}: phải đặt cả TURNSTILE_SITE_KEY và TURNSTILE_SECRET_KEY, hoặc bỏ trống cả hai`,
+      });
+    }
+  })
+  .superRefine((v, ctx) => {
     // Chặn secret mẫu ở production; thông báo KHÔNG in giá trị.
     if (v.NODE_ENV !== 'production') return;
+    if (!v.INTERNAL_API_SECRET) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['INTERNAL_API_SECRET'],
+        message:
+          'INTERNAL_API_SECRET là bắt buộc ở production (thiếu thì mọi request SSR dùng chung một IP và dính 429)',
+      });
+    }
     for (const key of ['JWT_ACCESS_SECRET', 'INTERNAL_API_SECRET'] as const) {
       if (v[key]?.startsWith('dev-')) {
         ctx.addIssue({

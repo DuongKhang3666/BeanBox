@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { buttonClasses } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
@@ -32,6 +32,7 @@ import {
   parseOrderFilters,
 } from "../orderFilters";
 import { NeedsRefundBadge } from "./OrderPayments";
+import { useDebouncedUrlInput } from "../useDebouncedUrlInput";
 
 const load = (key: string) => {
   const query = JSON.parse(key) as AdminOrderQuery;
@@ -287,14 +288,12 @@ export function AdminOrders() {
   const [dateError, setDateError] = useState<string | null>(null);
 
   // Debounce ô tìm: chỉ cập nhật URL khi rỗng (xóa lọc) hoặc >= 2 ký tự.
-  useEffect(() => {
-    const t = qInput.trim();
-    if (t === urlQ || t.length === 1) return;
-    const id = setTimeout(() => {
-      router.replace(orderFiltersHref({ ...filters, q: t || undefined, page: undefined }));
-    }, 400);
-    return () => clearTimeout(id);
-  }, [qInput, urlQ, filters, router]);
+  useDebouncedUrlInput(
+    qInput,
+    urlQ,
+    (v) => router.replace(orderFiltersHref({ ...filters, q: v, page: undefined })),
+    (t) => t.length === 1,
+  );
 
   const res = useResource(JSON.stringify(filters), load);
 

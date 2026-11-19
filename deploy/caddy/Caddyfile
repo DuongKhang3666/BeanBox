@@ -1,0 +1,160 @@
+# Caddyfile production (D-026). Biến môi trường (compose truyền vào container caddy):
+#   SITE_ADDRESS            domain thật -> TLS Let's Encrypt tự động; "localhost" -> CA nội bộ để thử
+#   ACME_EMAIL              tùy chọn, email đăng ký ACME (có thể để trống)
+#   EDGE_RATE_AUTH_PER_MIN  POST /api/v1/auth/*              (mặc định 30)
+#   EDGE_RATE_API_PER_MIN   /api/v1/*                        (mặc định 300)
+#   EDGE_RATE_WEB_PER_MIN   mọi request tới frontend, trừ /_next/static/* (mặc định 600)
+#
+# IP client: KHÔNG khai báo trusted_proxies => Caddy bỏ qua X-Forwarded-For do client gửi và
+# tự ghi đè bằng IP kết nối thật. Backend (TRUST_PROXY=uniquelocal) chỉ tin hop Caddy trong mạng Docker.
+#
+# Nếu đặt Cloudflare (proxy cam) phía trước, mọi kết nối đến từ IP Cloudflare nên rate limit/IP
+# log sẽ sai (cả thế giới chung vài IP). Khi đó thêm vào khối global options bên dưới (KHÔNG bật mặc định):
+#     servers {
+#         trusted_proxies static <danh sách CIDR của Cloudflare: https://www.cloudflare.com/ips/>
+#         client_ip_headers CF-Connecting-IP
+#     }
+# Với cấu hình trên {client_ip} (dùng cho rate limit) lấy từ CF-Connecting-IP và XFF gửi lên backend
+# cũng được dựng lại đúng. Chỉ bật khi cổng 80/443 chỉ nhận lưu lượng từ Cloudflare (firewall VPS).
+{
+	# email để trong dấu nháy: rỗng thì thành chuỗi rỗng (Caddy bỏ qua), không làm hỏng cấu hình
+	email "{$ACME_EMAIL:}"
+	# plugin rate limit không có thứ tự mặc định
+	order rate_limit before reverse_proxy
+}
+
+{$SITE_ADDRESS:localhost} {
+	log {
+		output stdout
+		format filter {
+			wrap json
+			# URI bỏ query string (token đặt lại mật khẩu, chữ ký VNPay nằm trong query)
+			request>uri regexp \?.* ""
+			request>headers>Cookie delete
+			request>headers>Authorization delete
+			request>headers>X-Internal-Secret delete
+			resp_headers>Set-Cookie delete
+		}
+	}
+	log_append request_id {http.request.uuid}
+
+	encode zstd gzip
+
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000"
+		# Dấu ? : chỉ đặt khi upstream chưa có, tránh header trùng
+		?X-Content-Type-Options nosniff
+		?Referrer-Policy strict-origin-when-cross-origin
+		?X-Frame-Options DENY
+		?Permissions-Policy "camera=(), microphone=(), geolocation=()"
+	}
+
+	# Giới hạn body: 1 MB mặc định, 6 MB cho upload ảnh admin
+	@adminUploads path /api/v1/admin/uploads*
+	handle @adminUploads {
+		request_body {
+			max_size 6MB
+		}
+		rate_limit {
+			zone api {
+				key {client_ip}
+				events {$EDGE_RATE_API_PER_MIN:300}
+				window 1m
+			}
+		}
+		reverse_proxy backend:4000 {
+			header_up X-Request-Id {http.request.uuid}
+		}
+	}
+
+	handle /api/v1/* {
+		request_body {
+			max_size 1MB
+		}
+		rate_limit {
+			zone auth {
+				match {
+					method POST
+					path /api/v1/auth/*
+				}
+				key {client_ip}
+				events {$EDGE_RATE_AUTH_PER_MIN:30}
+				window 1m
+			}
+			zone api {
+				key {client_ip}
+				events {$EDGE_RATE_API_PER_MIN:300}
+				window 1m
+			}
+		}
+		reverse_proxy backend:4000 {
+			header_up X-Request-Id {http.request.uuid}
+		}
+	}
+
+	# Ảnh tải lên: không giới hạn ở edge
+	handle /uploads/* {
+		reverse_proxy backend:4000 {
+			header_up X-Request-Id {http.request.uuid}
+		}
+	}
+
+	# Tài nguyên tĩnh của Next: không giới hạn, giữ Cache-Control immutable của Next
+	handle /_next/static/* {
+		reverse_proxy frontend:3000 {
+			header_up X-Request-Id {http.request.uuid}
+		}
+	}
+
+	# Còn lại: SSR / _next/image / trang
+	handle {
+		request_body {
+			max_size 1MB
+		}
+		rate_limit {
+			zone web {
+				key {client_ip}
+				events {$EDGE_RATE_WEB_PER_MIN:600}
+				window 1m
+			}
+		}
+		reverse_proxy frontend:3000 {
+			header_up X-Request-Id {http.request.uuid}
+		}
+	}
+
+	# Phản hồi lỗi do chính Caddy sinh ra (429 từ rate limit, 413 body quá lớn, 502...) không đi qua
+	# khối `header` ở trên nên phải bỏ `Server` ở đây (giữ nguyên Retry-After của plugin).
+	# Với /api/v1/* trả JSON đúng format lỗi chuẩn (docs/api-contract.md §1) để FE đọc được.
+	handle_errors {
+		header -Server
+
+		@apiUpload path /api/v1/admin/uploads*
+		@api path /api/v1/*
+		@e429 expression {http.error.status_code} == 429
+		@e413 expression {http.error.status_code} == 413
+		@e5xx expression {http.error.status_code} in [502, 503, 504]
+
+		handle @api {
+			header Content-Type "application/json; charset=utf-8"
+
+			handle @e429 {
+				respond `{"error":{"code":"RATE_LIMITED","message":"Bạn thao tác quá nhanh, vui lòng thử lại sau"}}`
+			}
+			# 413 chỉ dùng mã PAYLOAD_TOO_LARGE cho upload; route khác là VALIDATION_ERROR (contract §2)
+			handle @e413 {
+				handle @apiUpload {
+					respond `{"error":{"code":"PAYLOAD_TOO_LARGE","message":"Dữ liệu gửi lên quá lớn"}}`
+				}
+				respond `{"error":{"code":"VALIDATION_ERROR","message":"Dữ liệu gửi lên quá lớn"}}`
+			}
+			handle @e5xx {
+				respond `{"error":{"code":"SERVICE_UNAVAILABLE","message":"Dịch vụ tạm thời không khả dụng"}}`
+			}
+			respond `{"error":{"code":"INTERNAL_ERROR","message":"Đã có lỗi xảy ra. Vui lòng thử lại."}}`
+		}
+
+		respond "{http.error.status_code} {http.error.status_text}"
+	}
+}

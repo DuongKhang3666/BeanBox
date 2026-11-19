@@ -28,6 +28,17 @@
 - [D-022 Quản lý người dùng](#d-022-quản-lý-người-dùng)
 - [D-023 Form liên hệ](#d-023-form-liên-hệ)
 - [D-024 CSP report-only](#d-024-csp-report-only)
+- [D-025 Mô hình triển khai demo](#d-025-mô-hình-triển-khai-demo)
+- [D-026 Reverse proxy Caddy và rate limit ở edge](#d-026-reverse-proxy-caddy-và-rate-limit-ở-edge)
+- [D-027 Rate limit khi nhiều instance](#d-027-rate-limit-khi-nhiều-instance)
+- [D-028 Captcha tùy chọn cho form liên hệ (Cloudflare Turnstile)](#d-028-captcha-tùy-chọn-cho-form-liên-hệ-cloudflare-turnstile)
+- [D-029 Thời hạn lưu tin nhắn liên hệ](#d-029-thời-hạn-lưu-tin-nhắn-liên-hệ)
+- [D-030 Health và quan sát tối thiểu](#d-030-health-và-quan-sát-tối-thiểu)
+- [D-031 Seed dữ liệu demo trên production (opt-in)](#d-031-seed-dữ-liệu-demo-trên-production-opt-in)
+- [D-032 CSP ở M7](#d-032-csp-ở-m7)
+- [D-033 CI (GitHub Actions)](#d-033-ci-github-actions)
+- [D-034 Backup và khôi phục](#d-034-backup-và-khôi-phục)
+- [D-035 Sửa hai rủi ro tồn đọng trước deploy](#d-035-sửa-hai-rủi-ro-tồn-đọng-trước-deploy)
 
 ---
 
@@ -274,6 +285,7 @@
   4. **Hoãn M6b (dự kiến trước deploy M7):** settings admin (`/admin/settings`, `/settings/public`), quản lý người dùng, contact/newsletter (§14.9). Cập nhật 2026-11-19: M6b đã chi tiết hóa ở D-021..D-024 (newsletter vẫn hoãn).
   5. **Nợ kỹ thuật ghi nhận:** gộp các hàm `dateOnly` trùng lặp; thêm file dữ liệu hành chính (`backend/data/provinces-wards.json`) vào `.prettierignore`.
 - **Hệ quả:** Trang vận chuyển vẫn là nội dung tĩnh tới khi có settings công khai (D-013). Quản lý user/khóa tài khoản chưa có UI trong M6. E2E chưa chặn merge.
+- **Cập nhật 2026-11-20:** E2E đã chạy trong CI từ M7, xem D-033.
 - **Docs bị ảnh hưởng:** `api-contract.md` §14.9; `requirements.md` §11; `architecture.md` §2, §6.
 
 ## D-021 Cài đặt cửa hàng
@@ -331,4 +343,141 @@
   4. Kế hoạch M7: thu thập vi phạm, chuyển sang nonce và chế độ thực thi.
   5. Backend API vẫn giữ CSP mặc định của helmet cho response JSON.
 - **Hệ quả/rủi ro:** Chưa có bảo vệ thực sự từ CSP cho đến M7; log `warn` có thể nhiều ở dev (đã giới hạn bằng rate limit).
+- **Cập nhật 2026-11-20:** kế hoạch nonce ở M7 đã được thay đổi, xem D-032.
 - **Docs bị ảnh hưởng:** `api-contract.md` §14.12; `architecture.md`; `testing.md`.
+
+## D-025 Mô hình triển khai demo
+
+- **Ngày:** 2026-11-19 · **Người chốt:** Tech Lead theo ủy quyền chủ dự án
+- **Trạng thái:** Áp dụng.
+- **Bối cảnh:** M7 chuẩn bị deploy demo lên một VPS; cần mô hình đơn giản, tách hẳn môi trường dev.
+- **Quyết định:**
+  1. Một VPS Linux chạy Docker Compose bằng `docker-compose.prod.yml` có `name: beanbox-prod`. Service: `db` (postgres:17, KHÔNG publish cổng), `backend`, `frontend` (Next standalone), `caddy` (service DUY NHẤT publish 80/443); tùy chọn `backup` (profile `backup`) và `seed` (profile `tools`).
+  2. Image build ngay trên VPS (`docker compose build`), không registry, không deploy tự động. Mailpit không có ở production; SMTP thật qua env.
+  3. Volume: `pgdata`, `uploads` (gắn `/app/uploads` của backend), `caddy_data`, `caddy_config`; backup ghi ra thư mục bind `./backups`.
+  4. Backend khởi động: `prisma migrate deploy` rồi `exec node dist/server.js`; container chạy user không phải root, `init: true`; MỘT instance backend.
+  5. Biến môi trường production lấy từ `.env.production` (không commit; mẫu `.env.production.example`). Log Docker driver json-file xoay vòng (10 MB x 5 file).
+- **Hệ quả/rủi ro:** `NEXT_PUBLIC_SITE_URL` và URL rewrites của Next được nhúng lúc build nên đổi domain phải build lại image frontend. Build trên VPS tốn tài nguyên và không có rollback tự động.
+- **Docs bị ảnh hưởng:** `docs/deployment.md`; `architecture.md`.
+
+## D-026 Reverse proxy Caddy và rate limit ở edge
+
+- **Ngày:** 2026-11-19 · **Người chốt:** Tech Lead theo ủy quyền chủ dự án
+- **Trạng thái:** Áp dụng. Đóng phần "M7 đặt rate limit ở edge" của D-009, D-011, D-023.
+- **Bối cảnh:** Rate limit trong backend không bảo vệ lưu lượng SSR của Next và dùng bộ nhớ từng tiến trình; cần lớp edge và TLS tự động.
+- **Quyết định:**
+  1. Caddy 2 build kèm plugin `github.com/mholt/caddy-ratelimit` qua xcaddy (ghim phiên bản). Chọn Caddy vì TLS tự động Let's Encrypt khi có domain; nginx cần certbot riêng.
+  2. Định tuyến: `/api/v1/*` và `/uploads/*` -> `backend:4000` trực tiếp; còn lại -> `frontend:3000`.
+  3. IP client: Caddy không tin `X-Forwarded-For` từ client (không khai báo `trusted_proxies`) và tự đặt XFF = IP kết nối; backend `TRUST_PROXY=uniquelocal` (backend không publish cổng, chỉ Caddy/Next trong mạng Docker gọi tới). Nếu đặt Cloudflare (proxy cam) phía trước thì phải cấu hình `trusted_proxies` + header IP của Cloudflare, nếu không mọi khách chung một IP.
+  4. Rate limit edge theo IP, cửa sổ 1 phút, chỉnh qua env: `POST /api/v1/auth/*` 30; `/api/v1/*` 300; mọi request tới frontend trừ `/_next/static/*` 600 (gồm SSR và `/_next/image`). `/uploads/*`, `/_next/static/*` không giới hạn ở edge. Vượt -> 429 kèm `Retry-After`. Backend vẫn giữ các limiter chi tiết (D-009, D-011).
+  5. Header: `Strict-Transport-Security: max-age=31536000` (không preload), `X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options`, `Permissions-Policy` chỉ đặt khi upstream chưa có; bỏ header `Server`.
+  6. Giới hạn body 1 MB, riêng `/api/v1/admin/uploads*` 6 MB. Nén zstd/gzip. `/_next/static/*` giữ `Cache-Control` immutable của Next.
+  7. Access log JSON ra stdout, URI bỏ query string (chứa token đặt lại mật khẩu, chữ ký VNPay), không log cookie/Authorization. Caddy gửi `X-Request-Id` = UUID của request lên upstream và ghi vào log để đối chiếu với log backend.
+- **Hệ quả/rủi ro:** Plugin rate limit là bên thứ ba; bộ đếm trong bộ nhớ của Caddy, reset khi restart.
+- **Docs bị ảnh hưởng:** `docs/deployment.md`; `api-contract.md` §1 (rate limit); `architecture.md` §3.
+
+## D-027 Rate limit khi nhiều instance
+
+- **Ngày:** 2026-11-19 · **Người chốt:** Tech Lead theo ủy quyền chủ dự án
+- **Trạng thái:** Áp dụng.
+- **Bối cảnh:** `express-rate-limit` mặc định dùng MemoryStore, không chia sẻ giữa nhiều instance.
+- **Quyết định:** Giữ MemoryStore, chạy 1 instance backend; rate limit ở edge (D-026) là lớp chính cho lưu lượng SSR. KHÔNG thêm Redis ở M7.
+- **Hệ quả/rủi ro:** Scale ngang cần store dùng chung (ví dụ Redis) cho cả backend và edge; ngoài phạm vi demo. Restart backend xóa bộ đếm. Job nền đã an toàn nhiều instance nhờ advisory lock.
+- **Docs bị ảnh hưởng:** `docs/deployment.md`; `architecture.md`.
+
+## D-028 Captcha tùy chọn cho form liên hệ (Cloudflare Turnstile)
+
+- **Ngày:** 2026-11-19 · **Người chốt:** Tech Lead theo ủy quyền chủ dự án
+- **Trạng thái:** Áp dụng.
+- **Bối cảnh:** D-023 chấp nhận spam qua nhiều IP và để ngỏ captcha cho M7; không muốn bắt buộc khóa bên thứ ba.
+- **Quyết định:**
+  1. Env backend `TURNSTILE_SITE_KEY` + `TURNSTILE_SECRET_KEY`: có ĐỦ cả hai mới bật; thiếu một hoặc cả hai thì tắt (mặc định tắt, repo không chứa khóa nào). Khi bật, `GET /settings/public` trả `contactCaptcha: { provider: "turnstile", siteKey }`, khi tắt trả `null` (FE đọc site key lúc chạy, không nhúng lúc build).
+  2. `POST /contact` nhận thêm `captchaToken` (chuỗi tùy chọn, tối đa 2048 ký tự). Thứ tự: rate limit -> xác thực tùy chọn -> validate (400) -> honeypot (201 giả, không gọi Cloudflare) -> captcha (khi bật) -> lưu.
+  3. Captcha bật mà thiếu token hoặc Cloudflare trả `success: false` -> 400 `CAPTCHA_FAILED`. Gọi siteverify lỗi mạng/timeout 5 giây/phản hồi không hợp lệ -> 503 `SERVICE_UNAVAILABLE` (fail closed). Server gọi `https://challenges.cloudflare.com/turnstile/v0/siteverify` bằng `fetch` (POST form `secret`, `response`), KHÔNG gửi IP client, không log token/secret.
+  4. FE: chỉ trang `/lien-he` tải script Turnstile khi `contactCaptcha` khác `null`; CSP report-only thêm `https://challenges.cloudflare.com` vào `script-src` và `frame-src`.
+- **Hệ quả/rủi ro:** Dữ liệu phản hồi captcha đi qua Cloudflare; khi bật, người dùng chặn script bên thứ ba không gửi được form (hiện thông báo dùng email cửa hàng).
+- **Docs bị ảnh hưởng:** `api-contract.md` §2, §14.9, §14.11, §14.12; `backend/.env.example`.
+
+## D-029 Thời hạn lưu tin nhắn liên hệ
+
+- **Ngày:** 2026-11-19 · **Người chốt:** Tech Lead theo ủy quyền chủ dự án
+- **Trạng thái:** Áp dụng. Đóng `api-contract.md` §15 mục 15.
+- **Bối cảnh:** `ContactMessage` chứa dữ liệu cá nhân (tên, email, SĐT) nhưng chưa có thời hạn lưu.
+- **Quyết định:** Env `CONTACT_RETENTION_DAYS` (số nguyên >= 0, mặc định 365; 0 = tắt). Job dọn dẹp mỗi 60 phút (cùng advisory lock của job dọn dẹp) XÓA CỨNG `ContactMessage` có `status` thuộc `RESOLVED`/`SPAM` và `createdAt` < now - N ngày. Tin `NEW`/`IN_PROGRESS` giữ tới khi được xử lý. Không ẩn danh hóa (xóa hẳn đơn giản hơn); AuditLog `contact.update` không chứa nội dung nên giữ nguyên.
+- **Hệ quả/rủi ro:** Trang chính sách bảo mật nêu thời hạn 12 tháng; đổi env khác 365 thì phải sửa trang cho khớp. Backup cũ vẫn chứa dữ liệu đã xóa tới khi xoay vòng hết (D-034).
+- **Docs bị ảnh hưởng:** `api-contract.md` §14.11, §15 mục 15; `backend/.env.example`; trang chính sách bảo mật.
+
+## D-030 Health và quan sát tối thiểu
+
+- **Ngày:** 2026-11-19 · **Người chốt:** Tech Lead theo ủy quyền chủ dự án
+- **Trạng thái:** Áp dụng.
+- **Bối cảnh:** Docker healthcheck cần phân biệt tiến trình sống với phụ thuộc DB sẵn sàng; demo chưa cần metrics.
+- **Quyết định:**
+  1. `GET /api/v1/health` giữ nguyên = readiness (kiểm DB, 503 khi DB lỗi), dùng cho healthcheck container backend. Thêm `GET /api/v1/health/live` = liveness (không chạm DB, luôn 200 `{ data: { status: "ok" } }`). Cả hai miễn rate limit chung, không log truy cập.
+  2. Frontend có route `GET /healthz` (Next route handler, không gọi backend, `Cache-Control: no-store`) cho healthcheck container frontend.
+  3. Log: backend pino JSON có `reqId` (đã có, nhận `X-Request-Id` hợp lệ từ Caddy), Caddy JSON access log; xem bằng `docker compose logs`. Không có metrics/APM ở M7.
+- **Hệ quả/rủi ro:** Không có cảnh báo tự động; chủ dự án tự theo dõi (uptime monitor ngoài nếu cần).
+- **Docs bị ảnh hưởng:** `api-contract.md` §3, §15 mục 12; `docs/deployment.md`.
+
+## D-031 Seed dữ liệu demo trên production (opt-in)
+
+- **Ngày:** 2026-11-19 · **Người chốt:** Tech Lead theo ủy quyền chủ dự án
+- **Trạng thái:** Áp dụng.
+- **Bối cảnh:** Seed hiện bị từ chối ở production; demo cần dữ liệu mẫu nhưng không được lọt mật khẩu mặc định.
+- **Quyết định:**
+  1. Seed vẫn bị từ chối khi `NODE_ENV=production` TRỪ KHI `SEED_ALLOW_PRODUCTION=true`.
+  2. Khi opt-in: cả 3 mật khẩu `SEED_*_PASSWORD` phải >= 12 ký tự, có chữ và số, và KHÔNG trùng giá trị mẫu trong `backend/.env.example`.
+  3. Chạy qua service `seed` (profile `tools`) dùng stage `tools` của Dockerfile backend (có tsx + dev deps); image runtime không chứa tsx.
+- **Hệ quả/rủi ro:** Dữ liệu demo gồm tài khoản `@beanbox.local`, sản phẩm mẫu, coupon mẫu; chủ dự án đổi mật khẩu/khóa tài khoản mẫu nếu mở demo công khai.
+- **Docs bị ảnh hưởng:** `docs/deployment.md`; `backend/.env.example`.
+
+## D-032 CSP ở M7
+
+- **Ngày:** 2026-11-19 · **Người chốt:** Tech Lead theo ủy quyền chủ dự án
+- **Trạng thái:** Áp dụng. Cập nhật kế hoạch M7 của D-024.
+- **Bối cảnh:** D-024 dự kiến chuyển sang nonce ở M7; nonce buộc mọi trang render động, mất ISR/cache của catalog.
+- **Quyết định:**
+  1. KHÔNG chuyển sang nonce ở M7. Giữ `Content-Security-Policy-Report-Only` đầy đủ như D-024 (thêm Turnstile theo D-028).
+  2. Thêm header `Content-Security-Policy` THỰC THI một tập con không cần nonce: `frame-ancestors 'none'; base-uri 'self'; object-src 'none'`.
+- **Hệ quả/rủi ro:** Chưa chặn XSS bằng `script-src`; xem lại khi có nhu cầu (nonce + dynamic hoặc hash).
+- **Docs bị ảnh hưởng:** `api-contract.md` §14.12; `architecture.md`.
+
+## D-033 CI (GitHub Actions)
+
+- **Ngày:** 2026-11-19 · **Người chốt:** Tech Lead theo ủy quyền chủ dự án
+- **Trạng thái:** Áp dụng. Thay đổi phần "E2E chỉ cục bộ" của D-020.
+- **Bối cảnh:** Cần kiểm tra tự động trước khi deploy; chưa muốn deploy tự động.
+- **Quyết định:** Các job:
+  1. `backend`: Postgres service; `npm ci`, `prisma generate`, `migrate deploy` trên DB trống, kiểm drift bằng `prisma migrate diff --from-migrations ... --to-schema-datamodel ... --shadow-database-url ... --exit-code`, lint, typecheck, test, build.
+  2. `frontend`: lint, typecheck, test, build.
+  3. `e2e`: Playwright chromium của runner Linux, Postgres service, migrate + seed DB, chạy sau backend/frontend.
+  4. `secret-scan`: gitleaks chạy bằng Docker image ghim phiên bản, quét lịch sử git.
+  5. `audit`: `npm audit` cả hai phía, chỉ báo cáo, không làm fail.
+  6. `docker`: build image backend/frontend/caddy, không push.
+  7. Cache npm. KHÔNG có deploy tự động.
+- **Hệ quả/rủi ro:** E2E chuyển từ "chỉ cục bộ" (D-020) sang chạy trong CI; E2E có thể chậm/flaky hơn. `audit` không chặn nên cần xem báo cáo thủ công.
+- **Docs bị ảnh hưởng:** `testing.md`; `.github/workflows/`.
+
+## D-034 Backup và khôi phục
+
+- **Ngày:** 2026-11-19 · **Người chốt:** Tech Lead theo ủy quyền chủ dự án
+- **Trạng thái:** Áp dụng.
+- **Bối cảnh:** Demo có dữ liệu thật (đơn, người dùng, ảnh upload) cần sao lưu tối thiểu.
+- **Quyết định:**
+  1. Script trong `deploy/backup/`: `pg_dump -Fc` hằng ngày, xoay vòng giữ `BACKUP_RETENTION_DAYS` (mặc định 7) ngày; nén thư mục uploads (`tar.gz`) cùng lịch; khôi phục bằng `pg_restore --clean --if-exists --no-owner` vào DB đích (hướng dẫn trong `docs/deployment.md`).
+  2. Chạy tùy chọn bằng service `backup` (profile `backup`, vòng lặp ngủ 24 giờ) hoặc cron của VPS gọi `docker compose run --rm backup ...`. Ghi ra `./backups` trên VPS.
+- **Hệ quả/rủi ro:** Backup nằm cùng máy với DB; chủ dự án phải tự sao chép ra ngoài (off-site). Phải thử khôi phục định kỳ.
+- **Docs bị ảnh hưởng:** `docs/deployment.md`; `deploy/backup/`.
+
+## D-035 Sửa hai rủi ro tồn đọng trước deploy
+
+- **Ngày:** 2026-11-20 · **Người chốt:** Tech Lead theo ủy quyền chủ dự án
+- **Trạng thái:** Áp dụng.
+- **Bối cảnh:** Rà soát cuối M7 trước khi deploy còn hai rủi ro: slug không tồn tại trả HTTP 200 thay vì 404, và click link trong bảng admin đôi khi không điều hướng.
+- **Quyết định:**
+  1. **404 trả 200 ở slug không tồn tại.** Nguyên nhân: `loading.tsx` ở gốc (`app/loading.tsx`), `san-pham/[slug]` và `danh-muc/[slug]` tạo Suspense boundary nên response được stream với mã 200 trước khi `notFound()` chạy (Next chỉ chèn meta `noindex` vào trang, không đổi được mã). Đã xóa 3 file này; `tim-kiem/loading.tsx` giữ nguyên. Kết quả đo trên bản build: `/san-pham/<slug lạ>` và `/danh-muc/<slug lạ>` đổi từ 200 sang 404 cho cả user agent thường lẫn Googlebot; slug hợp lệ vẫn 200; redirect 308 cho slug cũ (D-018) giữ nguyên. Đánh đổi: khi chuyển trang phía client tới các trang server động, không còn skeleton ở cấp gốc (người dùng thấy trang cũ cho tới khi trang mới sẵn sàng).
+  2. **Click link trong bảng admin không điều hướng.** Đây là lỗi thật, không phải lỗi test: 8 bảng admin dùng ô lọc debounce 400 ms rồi gọi `router.replace` để cập nhật query; timer bắn khi trang danh sách còn mounted trong lúc đang chuyển sang trang chi tiết và kéo người dùng về danh sách. Sửa bằng hook dùng chung `frontend/src/features/admin/useDebouncedUrlInput.ts` (hủy debounce đang chờ khi người dùng click link nội bộ). E2E đổi sang click link thật thay vì điều hướng thẳng bằng URL để bắt được lỗi này.
+- **Rủi ro còn lại (đã chấp nhận):**
+  - Các trang tĩnh đọc `/settings/public` (giới thiệu, liên hệ, chính sách, footer...) được prerender lúc build bằng cài đặt mặc định vì lúc build image không có backend; tự lành sau ISR 300 giây kể từ lần truy cập đầu tiên sau mốc đó (D-021). Build chậm thêm khoảng 1-2 phút do fetch thất bại. Sau deploy nên mở lướt các trang chính (xem `deployment.md` mục 8).
+  - Form liên hệ lấy `contactCaptcha` mới nhất phía client (không dựa vào giá trị prerender) để bật/tắt Turnstile (D-028) có hiệu lực ngay mà không phải chờ ISR.
+- **Docs bị ảnh hưởng:** `docs/deployment.md` (mục 8); `docs/testing.md` (E2E).

@@ -16,6 +16,8 @@ export function applyTestEnv(): void {
     'VNPAY_HASH_SECRET',
     'STRIPE_SECRET_KEY',
     'STRIPE_WEBHOOK_SECRET',
+    'TURNSTILE_SITE_KEY',
+    'TURNSTILE_SECRET_KEY',
   ]) {
     process.env[k] = '';
   }

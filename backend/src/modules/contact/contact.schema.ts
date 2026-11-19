@@ -64,5 +64,18 @@ const website = z
   })
   .optional();
 
-export const createContactSchema = z.object({ name, email, phone, subject, message, website });
+const captchaToken = z
+  .string({ error: 'Mã xác minh không hợp lệ' })
+  .max(2048, 'Mã xác minh không hợp lệ')
+  .optional();
+
+export const createContactSchema = z.object({
+  name,
+  email,
+  phone,
+  subject,
+  message,
+  website,
+  captchaToken,
+});
 export type CreateContactInput = z.infer<typeof createContactSchema>;
