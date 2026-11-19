@@ -4,8 +4,10 @@
 # Dùng biến PGHOST/PGUSER/PGPASSWORD/PGDATABASE. Không để file dở.
 #
 # Mã thoát: 0 thành công; 2 cấu hình không hợp lệ (số nguyên sai...); 3 đẩy off-site hoặc kiểm toàn vẹn
-# thất bại; 4 cấu hình off-site sai (thiếu/sai recipient age, thiếu rclone/age). Với mã 3 và 4 bản backup
-# cục bộ VẪN được giữ. Lỗi pg_dump/tar: mã khác 0 của lệnh đó.
+# thất bại; 4 cấu hình off-site sai (thiếu/sai recipient age, thiếu rclone/age); 5 đã có backup khác đang
+# giữ khóa (D-042): bỏ qua lần này, không tạo dump, KHÔNG gọi heartbeat (lần chạy kia sẽ báo). Với mã 3 và 4
+# bản backup cục bộ VẪN được giữ. Lỗi pg_dump/tar: mã khác 0 của lệnh đó.
+# Khóa: flock trên $BACKUP_DIR/.backup.lock (chỉ có hiệu lực giữa các tiến trình/container cùng một host).
 #
 # Biến off-site (đặt trong .env.backup, xem .env.backup.example):
 #   BACKUP_REMOTE                    rỗng = tắt; ví dụ offsite:beanbox-backups/prod
@@ -38,6 +40,7 @@ HEARTBEAT_FAIL_URL="${BACKUP_HEARTBEAT_FAIL_URL:-}"
 STAGE=""
 DB_TMP=""
 UP_TMP=""
+SKIP_PING=0 # =1 khi bỏ qua vì backup khác đang chạy (mã 5): không ping ok lẫn fail
 
 log() { echo "[backup] $*"; }
 warn() { echo "[backup] $*" >&2; }
@@ -62,7 +65,9 @@ on_exit() {
   trap - EXIT
   [ -z "$DB_TMP" ] || rm -f "$DB_TMP" "$UP_TMP"
   [ -z "$STAGE" ] || rm -rf "$STAGE"
-  if [ "$rc" -eq 0 ]; then
+  if [ "$SKIP_PING" -eq 1 ]; then
+    :
+  elif [ "$rc" -eq 0 ]; then
     ping_url "$HEARTBEAT_URL"
   else
     ping_url "$HEARTBEAT_FAIL_URL"
@@ -94,6 +99,19 @@ fi
 
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
 mkdir -p "$BACKUP_DIR/db" "$BACKUP_DIR/uploads"
+
+# Khóa chống hai backup chạy chồng (D-042). fd 9 giữ khóa tới khi tiến trình thoát (các tiến trình con kế thừa fd).
+LOCK="$BACKUP_DIR/.backup.lock"
+if command -v flock >/dev/null 2>&1; then
+  exec 9>"$LOCK"
+  if ! flock -n 9; then
+    SKIP_PING=1
+    log "đã có backup khác đang chạy, bỏ qua lần này"
+    exit 5
+  fi
+else
+  warn "CẢNH BÁO: không có lệnh flock, chạy không khóa (dùng image build từ deploy/backup)"
+fi
 
 DB_FINAL="$BACKUP_DIR/db/beanbox-$TS.dump"
 UP_FINAL="$BACKUP_DIR/uploads/uploads-$TS.tar.gz"

@@ -9,7 +9,12 @@ set -u
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 T="$(mktemp -d /tmp/bb-selftest.XXXXXX)"
-trap 'rm -rf "$T"' EXIT
+HOLD_PID=""
+cleanup() {
+  [ -z "$HOLD_PID" ] || kill "$HOLD_PID" 2>/dev/null || true
+  rm -rf "$T"
+}
+trap cleanup EXIT
 trap 'exit 130' INT TERM
 umask 077
 
@@ -21,7 +26,7 @@ check() { # check "mô tả" "điều kiện sh" (đánh giá bằng eval)
   if eval "$2"; then pass "$1"; else fail "$1"; fi
 }
 
-for c in rclone age age-keygen pg_dump sha256sum; do
+for c in rclone age age-keygen pg_dump sha256sum flock; do
   command -v "$c" >/dev/null 2>&1 || { echo "Thiếu lệnh $c: chạy trong image build từ deploy/backup"; exit 2; }
 done
 
@@ -149,6 +154,28 @@ rm -f "$T/curl.log"
 run_backup PATH="$FAKE:$PATH" BACKUP_HEARTBEAT_URL="http://hb.invalid/ok-token" BACKUP_HEARTBEAT_FAIL_URL="http://hb.invalid/fail-token" BACKUP_AGE_RECIPIENTS=; RC=$?
 check "lỗi off-site -> thoát 4 và gọi URL fail" '[ "$RC" -eq 4 ] && grep -qx '\''http://hb.invalid/fail-token'\'' "$T/curl.log"'
 check "lỗi -> không gọi URL ok" '! grep -q '\''ok-token'\'' "$T/curl.log"'
+
+echo "== (h) Khóa chống chạy chồng (D-042): có backup khác giữ khóa -> mã 5, không dump, không heartbeat"
+mkdir -p "$BACKUP_DIR"
+# sh lấy khóa qua fd 8 rồi exec sleep: cùng một PID giữ khóa nên kill $HOLD_PID là nhả khóa (flock <file> <lệnh> fork con)
+sh -c 'exec 8>"$1"; flock 8; exec sleep 60' sh "$BACKUP_DIR/.backup.lock" &
+HOLD_PID=$!
+sleep 1 # chờ tiến trình giữ khóa lấy được khóa
+rm -f "$T/curl.log"
+DUMPS_BEFORE="$(ls -1 "$BACKUP_DIR"/db | wc -l)"
+TS_BEFORE="$(ts_dirs | wc -l)"
+run_backup PATH="$FAKE:$PATH" BACKUP_HEARTBEAT_URL="http://hb.invalid/ok-token" BACKUP_HEARTBEAT_FAIL_URL="http://hb.invalid/fail-token"; RC=$?
+check "đang bị khóa: thoát 5" '[ "$RC" -eq 5 ]'
+check "log báo đã có backup khác đang chạy" 'grep -q "đã có backup khác đang chạy" "$LAST_OUT"'
+check "không tạo dump mới" '[ "$(ls -1 "$BACKUP_DIR"/db | wc -l)" -eq "$DUMPS_BEFORE" ]'
+check "remote không có thư mục <TS> mới" '[ "$(ts_dirs | wc -l)" -eq "$TS_BEFORE" ]'
+check "không gọi heartbeat (cả ok lẫn fail)" '[ ! -s "$T/curl.log" ]'
+kill "$HOLD_PID" 2>/dev/null
+wait "$HOLD_PID" 2>/dev/null
+HOLD_PID=""
+run_backup PATH="$FAKE:$PATH" BACKUP_HEARTBEAT_URL="http://hb.invalid/ok-token" BACKUP_HEARTBEAT_FAIL_URL="http://hb.invalid/fail-token"; RC=$?
+check "nhả khóa rồi: backup thoát 0" '[ "$RC" -eq 0 ]'
+check "nhả khóa rồi: có dump mới và gọi heartbeat ok" '[ "$(ls -1 "$BACKUP_DIR"/db | wc -l)" -gt "$DUMPS_BEFORE" ] && grep -qx '''http://hb.invalid/ok-token''' "$T/curl.log"'
 
 echo
 echo "Kết quả: $PASSES PASS, $FAILS FAIL"

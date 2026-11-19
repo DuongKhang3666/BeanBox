@@ -44,6 +44,9 @@
 - [D-038 Backup off-site](#d-038-backup-off-site)
 - [D-039 Giám sát uptime](#d-039-giám-sát-uptime)
 - [D-040 CSP ở M8](#d-040-csp-ở-m8)
+- [D-041 Ghim rclone trong image backup](#d-041-ghim-rclone-trong-image-backup)
+- [D-042 Khóa chống hai backup chạy chồng](#d-042-khóa-chống-hai-backup-chạy-chồng)
+- [D-043 Selftest backup trong CI](#d-043-selftest-backup-trong-ci)
 
 ---
 
@@ -540,6 +543,7 @@
   - `SHA256SUMS` nằm cùng remote nên chỉ phát hiện hỏng/thiếu dữ liệu; tính xác thực nội dung dựa vào AEAD của age. Người có quyền ghi remote vẫn có thể thay bằng bản mã hóa khác cho cùng public key (chấp nhận cho demo).
   - Không có khóa chống hai backup chạy chồng.
 - **Docs bị ảnh hưởng:** `deployment.md` mục 11; `.env.backup.example`; `testing.md`.
+- **Cập nhật 2026-11-20:** mục 2 (apt không ghim) được thay bằng D-041: rclone đã ghim, chỉ age còn từ apt; rủi ro "không có khóa chống chạy chồng" đã xử lý ở D-042; rủi ro "rclone/age không ghim" nay chỉ còn đúng với age (rclone đã ghim).
 
 ## D-039 Giám sát uptime
 
@@ -566,3 +570,37 @@
   - Caddy không được đặt thêm header CSP (sẽ chồng policy).
 - **Kiểm thử:** `frontend/e2e/csp.spec.ts` (0 vi phạm CSP trên các trang storefront và admin chính), xem `testing.md`.
 - **Docs bị ảnh hưởng:** `api-contract.md` §14.12; `architecture.md` (§4, ADR 13); `testing.md`; `deployment.md`.
+
+## D-041 Ghim rclone trong image backup
+
+- **Ngày:** 2026-11-20 · **Người chốt:** Tech Lead theo ủy quyền chủ dự án
+- **Trạng thái:** Áp dụng. Thay mục 2 của D-038.
+- **Bối cảnh:** rclone từ apt Debian (1.60.1) cũ và đổi theo lần build; một công cụ ghi/xóa trên remote backup cần phiên bản biết trước.
+- **Quyết định:** `deploy/backup/Dockerfile` đa tầng. Tầng tải (FROM postgres:17) lấy zip chính thức `https://downloads.rclone.org/v${RCLONE_VERSION}/rclone-v${RCLONE_VERSION}-linux-${ARCH}.zip` và kiểm `sha256sum -c` với checksum GHI CỨNG trong Dockerfile (`RCLONE_SHA256_AMD64`, `RCLONE_SHA256_ARM64`, chọn theo `TARGETARCH`; kiến trúc khác thì build lỗi). Không tải `SHA256SUMS` lúc build để tự so (cùng nguồn nên vô nghĩa về toàn vẹn). Hiện ghim v1.76.0 (amd64 `b00f00b3266c3764413afe599d3ec316f6f43b3e0ea8a0bc1d186d2133e46df7`, arm64 `ee169016675e23a69d77240565133ff7dbc9b33d16fa8f7053d4af39f1eaeb78`); checksum lấy từ `SHA256SUMS` của bản đó, chữ ký GPG của file này đã kiểm bằng khóa công khai của rclone (vân tay `FBF7 37EC E9F8 AB18 604B D2AC 9393 5E02 FF3B 54FA`, trùng trang `rclone.org/release_signing`), và zip amd64 đã được tải riêng để tính sha256 đối chiếu. Tầng cuối: postgres:17 + `age curl ca-certificates` từ apt, `COPY` binary vào `/usr/local/bin/rclone`. **Nâng bản:** đổi `RCLONE_VERSION` + hai checksum (kiểm chữ ký `SHA256SUMS` như trên), build lại, chạy `selftest-offsite.sh` (CI cũng chạy, D-043).
+- **Hệ quả/rủi ro:**
+  - age vẫn từ apt Debian, không ghim (ngoài phạm vi).
+  - Build cần truy cập `downloads.rclone.org`; nếu bản bị gỡ khỏi máy chủ thì build lỗi cho tới khi nâng bản.
+  - Không có kiểm chữ ký GPG TRONG lúc build (chỉ khi nâng bản, thủ công); tính toàn vẹn dựa vào checksum đã commit.
+  - Chỉ amd64/arm64 (thêm kiến trúc phải thêm checksum).
+- **Docs bị ảnh hưởng:** `deployment.md` mục 11; `testing.md`; comment trong `docker-compose.prod.yml`.
+
+## D-042 Khóa chống hai backup chạy chồng
+
+- **Ngày:** 2026-11-20 · **Người chốt:** Tech Lead theo ủy quyền chủ dự án
+- **Trạng thái:** Áp dụng. Đóng rủi ro "không có khóa chống chạy chồng" của D-038.
+- **Bối cảnh:** Vòng lặp của service `backup`, cron và `docker compose run --rm backup ...` có thể chạy cùng lúc, tạo hai bản chồng nhau và xoay vòng remote lẫn nhau.
+- **Quyết định:** Khóa nằm trong `backup.sh`: sau kiểm cấu hình (mã 2) và `mkdir -p "$BACKUP_DIR"`, trước `pg_dump`, `exec 9>"$BACKUP_DIR/.backup.lock"` rồi `flock -n 9`. Không lấy được khóa thì ghi log "đã có backup khác đang chạy, bỏ qua lần này", thoát mã MỚI `5`, không tạo dump, không xóa gì, KHÔNG gọi heartbeat (cả ok lẫn fail; lần chạy đang giữ khóa sẽ báo, và cờ riêng chứ không dựa vào mã thoát để tránh nhầm với mã của `pg_dump`/`tar`). `loop.sh` in mã 5 như thông tin, không phải "LỖI". Không có lệnh `flock` thì cảnh báo và chạy không khóa. `selftest-offsite.sh` có mục (h).
+- **Hệ quả/rủi ro:**
+  - Chỉ có hiệu lực giữa các tiến trình/container dùng chung `./backups` trên cùng một host Linux (kiểm bằng hai container với bind mount trên Docker Desktop và named volume; không bảo đảm trên NFS/SMB hay nhiều host).
+  - `restore.sh` KHÔNG lấy khóa: restore khi backup đang chạy vẫn có thể xảy ra (rủi ro còn lại, đã dặn trong `deployment.md`).
+  - Backup bị treo giữ khóa mãi thì các lần sau đều bị bỏ qua với mã 5 và không có heartbeat, nên monitor heartbeat (D-039) sẽ báo thiếu ping.
+- **Docs bị ảnh hưởng:** `deployment.md` mục 11; `testing.md`.
+
+## D-043 Selftest backup trong CI
+
+- **Ngày:** 2026-11-20 · **Người chốt:** Tech Lead theo ủy quyền chủ dự án
+- **Trạng thái:** Áp dụng.
+- **Bối cảnh:** Selftest chỉ chạy tay nên đổi phiên bản rclone ghim (D-041) hoặc sửa `backup.sh` có thể hỏng mà không ai biết.
+- **Quyết định:** Job `docker` của `.github/workflows/ci.yml` có `services: postgres` (postgres:17, giá trị giả chỉ dành cho CI, health-cmd `pg_isready`) và step sau "Smoke image backup" chạy `selftest-offsite.sh` trong image `beanbox-backup:ci` (`--network host`, `PG*` trỏ `localhost:5432`, mount `deploy/backup` chỉ đọc, `timeout-minutes: 5`). Mô phỏng cục bộ (network + container Postgres tạm) cho 46 PASS, 0 FAIL qua 3 lần chạy liên tiếp.
+- **Hệ quả/rủi ro:** Thêm khoảng 20 giây (đo cục bộ) cho job `docker`; selftest cần mạng nội bộ tới Postgres, nếu service lỗi thì step fail (không bị che). `.sh` phải là LF (`.gitattributes` đã đặt).
+- **Docs bị ảnh hưởng:** `testing.md` (mục CI).

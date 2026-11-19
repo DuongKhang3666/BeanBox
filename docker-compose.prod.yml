@@ -126,7 +126,7 @@ services:
     logging: *default-logging
 
   # Sao lưu hằng ngày (D-034) + off-site tùy chọn (M8). Bật: docker compose ... --profile backup up -d backup
-  # Image build từ deploy/backup (postgres:17 + rclone + age + curl). Cấu hình off-site nằm trong file RIÊNG
+  # Image build từ deploy/backup (postgres:17 + rclone ghim phiên bản (D-041) + age + curl). Cấu hình off-site nằm trong file RIÊNG
   # `.env.backup` (gitignored, mẫu `.env.backup.example`), KHÔNG nạp .env.production vào container này.
   # Đổi đường dẫn file bằng biến BACKUP_ENV_FILE; file không có thì off-site tắt (cần compose >= 2.24).
   backup:

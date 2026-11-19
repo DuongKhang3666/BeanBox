@@ -208,6 +208,21 @@ jobs:
   docker:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    services:
+      # DB tạm cho selftest-offsite.sh (pg_dump thật). Giá trị giả chỉ dành cho CI.
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: beanbox
+          POSTGRES_PASSWORD: ci-pg-password
+          POSTGRES_DB: beanbox_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U beanbox -d beanbox_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - name: Build image backend
@@ -222,6 +237,14 @@ jobs:
         run: >-
           docker run --rm --entrypoint sh beanbox-backup:ci
           -c 'rclone version && age --version && pg_dump --version'
+      - name: Selftest backup off-site (D-043)
+        timeout-minutes: 5
+        run: >-
+          docker run --rm --network host
+          -e PGHOST=localhost -e PGPORT=5432 -e PGUSER=beanbox
+          -e PGPASSWORD=ci-pg-password -e PGDATABASE=beanbox_ci
+          -v "$GITHUB_WORKSPACE/deploy/backup:/deploy/backup:ro"
+          --entrypoint sh beanbox-backup:ci /deploy/backup/selftest-offsite.sh
 
   ops-lint:
     runs-on: ubuntu-latest

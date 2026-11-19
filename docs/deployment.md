@@ -10,6 +10,7 @@
 > Bí danh chỉ có tác dụng trong phiên shell hiện tại; trong tài liệu các lệnh vẫn viết đầy đủ ở những chỗ quan trọng.
 
 ## Mục lục
+
 1. [Kiến trúc triển khai](#1-kiến-trúc-triển-khai)
 2. [Chuẩn bị VPS](#2-chuẩn-bị-vps)
 3. [DNS](#3-dns)
@@ -49,14 +50,14 @@ Internet
 +------+
 ```
 
-| Service | Vai trò | Publish cổng ra host |
-|---|---|---|
-| `caddy` | Reverse proxy, TLS, rate limit edge | `${HTTP_PORT:-80}`, `${HTTPS_PORT:-443}` (TCP và UDP cho HTTP/3). DUY NHẤT |
-| `frontend` | Next.js (standalone) | Không (chỉ `3000` trong mạng Docker) |
-| `backend` | Express API, chạy `prisma migrate deploy` rồi `node dist/server.js` | Không (chỉ `4000` trong mạng Docker) |
-| `db` | PostgreSQL 17, volume `pgdata` | Không |
-| `backup` (profile `backup`) | Sao lưu định kỳ, tùy chọn đẩy off-site (image build từ `deploy/backup`: postgres:17 + rclone + age + curl) | Không |
-| `seed` (profile `tools`) | Chạy một lần để nạp dữ liệu demo | Không |
+| Service                     | Vai trò                                                                                                    | Publish cổng ra host                                                       |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `caddy`                     | Reverse proxy, TLS, rate limit edge                                                                        | `${HTTP_PORT:-80}`, `${HTTPS_PORT:-443}` (TCP và UDP cho HTTP/3). DUY NHẤT |
+| `frontend`                  | Next.js (standalone)                                                                                       | Không (chỉ `3000` trong mạng Docker)                                       |
+| `backend`                   | Express API, chạy `prisma migrate deploy` rồi `node dist/server.js`                                        | Không (chỉ `4000` trong mạng Docker)                                       |
+| `db`                        | PostgreSQL 17, volume `pgdata`                                                                             | Không                                                                      |
+| `backup` (profile `backup`) | Sao lưu định kỳ, tùy chọn đẩy off-site (image build từ `deploy/backup`: postgres:17 + rclone + age + curl) | Không                                                                      |
+| `seed` (profile `tools`)    | Chạy một lần để nạp dữ liệu demo                                                                           | Không                                                                      |
 
 Volume: `pgdata` (dữ liệu DB), `uploads` (ảnh tải lên, gắn `/app/uploads` của backend), `caddy_data` (chứng chỉ TLS), `caddy_config`. Backup ghi ra thư mục bind `./backups` trên host. Backend chạy đúng MỘT instance (D-027). Mailpit không có ở production.
 
@@ -77,6 +78,7 @@ Volume: `pgdata` (dữ liệu DB), `uploads` (ảnh tải lên, gắn `/app/uplo
   ```
 
   Lưu ý: cổng Docker publish có thể đi vòng qua `ufw` (Docker tự thêm luật iptables). Trong compose prod chỉ `caddy` publish cổng nên rủi ro thấp; không tự thêm `ports:` cho `db`/`backend`.
+
 - Cấu hình tối thiểu khuyến nghị (ước lượng, chưa đo): 2 vCPU, 2 GB RAM (nên thêm swap vì lúc build image Next.js và Caddy/xcaddy tốn RAM), 20 GB ổ đĩa trống. Build chạy ngay trên VPS nên lần đầu có thể mất vài phút đến hơn chục phút tùy máy.
 
 ## 3. DNS
@@ -101,31 +103,31 @@ openssl rand -hex 32     # JWT_ACCESS_SECRET, INTERNAL_API_SECRET
 openssl rand -hex 24     # POSTGRES_PASSWORD (chuỗi hex để không có ký tự đặc biệt làm hỏng DATABASE_URL)
 ```
 
-| Biến | Bắt buộc | Ý nghĩa |
-|---|---|---|
-| `PUBLIC_URL` | Có | URL công khai đầy đủ, `https://...`, không có `/` cuối. Compose gán cho `WEB_APP_URL` (gốc link trong email) và `FRONTEND_ORIGINS` (CORS + kiểm tra Origin) của backend nên ba giá trị luôn bằng nhau; cũng là `NEXT_PUBLIC_SITE_URL` của frontend (sitemap, Open Graph). `NEXT_PUBLIC_SITE_URL` được nhúng lúc BUILD: đổi domain thì phải build lại image frontend (mục 12) |
-| `SITE_ADDRESS` | Có | Tên miền để Caddy xin chứng chỉ Let's Encrypt (phải trỏ DNS về VPS). `localhost` để thử cục bộ |
-| `ACME_EMAIL` | Không | Email đăng ký ACME (nhận thông báo hết hạn chứng chỉ) |
-| `HTTP_PORT`, `HTTPS_PORT` | Không | Cổng Caddy nghe, mặc định 80/443. Compose truyền hai biến này vào container và map cổng host = cổng container (`8080:8080`, `8443:8443`...), Caddy tự biết cổng nên redirect http -> https giữ đúng cổng (mục 15). Production thật giữ 80/443 vì Let's Encrypt chỉ kiểm tra 80/443 từ bên ngoài. `SITE_ADDRESS` chỉ là tên miền, không kèm cổng |
-| `POSTGRES_USER`, `POSTGRES_DB` | Có | Tên user và DB (mẫu: `beanbox`) |
-| `POSTGRES_PASSWORD` | Có | Mật khẩu DB; dùng chuỗi hex |
-| `JWT_ACCESS_SECRET` | Có | Khóa ký access token, >= 32 ký tự ngẫu nhiên |
-| `INTERNAL_API_SECRET` | Có | >= 32 ký tự. Dùng CHUNG hai phía: compose truyền cùng một giá trị cho backend và frontend (SSR gửi `X-Internal-Secret` để không bị rate limit chung dồn vào một IP). Không bao giờ để dạng `NEXT_PUBLIC_` |
-| `COOKIE_SECURE` | Không | Mặc định `true`. Giữ `true` khi chạy sau HTTPS; đặt `false` chỉ khi thử qua HTTP thuần (xem mục 14) |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` | Nên có | SMTP thật (Mailpit không có ở production). Để trống `SMTP_HOST` thì email (xác nhận đơn, đặt lại mật khẩu, thông báo liên hệ) không gửi được; backend ghi log lỗi gửi mail nhưng không làm hỏng đơn. Mặc định cổng 587 |
-| `VNPAY_TMN_CODE`, `VNPAY_HASH_SECRET` | Không | Có đủ cả hai thì bật VNPay; trống thì tắt (mục 5) |
-| `VNPAY_PAYMENT_URL`, `VNPAY_RETURN_URL` | Không | Trống = URL sandbox mặc định và `${PUBLIC_URL}/thanh-toan/ket-qua?provider=vnpay` |
-| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | Không | Chỉ `sk_test_...`; có khóa thì bật Stripe. Webhook secret `whsec_...` (mục 5) |
-| `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY` | Không | Captcha form liên hệ; phải có ĐỦ CẢ HAI hoặc để trống cả hai (mục 6) |
-| `CONTACT_RETENTION_DAYS` | Không | Số ngày giữ tin liên hệ đã xử lý/spam trước khi job xóa cứng (D-029); mặc định 365, `0` = tắt. Đổi khác 365 thì sửa trang chính sách bảo mật cho khớp |
-| `JOBS_ENABLED` | Không | Mặc định `true`: bật job nền dọn dẹp và hủy đơn quá hạn thanh toán. Chỉ đặt `false` khi chủ ý tắt (đơn `PENDING_PAYMENT` quá hạn sẽ không tự hủy, kho không tự hoàn) |
-| `LOG_LEVEL` | Không | Mặc định `info` |
-| `GENERAL_RATE_LIMIT_PER_MIN` | Không | Rate limit chung toàn API của backend theo IP (mặc định 100); production giữ mặc định |
-| `ORDER_RATE_LIMIT_PER_MIN`, `COUPON_RATE_LIMIT_PER_MIN`, `QUOTE_RATE_LIMIT_PER_MIN` | Không | Rate limit backend theo IP (mặc định 10/10/30) |
-| `EDGE_RATE_AUTH_PER_MIN`, `EDGE_RATE_API_PER_MIN`, `EDGE_RATE_WEB_PER_MIN` | Không | Rate limit ở Caddy theo IP (mặc định 30/300/600) |
-| `BACKUP_RETENTION_DAYS`, `BACKUP_INTERVAL_SECONDS` | Không | Xoay vòng backup cục bộ (mặc định 7 ngày) và chu kỳ của service `backup` (mặc định 86400 giây) |
-| `BACKUP_ENV_FILE` | Không | Đường dẫn file cấu hình off-site/heartbeat nạp riêng vào service `backup`, mặc định `.env.backup` (gitignored, mẫu `.env.backup.example`). Các biến off-site (`BACKUP_REMOTE`, `RCLONE_CONFIG_*`, `BACKUP_AGE_RECIPIENTS`...) nằm ở đó, KHÔNG nằm trong `.env.production` (mục 11) |
-| `SEED_ADMIN_PASSWORD`, `SEED_STAFF_PASSWORD`, `SEED_CUSTOMER_PASSWORD` | Chỉ khi seed | Mỗi mật khẩu >= 12 ký tự, có chữ và số, khác giá trị mẫu trong `backend/.env.example` |
+| Biến                                                                                | Bắt buộc     | Ý nghĩa                                                                                                                                                                                                                                                                                                                                                                      |
+| ----------------------------------------------------------------------------------- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PUBLIC_URL`                                                                        | Có           | URL công khai đầy đủ, `https://...`, không có `/` cuối. Compose gán cho `WEB_APP_URL` (gốc link trong email) và `FRONTEND_ORIGINS` (CORS + kiểm tra Origin) của backend nên ba giá trị luôn bằng nhau; cũng là `NEXT_PUBLIC_SITE_URL` của frontend (sitemap, Open Graph). `NEXT_PUBLIC_SITE_URL` được nhúng lúc BUILD: đổi domain thì phải build lại image frontend (mục 12) |
+| `SITE_ADDRESS`                                                                      | Có           | Tên miền để Caddy xin chứng chỉ Let's Encrypt (phải trỏ DNS về VPS). `localhost` để thử cục bộ                                                                                                                                                                                                                                                                               |
+| `ACME_EMAIL`                                                                        | Không        | Email đăng ký ACME (nhận thông báo hết hạn chứng chỉ)                                                                                                                                                                                                                                                                                                                        |
+| `HTTP_PORT`, `HTTPS_PORT`                                                           | Không        | Cổng Caddy nghe, mặc định 80/443. Compose truyền hai biến này vào container và map cổng host = cổng container (`8080:8080`, `8443:8443`...), Caddy tự biết cổng nên redirect http -> https giữ đúng cổng (mục 15). Production thật giữ 80/443 vì Let's Encrypt chỉ kiểm tra 80/443 từ bên ngoài. `SITE_ADDRESS` chỉ là tên miền, không kèm cổng                              |
+| `POSTGRES_USER`, `POSTGRES_DB`                                                      | Có           | Tên user và DB (mẫu: `beanbox`)                                                                                                                                                                                                                                                                                                                                              |
+| `POSTGRES_PASSWORD`                                                                 | Có           | Mật khẩu DB; dùng chuỗi hex                                                                                                                                                                                                                                                                                                                                                  |
+| `JWT_ACCESS_SECRET`                                                                 | Có           | Khóa ký access token, >= 32 ký tự ngẫu nhiên                                                                                                                                                                                                                                                                                                                                 |
+| `INTERNAL_API_SECRET`                                                               | Có           | >= 32 ký tự. Dùng CHUNG hai phía: compose truyền cùng một giá trị cho backend và frontend (SSR gửi `X-Internal-Secret` để không bị rate limit chung dồn vào một IP). Không bao giờ để dạng `NEXT_PUBLIC_`                                                                                                                                                                    |
+| `COOKIE_SECURE`                                                                     | Không        | Mặc định `true`. Giữ `true` khi chạy sau HTTPS; đặt `false` chỉ khi thử qua HTTP thuần (xem mục 14)                                                                                                                                                                                                                                                                          |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM`                     | Nên có       | SMTP thật (Mailpit không có ở production). Để trống `SMTP_HOST` thì email (xác nhận đơn, đặt lại mật khẩu, thông báo liên hệ) không gửi được; backend ghi log lỗi gửi mail nhưng không làm hỏng đơn. Mặc định cổng 587                                                                                                                                                       |
+| `VNPAY_TMN_CODE`, `VNPAY_HASH_SECRET`                                               | Không        | Có đủ cả hai thì bật VNPay; trống thì tắt (mục 5)                                                                                                                                                                                                                                                                                                                            |
+| `VNPAY_PAYMENT_URL`, `VNPAY_RETURN_URL`                                             | Không        | Trống = URL sandbox mặc định và `${PUBLIC_URL}/thanh-toan/ket-qua?provider=vnpay`                                                                                                                                                                                                                                                                                            |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`                                        | Không        | Chỉ `sk_test_...`; có khóa thì bật Stripe. Webhook secret `whsec_...` (mục 5)                                                                                                                                                                                                                                                                                                |
+| `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY`                                        | Không        | Captcha form liên hệ; phải có ĐỦ CẢ HAI hoặc để trống cả hai (mục 6)                                                                                                                                                                                                                                                                                                         |
+| `CONTACT_RETENTION_DAYS`                                                            | Không        | Số ngày giữ tin liên hệ đã xử lý/spam trước khi job xóa cứng (D-029); mặc định 365, `0` = tắt. Đổi khác 365 thì sửa trang chính sách bảo mật cho khớp                                                                                                                                                                                                                        |
+| `JOBS_ENABLED`                                                                      | Không        | Mặc định `true`: bật job nền dọn dẹp và hủy đơn quá hạn thanh toán. Chỉ đặt `false` khi chủ ý tắt (đơn `PENDING_PAYMENT` quá hạn sẽ không tự hủy, kho không tự hoàn)                                                                                                                                                                                                         |
+| `LOG_LEVEL`                                                                         | Không        | Mặc định `info`                                                                                                                                                                                                                                                                                                                                                              |
+| `GENERAL_RATE_LIMIT_PER_MIN`                                                        | Không        | Rate limit chung toàn API của backend theo IP (mặc định 100); production giữ mặc định                                                                                                                                                                                                                                                                                        |
+| `ORDER_RATE_LIMIT_PER_MIN`, `COUPON_RATE_LIMIT_PER_MIN`, `QUOTE_RATE_LIMIT_PER_MIN` | Không        | Rate limit backend theo IP (mặc định 10/10/30)                                                                                                                                                                                                                                                                                                                               |
+| `EDGE_RATE_AUTH_PER_MIN`, `EDGE_RATE_API_PER_MIN`, `EDGE_RATE_WEB_PER_MIN`          | Không        | Rate limit ở Caddy theo IP (mặc định 30/300/600)                                                                                                                                                                                                                                                                                                                             |
+| `BACKUP_RETENTION_DAYS`, `BACKUP_INTERVAL_SECONDS`                                  | Không        | Xoay vòng backup cục bộ (mặc định 7 ngày) và chu kỳ của service `backup` (mặc định 86400 giây)                                                                                                                                                                                                                                                                               |
+| `BACKUP_ENV_FILE`                                                                   | Không        | Đường dẫn file cấu hình off-site/heartbeat nạp riêng vào service `backup`, mặc định `.env.backup` (gitignored, mẫu `.env.backup.example`). Các biến off-site (`BACKUP_REMOTE`, `RCLONE_CONFIG_*`, `BACKUP_AGE_RECIPIENTS`...) nằm ở đó, KHÔNG nằm trong `.env.production` (mục 11)                                                                                           |
+| `SEED_ADMIN_PASSWORD`, `SEED_STAFF_PASSWORD`, `SEED_CUSTOMER_PASSWORD`              | Chỉ khi seed | Mỗi mật khẩu >= 12 ký tự, có chữ và số, khác giá trị mẫu trong `backend/.env.example`                                                                                                                                                                                                                                                                                        |
 
 Backend kiểm tra env bằng zod khi khởi động và DỪNG ngay (log nêu tên biến, không in giá trị) khi:
 
@@ -200,11 +202,11 @@ Sau khi deploy nên mở lướt các trang chính (trang chủ, giới thiệu,
 
 ## 9. Health và log
 
-| Endpoint | Ý nghĩa |
-|---|---|
-| `GET /api/v1/health` | Readiness của backend: kiểm DB, 503 khi DB lỗi. Dùng cho healthcheck container backend |
-| `GET /api/v1/health/live` | Liveness: không chạm DB, luôn 200 khi tiến trình sống |
-| `GET /healthz` | Liveness của frontend (không gọi backend, `Cache-Control: no-store`), dùng cho healthcheck container frontend |
+| Endpoint                  | Ý nghĩa                                                                                                       |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `GET /api/v1/health`      | Readiness của backend: kiểm DB, 503 khi DB lỗi. Dùng cho healthcheck container backend                        |
+| `GET /api/v1/health/live` | Liveness: không chạm DB, luôn 200 khi tiến trình sống                                                         |
+| `GET /healthz`            | Liveness của frontend (không gọi backend, `Cache-Control: no-store`), dùng cho healthcheck container frontend |
 
 Xem log:
 
@@ -235,9 +237,11 @@ IP client: Caddy không tin `X-Forwarded-For` do client gửi (không khai báo 
 
 Cơ chế (D-034, M8): `pg_dump -Fc` và nén thư mục uploads thành `tar.gz`, xoay vòng cục bộ theo `BACKUP_RETENTION_DAYS` (mặc định 7). Tùy chọn đẩy bản sao MÃ HÓA lên object storage (off-site, rclone + age, xem phần "Backup off-site" bên dưới). Backup lỗi thì script thoát mã khác 0 và không để file dở. File backup được tạo với quyền chỉ chủ sở hữu đọc (umask 077; chủ sở hữu là root vì container chạy root, nên đọc/sao chép bằng `sudo`).
 
-Mã thoát của `backup.sh`: `0` thành công; `2` biến cấu hình không hợp lệ (số nguyên sai...); `3` đẩy off-site hoặc kiểm toàn vẹn thất bại; `4` cấu hình off-site sai (thiếu/sai recipient age, image không có rclone/age). Với mã 3 và 4 bản backup cục bộ VẪN được tạo và giữ.
+Mã thoát của `backup.sh`: `0` thành công; `2` biến cấu hình không hợp lệ (số nguyên sai...); `3` đẩy off-site hoặc kiểm toàn vẹn thất bại; `4` cấu hình off-site sai (thiếu/sai recipient age, image không có rclone/age); `5` đã có một backup khác đang chạy (khóa `flock`, bên dưới) nên lần này bị bỏ qua. Với mã 3 và 4 bản backup cục bộ VẪN được tạo và giữ. Mã 5 không tạo dump nào và KHÔNG gọi heartbeat (cả ok lẫn fail), vì lần chạy đang giữ khóa sẽ tự báo kết quả của nó.
 
-Image của service `backup` build từ `deploy/backup/Dockerfile` (cùng postgres:17 với DB, thêm rclone, age, curl). `... --profile backup up -d backup` hoặc `run` tự build lần đầu; build tay: `docker compose --env-file .env.production -f docker-compose.prod.yml --profile backup build backup`. Bản cài từ apt của Debian 13 (trixie) khi kiểm thử: rclone 1.60.1, age 1.2.1 (đủ `rclone check --one-way/--download`, `lsf --dirs-only`, `purge`, backend s3 với provider Cloudflare/AWS/Other, `age -R`/`-i`); build lại sau này có thể ra bản khác, nên chạy `selftest-offsite.sh` (bên dưới) sau mỗi lần build lại image.
+**Khóa chống chạy chồng (D-042).** `backup.sh` lấy khóa `flock -n` trên `$BACKUP_DIR/.backup.lock` (tức `backups/.backup.lock` trên host) trước khi `pg_dump`, nên vòng lặp của service `backup`, cron và `docker compose run --rm backup ...` chạy đồng thời sẽ không tạo hai bản chồng nhau: bên đến sau in "đã có backup khác đang chạy, bỏ qua lần này" rồi thoát mã 5. `loop.sh` coi mã 5 là thông tin (không ghi "LỖI") và tiếp tục chu kỳ. Khóa chỉ có hiệu lực giữa các tiến trình/container dùng chung thư mục `backups/` trên CÙNG một host Linux; `restore.sh` không lấy khóa (đừng restore khi backup đang chạy). Không có lệnh `flock` (chạy ngoài image) thì script cảnh báo và chạy không khóa.
+
+Image của service `backup` build từ `deploy/backup/Dockerfile` (cùng postgres:17 với DB, thêm rclone, age, curl). `... --profile backup up -d backup` hoặc `run` tự build lần đầu; build tay: `docker compose --env-file .env.production -f docker-compose.prod.yml --profile backup build backup`. rclone được GHIM (D-041): Dockerfile tải zip chính thức từ `downloads.rclone.org` (hiện là v1.76.0) và kiểm `sha256sum -c` với checksum ghi cứng trong Dockerfile (amd64, arm64; kiến trúc khác thì build lỗi). age vẫn cài từ apt của Debian 13 (trixie), không ghim (khi kiểm thử: age 1.2.1). **Nâng rclone:** lấy `SHA256SUMS` của bản mới ở `https://downloads.rclone.org/v<phiên bản>/SHA256SUMS`, kiểm chữ ký GPG của file đó (`gpg --verify SHA256SUMS`, khóa công khai của rclone theo `https://rclone.org/release_signing/`), đổi `RCLONE_VERSION` và hai checksum `RCLONE_SHA256_AMD64`/`RCLONE_SHA256_ARM64` trong `deploy/backup/Dockerfile`, build lại rồi chạy `selftest-offsite.sh` (bên dưới); selftest cũng chạy trong CI. Vì age không ghim, build lại image vẫn có thể đổi bản age.
 
 **Bật service backup** (chạy ngay lúc `up`, sau đó lặp mỗi `BACKUP_INTERVAL_SECONDS`, mặc định 24 giờ):
 
@@ -298,17 +302,17 @@ Sau khi backup cục bộ xong, nếu `BACKUP_REMOTE` khác rỗng thì `backup.
 
 Cấu hình nằm trong `.env.backup` (mẫu `.env.backup.example` có ví dụ AWS S3, Backblaze B2 qua S3-compatible, Cloudflare R2):
 
-| Biến | Mặc định | Ý nghĩa |
-|---|---|---|
-| `BACKUP_REMOTE` | trống (tắt) | `<tên-remote>:<bucket>/<thư-mục>`, ví dụ `offsite:beanbox-backups/prod` |
-| `RCLONE_CONFIG_<TÊN>_*` | | Khai báo remote rclone bằng env (`..._TYPE=s3`, `..._PROVIDER`, `..._ACCESS_KEY_ID`, `..._SECRET_ACCESS_KEY`, `..._ENDPOINT`, `..._NO_CHECK_BUCKET=true`...). `<TÊN>` khớp tên remote trong `BACKUP_REMOTE` |
-| `BACKUP_AGE_RECIPIENTS` | | Một hoặc nhiều public key `age1...`, cách nhau dấu phẩy/khoảng trắng |
-| `BACKUP_AGE_RECIPIENTS_FILE` | | Thay thế/bổ sung: file recipient (mỗi dòng một khóa, `#` là chú thích), đường dẫn trong container |
-| `BACKUP_REMOTE_ENCRYPTION` | `age` | `none` chỉ khi remote đã mã hóa ở lớp khác (ví dụ rclone crypt). Với `age` mà không có recipient hợp lệ thì từ chối đẩy (thoát 4), không bao giờ đẩy bản thô |
-| `BACKUP_REMOTE_VERIFY` | `hash` | `hash`: so hash/kích thước backend lưu (rẻ; một số backend/đối tượng lớn có thể chỉ so kích thước, rclone sẽ cảnh báo). `download`: tải về so nội dung thật (tốn băng thông, chắc chắn hơn) |
-| `BACKUP_REMOTE_RETENTION_DAYS` | `30` | Xóa thư mục `<TS>` cũ hơn N ngày, tính theo TÊN thư mục (không dựa modtime) |
-| `BACKUP_REMOTE_MIN_KEEP` | `3` | Luôn giữ ít nhất N bản mới nhất kể cả khi quá hạn (phòng đồng hồ sai hoặc backup ngừng lâu); >= 1 |
-| `BACKUP_HEARTBEAT_URL`, `BACKUP_HEARTBEAT_FAIL_URL` | trống | URL heartbeat gọi khi toàn bộ backup (gồm off-site nếu bật) thành công / thất bại (mục 16). URL chứa token nên không bao giờ được ghi vào log |
+| Biến                                                | Mặc định    | Ý nghĩa                                                                                                                                                                                                     |
+| --------------------------------------------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BACKUP_REMOTE`                                     | trống (tắt) | `<tên-remote>:<bucket>/<thư-mục>`, ví dụ `offsite:beanbox-backups/prod`                                                                                                                                     |
+| `RCLONE_CONFIG_<TÊN>_*`                             |             | Khai báo remote rclone bằng env (`..._TYPE=s3`, `..._PROVIDER`, `..._ACCESS_KEY_ID`, `..._SECRET_ACCESS_KEY`, `..._ENDPOINT`, `..._NO_CHECK_BUCKET=true`...). `<TÊN>` khớp tên remote trong `BACKUP_REMOTE` |
+| `BACKUP_AGE_RECIPIENTS`                             |             | Một hoặc nhiều public key `age1...`, cách nhau dấu phẩy/khoảng trắng                                                                                                                                        |
+| `BACKUP_AGE_RECIPIENTS_FILE`                        |             | Thay thế/bổ sung: file recipient (mỗi dòng một khóa, `#` là chú thích), đường dẫn trong container                                                                                                           |
+| `BACKUP_REMOTE_ENCRYPTION`                          | `age`       | `none` chỉ khi remote đã mã hóa ở lớp khác (ví dụ rclone crypt). Với `age` mà không có recipient hợp lệ thì từ chối đẩy (thoát 4), không bao giờ đẩy bản thô                                                |
+| `BACKUP_REMOTE_VERIFY`                              | `hash`      | `hash`: so hash/kích thước backend lưu (rẻ; một số backend/đối tượng lớn có thể chỉ so kích thước, rclone sẽ cảnh báo). `download`: tải về so nội dung thật (tốn băng thông, chắc chắn hơn)                 |
+| `BACKUP_REMOTE_RETENTION_DAYS`                      | `30`        | Xóa thư mục `<TS>` cũ hơn N ngày, tính theo TÊN thư mục (không dựa modtime)                                                                                                                                 |
+| `BACKUP_REMOTE_MIN_KEEP`                            | `3`         | Luôn giữ ít nhất N bản mới nhất kể cả khi quá hạn (phòng đồng hồ sai hoặc backup ngừng lâu); >= 1                                                                                                           |
+| `BACKUP_HEARTBEAT_URL`, `BACKUP_HEARTBEAT_FAIL_URL` | trống       | URL heartbeat gọi khi toàn bộ backup (gồm off-site nếu bật) thành công / thất bại (mục 16). URL chứa token nên không bao giờ được ghi vào log                                                               |
 
 Xoay vòng remote chỉ xóa (bằng `rclone purge`) thư mục có tên đúng mẫu `YYYYMMDDTHHMMSSZ/`; thư mục hay file lạ trên remote không bị đụng. Lỗi xoay vòng chỉ cảnh báo, không làm backup thất bại.
 
@@ -323,6 +327,7 @@ Xoay vòng remote chỉ xóa (bằng `rclone purge`) thư mục có tên đúng 
    ```
 
    Giữ file `beanbox-age.key` (khóa bí mật) OFFLINE ở ít nhất hai nơi độc lập (ví dụ trình quản lý mật khẩu và USB cất kỹ). MẤT khóa bí mật = không giải mã được bất kỳ bản off-site nào. Chỉ dán public key (`age1...`) vào `.env.backup`. Muốn đổi khóa: thêm public key mới vào `BACKUP_AGE_RECIPIENTS` (cách nhau dấu phẩy) cho các bản mới; bản cũ vẫn cần khóa cũ để giải mã.
+
 3. Tạo `.env.backup` từ mẫu, điền remote và recipient, rồi `chmod 600 .env.backup`.
 4. Chạy thử một vòng và kiểm remote có thư mục `<TS>/` gồm hai file `.age` và `SHA256SUMS`:
 
@@ -331,7 +336,7 @@ Xoay vòng remote chỉ xóa (bằng `rclone purge`) thư mục có tên đúng 
    docker compose --env-file .env.production -f docker-compose.prod.yml --profile backup run --rm --no-deps --entrypoint sh backup /deploy/backup/fetch-remote.sh --list
    ```
 
-5. (Tùy chọn) Tự kiểm toàn bộ luồng bằng remote giả cục bộ, không đụng remote thật: `docker compose ... --profile backup run --rm --entrypoint sh backup /deploy/backup/selftest-offsite.sh`. Script in PASS/FAIL từng mục (upload đủ file, giải mã khớp bản cục bộ, sửa 1 byte thì checksum bắt được, xoay vòng giữ tối thiểu `MIN_KEEP` và không đụng thư mục lạ, thiếu recipient bị từ chối, tắt off-site thì không gọi rclone, heartbeat) và thoát khác 0 nếu có FAIL. Cần service `db` (tự khởi động).
+5. (Tùy chọn) Tự kiểm toàn bộ luồng bằng remote giả cục bộ, không đụng remote thật: `docker compose ... --profile backup run --rm --entrypoint sh backup /deploy/backup/selftest-offsite.sh`. Script in PASS/FAIL từng mục (upload đủ file, giải mã khớp bản cục bộ, sửa 1 byte thì checksum bắt được, xoay vòng giữ tối thiểu `MIN_KEEP` và không đụng thư mục lạ, thiếu recipient bị từ chối, tắt off-site thì không gọi rclone, heartbeat, khóa chống chạy chồng: thoát 5, không dump, không heartbeat) và thoát khác 0 nếu có FAIL. Cần service `db` (tự khởi động).
 6. Bật service `backup` hoặc cron như ở trên; thêm heartbeat (mục 16) để biết khi backup ngừng chạy.
 
 **Khôi phục từ remote:**
@@ -410,25 +415,26 @@ Migration KHÔNG tự rollback. Nếu phiên bản mới đã áp migration làm
 
 ## 14. Sự cố thường gặp
 
-| Triệu chứng | Nguyên nhân thường gặp | Cách xử lý |
-|---|---|---|
-| Container `backend` thoát/khởi động lại liên tục | Env không hợp lệ (secret `dev-`, thiếu `INTERNAL_API_SECRET`, chỉ một khóa Turnstile, `sk_live_`) | `docker compose ... logs backend` đọc dòng "Cấu hình môi trường không hợp lệ", sửa `.env.production`, `up -d backend` |
-| `docker compose` báo "Đặt ... trong .env.production" | Thiếu biến bắt buộc, hoặc quên `--env-file .env.production` | Điền biến, luôn truyền `--env-file` |
-| Caddy không xin được chứng chỉ | DNS chưa trỏ đúng, cổng 80/443 bị firewall/nhà cung cấp chặn, `SITE_ADDRESS` sai, vượt giới hạn Let's Encrypt | `logs caddy` xem lỗi ACME; kiểm DNS và cổng; chờ rồi `up -d caddy`; không bấm khởi động lại liên tục |
-| 429 hàng loạt khi dùng Cloudflare proxy | Caddy thấy mọi kết nối cùng IP Cloudflare | Bật `trusted_proxies` + `CF-Connecting-IP` (mục 3) hoặc tắt proxy (đám mây xám) |
-| 502/503 ngay sau khi `up -d` | Backend chưa `healthy` (đang migrate/khởi động) hoặc đã dừng vì env | `ps` xem trạng thái, `logs backend`; chờ healthy. Với `/api/v1/*`, phản hồi lỗi từ Caddy là JSON `SERVICE_UNAVAILABLE` |
-| Script `.sh` lỗi `\r: command not found` hoặc `no such file` | File bị chuyển CRLF khi checkout trên Windows | `.gitattributes` ép `*.sh`, `Caddyfile`, `Dockerfile` về LF; checkout lại (`git add --renormalize .` rồi checkout) hoặc `sed -i 's/\r$//' deploy/backup/*.sh` |
-| Đăng nhập xong vẫn như chưa đăng nhập, cookie không lưu | Truy cập qua HTTP thuần trong khi `COOKIE_SECURE=true` (cookie `Secure` chỉ lưu qua HTTPS) | Truy cập bằng HTTPS; chỉ thử qua HTTP thì đặt `COOKIE_SECURE=false` (KHÔNG dùng cho production thật) |
-| Link trong email trỏ sai domain | `PUBLIC_URL` sai lúc khởi động backend | Sửa `PUBLIC_URL`, `up -d` lại; build lại frontend nếu đổi domain |
-| Trang tĩnh còn hiện cài đặt mặc định | ISR chưa làm mới sau build | Mở lại trang sau vài phút (mục 8) |
-| Form liên hệ trả 429 | Giới hạn 3 lần/10 phút/IP | Chờ hoặc restart backend (xóa bộ đếm) khi thử |
-| Backup lỗi quyền hoặc không thấy file | Thư mục `backups/` thuộc root | Đọc bằng `sudo`, hoặc `sudo chown` theo nhu cầu sao chép |
-| `backup.sh` thoát mã 4, log "thiếu/sai recipient age" | Đặt `BACKUP_REMOTE` mà thiếu `BACKUP_AGE_RECIPIENTS`/`_FILE`, hoặc recipient không phải `age1...` | Điền public key (mục 11). Chỉ đặt `BACKUP_REMOTE_ENCRYPTION=none` khi remote đã được mã hóa ở lớp khác. Backup cục bộ vẫn có |
-| `backup.sh` thoát mã 4, log "image không có rclone" | Service `backup` còn dùng image `postgres:17` cũ | Build lại: `... --profile backup build backup` rồi `up -d backup` |
-| `backup.sh` thoát mã 3 (rclone copy/check lỗi) | Sai/hết hạn access key, sai endpoint/bucket, mất mạng, hết dung lượng bucket | Đọc log (không chứa secret); sửa `.env.backup` rồi chạy tay `backup.sh` lại. Backup cục bộ vẫn có. Heartbeat báo lỗi nếu đã cấu hình |
-| `fetch-remote.sh` thoát 3 | `sha256sum -c` sai: file trên remote hỏng hoặc bị sửa | Không dùng bản đó; `--list` rồi thử bản trước |
-| `fetch-remote.sh` thoát 4 hoặc "giải mã thất bại" | Chưa mount khóa bí mật ở `/run/secrets/age-identity`, hoặc khóa không khớp recipient lúc backup | Mount đúng file khóa (mục 11); bản tạo trước khi đổi recipient cần khóa cũ |
-| `docker compose` báo lỗi ở `env_file` / `required` | Docker Compose cũ (< 2.24) không hiểu `required: false` | Nâng Docker Compose, hoặc tạo file `.env.backup` rỗng |
+| Triệu chứng                                                  | Nguyên nhân thường gặp                                                                                        | Cách xử lý                                                                                                                                                    |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Container `backend` thoát/khởi động lại liên tục             | Env không hợp lệ (secret `dev-`, thiếu `INTERNAL_API_SECRET`, chỉ một khóa Turnstile, `sk_live_`)             | `docker compose ... logs backend` đọc dòng "Cấu hình môi trường không hợp lệ", sửa `.env.production`, `up -d backend`                                         |
+| `docker compose` báo "Đặt ... trong .env.production"         | Thiếu biến bắt buộc, hoặc quên `--env-file .env.production`                                                   | Điền biến, luôn truyền `--env-file`                                                                                                                           |
+| Caddy không xin được chứng chỉ                               | DNS chưa trỏ đúng, cổng 80/443 bị firewall/nhà cung cấp chặn, `SITE_ADDRESS` sai, vượt giới hạn Let's Encrypt | `logs caddy` xem lỗi ACME; kiểm DNS và cổng; chờ rồi `up -d caddy`; không bấm khởi động lại liên tục                                                          |
+| 429 hàng loạt khi dùng Cloudflare proxy                      | Caddy thấy mọi kết nối cùng IP Cloudflare                                                                     | Bật `trusted_proxies` + `CF-Connecting-IP` (mục 3) hoặc tắt proxy (đám mây xám)                                                                               |
+| 502/503 ngay sau khi `up -d`                                 | Backend chưa `healthy` (đang migrate/khởi động) hoặc đã dừng vì env                                           | `ps` xem trạng thái, `logs backend`; chờ healthy. Với `/api/v1/*`, phản hồi lỗi từ Caddy là JSON `SERVICE_UNAVAILABLE`                                        |
+| Script `.sh` lỗi `\r: command not found` hoặc `no such file` | File bị chuyển CRLF khi checkout trên Windows                                                                 | `.gitattributes` ép `*.sh`, `Caddyfile`, `Dockerfile` về LF; checkout lại (`git add --renormalize .` rồi checkout) hoặc `sed -i 's/\r$//' deploy/backup/*.sh` |
+| Đăng nhập xong vẫn như chưa đăng nhập, cookie không lưu      | Truy cập qua HTTP thuần trong khi `COOKIE_SECURE=true` (cookie `Secure` chỉ lưu qua HTTPS)                    | Truy cập bằng HTTPS; chỉ thử qua HTTP thì đặt `COOKIE_SECURE=false` (KHÔNG dùng cho production thật)                                                          |
+| Link trong email trỏ sai domain                              | `PUBLIC_URL` sai lúc khởi động backend                                                                        | Sửa `PUBLIC_URL`, `up -d` lại; build lại frontend nếu đổi domain                                                                                              |
+| Trang tĩnh còn hiện cài đặt mặc định                         | ISR chưa làm mới sau build                                                                                    | Mở lại trang sau vài phút (mục 8)                                                                                                                             |
+| Form liên hệ trả 429                                         | Giới hạn 3 lần/10 phút/IP                                                                                     | Chờ hoặc restart backend (xóa bộ đếm) khi thử                                                                                                                 |
+| Backup lỗi quyền hoặc không thấy file                        | Thư mục `backups/` thuộc root                                                                                 | Đọc bằng `sudo`, hoặc `sudo chown` theo nhu cầu sao chép                                                                                                      |
+| `backup.sh` thoát mã 4, log "thiếu/sai recipient age"        | Đặt `BACKUP_REMOTE` mà thiếu `BACKUP_AGE_RECIPIENTS`/`_FILE`, hoặc recipient không phải `age1...`             | Điền public key (mục 11). Chỉ đặt `BACKUP_REMOTE_ENCRYPTION=none` khi remote đã được mã hóa ở lớp khác. Backup cục bộ vẫn có                                  |
+| `backup.sh` thoát mã 4, log "image không có rclone"          | Service `backup` còn dùng image `postgres:17` cũ                                                              | Build lại: `... --profile backup build backup` rồi `up -d backup`                                                                                             |
+| `backup.sh` thoát mã 5, log "đã có backup khác đang chạy"    | Một backup khác (vòng lặp của service `backup`, cron hoặc `run` tay) đang giữ `backups/.backup.lock`          | Bình thường, không phải lỗi, không tạo dump và không gọi heartbeat. Nếu lặp mãi, kiểm tiến trình backup treo: `docker ps`, `docker compose ... logs backup`   |
+| `backup.sh` thoát mã 3 (rclone copy/check lỗi)               | Sai/hết hạn access key, sai endpoint/bucket, mất mạng, hết dung lượng bucket                                  | Đọc log (không chứa secret); sửa `.env.backup` rồi chạy tay `backup.sh` lại. Backup cục bộ vẫn có. Heartbeat báo lỗi nếu đã cấu hình                          |
+| `fetch-remote.sh` thoát 3                                    | `sha256sum -c` sai: file trên remote hỏng hoặc bị sửa                                                         | Không dùng bản đó; `--list` rồi thử bản trước                                                                                                                 |
+| `fetch-remote.sh` thoát 4 hoặc "giải mã thất bại"            | Chưa mount khóa bí mật ở `/run/secrets/age-identity`, hoặc khóa không khớp recipient lúc backup               | Mount đúng file khóa (mục 11); bản tạo trước khi đổi recipient cần khóa cũ                                                                                    |
+| `docker compose` báo lỗi ở `env_file` / `required`           | Docker Compose cũ (< 2.24) không hiểu `required: false`                                                       | Nâng Docker Compose, hoặc tạo file `.env.backup` rỗng                                                                                                         |
 
 ## 15. Chạy thử cục bộ bằng Docker
 
@@ -467,12 +473,12 @@ Quyết định (M8): chỉ có tài liệu và script kiểm, KHÔNG thêm côn
 
 Cách đặt cấu hình dưới đây dùng được cho cả ba dịch vụ; tên trường khác nhau chút theo giao diện. Hạn mức (số monitor, chu kỳ tối thiểu, kênh cảnh báo, theo dõi chứng chỉ) tùy gói của từng dịch vụ, hãy kiểm tra trước khi chọn.
 
-| # | Monitor | Loại | Cấu hình |
-|---|---|---|---|
-| 1 | Chính: API + DB | HTTP(S) keyword | URL `https://<domain>/api/v1/health`; kỳ vọng HTTP 200 VÀ body chứa `"db":"up"`; chu kỳ 1-5 phút; timeout 10 giây; báo sau 2-3 lần lỗi liên tiếp |
-| 2 | Trang chủ | HTTP(S) keyword | URL `https://<domain>/`; kỳ vọng 200 VÀ HTML chứa `BeanBox` (tên cửa hàng trong `<title>`); cùng chu kỳ/timeout/số lần lỗi như trên |
-| 3 | Chứng chỉ TLS | SSL/chứng chỉ hết hạn | Host `<domain>` cổng 443; cảnh báo khi còn < 14 ngày |
-| 4 | Backup | Heartbeat/Push | Chu kỳ kỳ vọng 24 giờ + ân hạn vài giờ (xem bên dưới) |
+| #   | Monitor         | Loại                  | Cấu hình                                                                                                                                         |
+| --- | --------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | Chính: API + DB | HTTP(S) keyword       | URL `https://<domain>/api/v1/health`; kỳ vọng HTTP 200 VÀ body chứa `"db":"up"`; chu kỳ 1-5 phút; timeout 10 giây; báo sau 2-3 lần lỗi liên tiếp |
+| 2   | Trang chủ       | HTTP(S) keyword       | URL `https://<domain>/`; kỳ vọng 200 VÀ HTML chứa `BeanBox` (tên cửa hàng trong `<title>`); cùng chu kỳ/timeout/số lần lỗi như trên              |
+| 3   | Chứng chỉ TLS   | SSL/chứng chỉ hết hạn | Host `<domain>` cổng 443; cảnh báo khi còn < 14 ngày                                                                                             |
+| 4   | Backup          | Heartbeat/Push        | Chu kỳ kỳ vọng 24 giờ + ân hạn vài giờ (xem bên dưới)                                                                                            |
 
 Chi tiết:
 

@@ -7,8 +7,12 @@ DIR="$(dirname "$0")"
 trap 'exit 0' TERM INT
 
 while true; do
-  if ! sh "$DIR/backup.sh"; then
-    echo "[backup] LỖI: backup thất bại, thử lại sau $INTERVAL giây" >&2
+  sh "$DIR/backup.sh"
+  rc=$?
+  if [ "$rc" -eq 5 ]; then
+    echo "[backup] bỏ qua: đã có backup khác đang chạy, lần sau sau $INTERVAL giây"
+  elif [ "$rc" -ne 0 ]; then
+    echo "[backup] LỖI: backup thất bại (mã $rc), thử lại sau $INTERVAL giây" >&2
   fi
   sleep "$INTERVAL" &
   wait $!
