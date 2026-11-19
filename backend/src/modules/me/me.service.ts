@@ -1,4 +1,4 @@
-import type { Address, Prisma } from '@prisma/client';
+import type { Address, Prisma } from '../../generated/prisma/client.js';
 import { AppError } from '../../lib/errors.js';
 import { prisma } from '../../lib/prisma.js';
 import { toUserDto, type UserDto } from '../../lib/userDto.js';

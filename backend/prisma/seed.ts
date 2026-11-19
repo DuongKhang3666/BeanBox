@@ -1,14 +1,17 @@
 /* Entry seed dev: tài khoản, danh mục, thương hiệu, sản phẩm, setting, coupon. Dữ liệu nằm ở prisma/seed-data/. */
 import 'dotenv/config';
+import { PrismaPg } from '@prisma/adapter-pg';
 import argon2 from 'argon2';
-import { Prisma, PrismaClient, Role, CouponType } from '@prisma/client';
+import { Prisma, PrismaClient, Role, CouponType } from '../src/generated/prisma/client.js';
 import { resolveLocation } from '../src/modules/locations/locations.data.js';
 import { checkSeedAllowed } from './seedGuard.js';
 import { SEED_ADDRESSES, SEED_CUSTOMER_EMAIL } from './seed-data/addresses.js';
 import { BRANDS, CATEGORIES } from './seed-data/catalog.js';
 import { seedProducts } from './seed-data/seed-products.js';
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({
+  adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
+});
 
 function requirePassword(name: string): string {
   const v = process.env[name];

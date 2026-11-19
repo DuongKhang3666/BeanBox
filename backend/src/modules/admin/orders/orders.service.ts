@@ -1,4 +1,4 @@
-import { Prisma, type OrderStatus } from '@prisma/client';
+import { Prisma, type OrderStatus } from '../../../generated/prisma/client.js';
 import { diffFields, writeAudit } from '../../../lib/audit.js';
 import { AppError } from '../../../lib/errors.js';
 import { normalizeOrderCode, ORDER_CODE_REGEX } from '../../../lib/orderCode.js';

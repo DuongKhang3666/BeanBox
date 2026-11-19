@@ -63,6 +63,7 @@ services:
       CONTACT_RETENTION_DAYS: ${CONTACT_RETENTION_DAYS:-365}
       JOBS_ENABLED: ${JOBS_ENABLED:-true}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      GENERAL_RATE_LIMIT_PER_MIN: ${GENERAL_RATE_LIMIT_PER_MIN:-100}
       ORDER_RATE_LIMIT_PER_MIN: ${ORDER_RATE_LIMIT_PER_MIN:-10}
       COUPON_RATE_LIMIT_PER_MIN: ${COUPON_RATE_LIMIT_PER_MIN:-10}
       QUOTE_RATE_LIMIT_PER_MIN: ${QUOTE_RATE_LIMIT_PER_MIN:-30}
@@ -97,11 +98,15 @@ services:
         condition: service_healthy
       backend:
         condition: service_healthy
+    # Cổng host = cổng container và Caddy tự biết cổng đó (http_port/https_port trong Caddyfile) nên redirect
+    # http -> https giữ đúng cổng khi khác 80/443. Production thật để mặc định 80/443 (Let's Encrypt cần 80/443).
     ports:
-      - '${HTTP_PORT:-80}:80'
-      - '${HTTPS_PORT:-443}:443'
-      - '${HTTPS_PORT:-443}:443/udp'
+      - '${HTTP_PORT:-80}:${HTTP_PORT:-80}'
+      - '${HTTPS_PORT:-443}:${HTTPS_PORT:-443}'
+      - '${HTTPS_PORT:-443}:${HTTPS_PORT:-443}/udp'
     environment:
+      HTTP_PORT: ${HTTP_PORT:-80}
+      HTTPS_PORT: ${HTTPS_PORT:-443}
       SITE_ADDRESS: ${SITE_ADDRESS:?Đặt SITE_ADDRESS (domain, hoặc localhost để thử) trong .env.production}
       ACME_EMAIL: ${ACME_EMAIL:-}
       EDGE_RATE_AUTH_PER_MIN: ${EDGE_RATE_AUTH_PER_MIN:-30}
@@ -120,10 +125,15 @@ services:
       start_period: 20s
     logging: *default-logging
 
-  # Sao lưu hằng ngày (D-034). Bật: docker compose ... --profile backup up -d backup
+  # Sao lưu hằng ngày (D-034) + off-site tùy chọn (M8). Bật: docker compose ... --profile backup up -d backup
+  # Image build từ deploy/backup (postgres:17 + rclone + age + curl). Cấu hình off-site nằm trong file RIÊNG
+  # `.env.backup` (gitignored, mẫu `.env.backup.example`), KHÔNG nạp .env.production vào container này.
+  # Đổi đường dẫn file bằng biến BACKUP_ENV_FILE; file không có thì off-site tắt (cần compose >= 2.24).
   backup:
     profiles: ['backup']
-    image: postgres:17
+    build:
+      context: ./deploy/backup
+    image: beanbox-backup:local
     restart: unless-stopped
     init: true
     depends_on:
@@ -136,6 +146,9 @@ services:
       PGDATABASE: ${POSTGRES_DB:?Đặt POSTGRES_DB trong .env.production}
       BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-7}
       BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+    env_file:
+      - path: ${BACKUP_ENV_FILE:-.env.backup}
+        required: false
     entrypoint: ['sh', '/deploy/backup/loop.sh']
     volumes:
       - ./deploy/backup:/deploy/backup:ro

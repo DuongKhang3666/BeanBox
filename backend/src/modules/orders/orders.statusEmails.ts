@@ -1,4 +1,4 @@
-import type { Prisma } from '@prisma/client';
+import type { Prisma } from '../../generated/prisma/client.js';
 import { escapeHtml, sendMailInBackground, type MailMessage } from '../../lib/mailer.js';
 import { orderLink } from './orders.emails.js';
 import { toShippingAddress } from './orders.dto.js';

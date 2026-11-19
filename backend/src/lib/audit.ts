@@ -1,4 +1,4 @@
-import type { Prisma } from '@prisma/client';
+import type { Prisma } from '../generated/prisma/client.js';
 
 /** Audit log (api-contract §12.0): ghi trong CÙNG transaction với thay đổi. */
 

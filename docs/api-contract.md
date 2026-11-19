@@ -1,6 +1,7 @@
 # BeanBox – API Contract
 
 > Phiên bản 0.9 · 2026-11-19 · **Nguồn sự thật cho FE và BE.** Đổi contract phải sửa file này trước và nêu trong báo cáo.
+> Thay đổi 0.10 (M8): §14.12 đổi từ CSP report-only sang CSP thực thi (storefront không nonce; admin nonce + strict-dynamic), bỏ header `Content-Security-Policy-Report-Only`.
 > Thay đổi 0.9 (M7, D-025..D-034): thêm `GET /health/live` (liveness) và ghi rõ `GET /health` là readiness (§3, §15 mục 12); captcha tùy chọn cho form liên hệ: `contactCaptcha` ở `GET /settings/public` (§14.9), trường `captchaToken` và mã lỗi `400 CAPTCHA_FAILED` (§2, §14.11; `503 SERVICE_UNAVAILABLE` khi gọi Turnstile lỗi); job tự xóa tin liên hệ `RESOLVED`/`SPAM` theo `CONTACT_RETENTION_DAYS` (§14.11, §15 mục 15, D-029); CSP thêm header thực thi tập con và Turnstile ở report-only (§14.12, D-032). Rate limit ở edge (Caddy, D-026) không đổi shape API; lỗi do edge sinh ra ở `/api/v1/*` (429, 413, 502-504) trả JSON theo format lỗi §1 (xem phần Rate limit ở §1). Không cần migration.
 > Thay đổi 0.8: chi tiết hóa M6b (D-021..D-024): thay "14.9 Hoãn sau M6" bằng 14.9 Cài đặt cửa hàng (`GET/PUT /admin/settings`, `GET /settings/public`), 14.10 Quản lý người dùng (`/admin/users`), 14.11 Liên hệ (`POST /contact`, `/admin/contact-messages`), 14.12 CSP report-only (`POST /csp-report`); newsletter còn hoãn (14.13). Thêm mã lỗi `CANNOT_MODIFY_SELF`, `LAST_ADMIN` (§2); thêm action audit `settings.update`, `user.status`, `user.role`, `contact.update` (§12.0). Chốt thêm: settings chỉ Admin, ràng buộc ghi chặt/đọc nới, `innerCityWardCount` ở `/settings/public`, banner chỉ ảnh `/uploads/` và `href` nội bộ; khóa dòng + kiểm lại người thao tác ở quản lý người dùng; làm rõ liên hệ và `POST /csp-report`; thêm §15 mục 15–16. Cần migration `m6b_contact_message` (`db-schema.md`).
 > Thay đổi 0.7.1: ghi nhận khi triển khai M6: `Review` có thêm unique `(userId, productId)` (chống tạo trùng khi gửi đồng thời; trùng -> 409 `REVIEW_NOT_ALLOWED` `ALREADY_REVIEWED`); `requirements.md` đổi `POST /products/:id/reviews` thành `:slug`, FR-REV-01 bỏ ảnh ở M6 và FR-REV-02 thành 1 đánh giá/người dùng/sản phẩm; Enter ở ô tìm kiếm tới `/tim-kiem?q=` (§14.8). Không đổi shape API.
@@ -33,7 +34,7 @@
 12. [Admin (M4)](#12-admin-m4)
 13. [Thanh toán online, mã giảm giá admin, hoàn tiền (M5)](#13-thanh-toán-online-mã-giảm-giá-admin-hoàn-tiền-m5)
 14. [Hoàn thiện v1 (M6, M6b)](#14-hoàn-thiện-v1-m6-m6b)
-    - 14.9 Cài đặt cửa hàng · 14.10 Quản lý người dùng · 14.11 Liên hệ · 14.12 CSP report-only · 14.13 Còn hoãn
+    - 14.9 Cài đặt cửa hàng · 14.10 Quản lý người dùng · 14.11 Liên hệ · 14.12 CSP · 14.13 Còn hoãn
 15. [Câu hỏi mở / Giả định](#15-câu-hỏi-mở--giả-định)
 
 ## 1. Quy ước chung
@@ -67,7 +68,7 @@ Phân trang: query `page` (>= 1, mặc định 1), `pageSize` (1–100, mặc đ
 
 **Idempotency.** `POST /orders` bắt buộc `Idempotency-Key: <UUID v4>` (chỉ chấp nhận UUID v4, so khớp không phân biệt hoa thường, lưu lowercase). Thiếu/sai định dạng -> 400 `VALIDATION_ERROR` (`details[0].field = "Idempotency-Key"`). Quy tắc `requestFingerprint` và replay: xem §9.2.
 
-**Rate limit.** Chung 100 req/phút/IP. Nhóm nhạy cảm 5 req/phút/IP: `POST /auth/login`, `/auth/register`, `/auth/forgot-password`, `/auth/reset-password`, `/auth/change-password`, `POST /orders/:code/cancel` (guest), `GET /orders/track` (10/phút). Ba limiter riêng cho mã giảm giá và đặt đơn (D-011): `POST /cart/apply-coupon` 10/phút, `POST /checkout/quote` 30/phút, `POST /orders` 10/phút (từ 0.6 cấu hình được qua env `COUPON_RATE_LIMIT_PER_MIN`, `QUOTE_RATE_LIMIT_PER_MIN`, `ORDER_RATE_LIMIT_PER_MIN`, mặc định giữ nguyên, D-016); endpoint thanh toán có limiter riêng (§13); mỗi limiter có store riêng, theo IP, kể cả request có Bearer (và không miễn `X-Internal-Secret`), đặt trước bước xác thực. Vượt -> 429 `RATE_LIMITED` + header `Retry-After` (giây) và `error.details: { "retryAfterSec": <int> }` (cùng giá trị với header). Response có `RateLimit-Limit/Remaining/Reset`. IP client xác định theo `TRUST_PROXY` (D-009); request SSR nội bộ có `X-Internal-Secret` hợp lệ được miễn rate limit chung, không miễn nhóm nhạy cảm (xem `architecture.md` §3).
+**Rate limit.** Chung 100 req/phút/IP (mặc định; chỉnh được bằng env `GENERAL_RATE_LIMIT_PER_MIN`, số nguyên dương; E2E/CI đặt 1000, production giữ mặc định). Nhóm nhạy cảm 5 req/phút/IP: `POST /auth/login`, `/auth/register`, `/auth/forgot-password`, `/auth/reset-password`, `/auth/change-password`, `POST /orders/:code/cancel` (guest), `GET /orders/track` (10/phút). Ba limiter riêng cho mã giảm giá và đặt đơn (D-011): `POST /cart/apply-coupon` 10/phút, `POST /checkout/quote` 30/phút, `POST /orders` 10/phút (từ 0.6 cấu hình được qua env `COUPON_RATE_LIMIT_PER_MIN`, `QUOTE_RATE_LIMIT_PER_MIN`, `ORDER_RATE_LIMIT_PER_MIN`, mặc định giữ nguyên, D-016); endpoint thanh toán có limiter riêng (§13); mỗi limiter có store riêng, theo IP, kể cả request có Bearer (và không miễn `X-Internal-Secret`), đặt trước bước xác thực. Vượt -> 429 `RATE_LIMITED` + header `Retry-After` (giây) và `error.details: { "retryAfterSec": <int> }` (cùng giá trị với header). Response có `RateLimit-Limit/Remaining/Reset`. IP client xác định theo `TRUST_PROXY` (D-009); request SSR nội bộ có `X-Internal-Secret` hợp lệ được miễn rate limit chung, không miễn nhóm nhạy cảm (xem `architecture.md` §3).
 
 Ở production có thêm rate limit ở edge (Caddy, D-026) theo IP, độc lập với các limiter trên (mặc định `POST /auth/*` 30/phút, `/api/v1/*` 300/phút). Lỗi do chính edge sinh ra ở `/api/v1/*` cũng theo format lỗi ở trên: 429 `RATE_LIMITED` (giữ `Retry-After`), 413 `PAYLOAD_TOO_LARGE` ở `/api/v1/admin/uploads*` và `VALIDATION_ERROR` ở các path khác khi thân request quá lớn, 502/503/504 `SERVICE_UNAVAILABLE` khi backend không phản hồi. Chi tiết: `deployment.md`.
 
@@ -799,7 +800,7 @@ Quyết định nền: D-014 (thanh toán online), D-015 (hoàn tiền thủ cô
 - Thiếu cấu hình -> phương thức tắt: `POST /checkout/quote` trả `paymentMethods[].enabled = false` (§9.1); `POST /orders` với phương thức đó -> 409 `PAYMENT_METHOD_UNAVAILABLE`.
 - `STRIPE_WEBHOOK_SECRET` tùy chọn. Thiếu thì `POST /payments/stripe/webhook` trả 503 `SERVICE_UNAVAILABLE`; đơn vẫn xác nhận được qua `POST /payments/stripe/sync` (§13.4).
 - Env khác: `VNPAY_PAYMENT_URL` (mặc định `https://sandbox.vnpayment.vn/paymentv2/vpcpay.html`, bắt buộc https), `VNPAY_RETURN_URL` (mặc định `${WEB_APP_URL}/thanh-toan/ket-qua?provider=vnpay`).
-- Rate limit cấu hình qua env (D-016): `ORDER_RATE_LIMIT_PER_MIN` (mặc định 10), `COUPON_RATE_LIMIT_PER_MIN` (10), `QUOTE_RATE_LIMIT_PER_MIN` (30). Danh sách đầy đủ biến môi trường: `architecture.md` §8.
+- Rate limit cấu hình qua env (D-016): `ORDER_RATE_LIMIT_PER_MIN` (mặc định 10), `COUPON_RATE_LIMIT_PER_MIN` (10), `QUOTE_RATE_LIMIT_PER_MIN` (30); giới hạn chung toàn API `GENERAL_RATE_LIMIT_PER_MIN` (100, M8). Danh sách đầy đủ biến môi trường: `architecture.md` §8.
 
 ### 13.1 Tạo đơn online
 
@@ -1200,17 +1201,27 @@ Quyết định: D-023. Bảng `ContactMessage` (`db-schema.md`, migration `m6b_
 - Admin `PATCH` body không có `status` lẫn `adminNote` (kể cả chỉ có trường lạ) -> 400.
 - Admin không xóa thủ công; job nền tự xóa cứng tin `RESOLVED`/`SPAM` quá `CONTACT_RETENTION_DAYS` ngày (D-029, §15 mục 15).
 
-### 14.12 CSP report-only
+### 14.12 CSP (thực thi) và `POST /csp-report`
 
-Quyết định: D-024, D-032.
+Quyết định: D-024, D-032; từ M8 CSP đầy đủ ở chế độ THỰC THI (cập nhật decisions.md do Tech Lead). Không còn header `Content-Security-Policy-Report-Only`.
 
-**Header ở frontend.** Next gửi `Content-Security-Policy-Report-Only` cho mọi trang. Từ M7 còn gửi thêm header `Content-Security-Policy` THỰC THI một tập con không cần nonce: `frame-ancestors 'none'; base-uri 'self'; object-src 'none'` (D-032). Policy report-only (đã thêm Turnstile theo D-028 vào `script-src` và `frame-src`):
+**Header ở frontend.** Mỗi response HTML có đúng một header `Content-Security-Policy`:
+
+1. Storefront (mọi route trừ `/admin` và `/admin/...`; đặt ở `next.config.ts`, không nonce nên giữ static/ISR). `'unsafe-inline'` cho script còn tồn tại vì script của Next chứa payload RSC không thể hash:
 
 ```
 default-src 'self'; script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-src 'self' https://challenges.cloudflare.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; report-uri /api/v1/csp-report
 ```
 
-Chỉ khi chạy development thêm `'unsafe-eval'` vào `script-src`. `'unsafe-inline'` cho script là tạm thời vì Next chèn inline script không có nonce; việc có chuyển sang nonce hay không xem D-032 (M7 không chuyển). Chế độ report-only KHÔNG chặn gì, chỉ báo cáo; mục tiêu là thu thập vi phạm thực tế trước khi thực thi. FE chỉ dùng `report-uri` (chưa dùng `report-to`/`Reporting-Endpoints`).
+2. Admin (`/admin`, `/admin/...`; đặt ở `src/proxy.ts`, nonce 16 byte ngẫu nhiên base64 theo request, trang admin render động). Không có `'unsafe-inline'` ở `script-src` và không có Turnstile ở `script-src`; `frame-src` cho phép Turnstile (khớp `buildCspAdmin`):
+
+```
+default-src 'self'; script-src 'self' 'nonce-<nonce>' 'strict-dynamic'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-src 'self' https://challenges.cloudflare.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; report-uri /api/v1/csp-report
+```
+
+Vào `/admin` từ storefront dùng tải trang đầy đủ (link `<a>`, chuyển hướng sau đăng nhập bằng `location.assign`) vì CSP gắn với tài liệu, không đổi được khi điều hướng phía client.
+
+Chỉ khi chạy development thêm `'unsafe-eval'` vào `script-src` (cả hai policy). Policy thực thi nên trình duyệt CHẶN vi phạm và vẫn gửi báo cáo tới `report-uri` (FE chỉ dùng `report-uri`, chưa dùng `report-to`/`Reporting-Endpoints`); vì không còn report-only nên endpoint chỉ nhận báo cáo vi phạm thật.
 
 **`POST /csp-report` – Public.**
 

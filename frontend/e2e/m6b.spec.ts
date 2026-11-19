@@ -58,7 +58,7 @@ test("admin xử lý tin nhắn, xem cài đặt và người dùng", async ({ p
   await expect(page.getByText("Bạn không thể khóa hoặc đổi vai trò của chính mình.")).toBeVisible();
 });
 
-test("chính sách vận chuyển hiển thị phí và trang chủ có CSP report-only và CSP thực thi", async ({
+test("chính sách vận chuyển hiển thị phí; CSP storefront thực thi, admin có nonce", async ({
   page,
 }) => {
   await page.goto("/chinh-sach/van-chuyen");
@@ -66,11 +66,16 @@ test("chính sách vận chuyển hiển thị phí và trang chủ có CSP repo
 
   const res = await page.request.get("/");
   expect(res.status()).toBe(200);
-  const reportOnly = res.headers()["content-security-policy-report-only"];
-  expect(reportOnly).toContain("default-src 'self'");
-  expect(reportOnly).toContain("https://challenges.cloudflare.com");
-  expect(reportOnly).toContain("frame-src 'self' https://challenges.cloudflare.com");
-  expect(res.headers()["content-security-policy"]).toBe(
-    "frame-ancestors 'none'; base-uri 'self'; object-src 'none'",
-  );
+  const csp = res.headers()["content-security-policy"];
+  expect(csp).toContain("default-src 'self'");
+  expect(csp).toContain("script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com");
+  expect(csp).toContain("frame-src 'self' https://challenges.cloudflare.com");
+  expect(csp).toContain("report-uri /api/v1/csp-report");
+  expect(res.headers()["content-security-policy-report-only"]).toBeUndefined();
+
+  const admin = await page.request.get("/admin");
+  const adminCsp = admin.headers()["content-security-policy"];
+  expect(adminCsp).toContain("'nonce-");
+  expect(adminCsp).toContain("'strict-dynamic'");
+  expect(admin.headers()["content-security-policy-report-only"]).toBeUndefined();
 });

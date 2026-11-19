@@ -10,3 +10,4 @@ tests
 # Ảnh người dùng tải lên không vào image; giữ ảnh seed
 uploads/*
 !uploads/seed
+src/generated

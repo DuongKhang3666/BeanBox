@@ -30,7 +30,8 @@ export async function login(page: Page, email: string, password: string) {
   await page.getByLabel("Email", { exact: true }).fill(email);
   await page.getByLabel("Mật khẩu", { exact: true }).fill(password);
   await page.getByRole("button", { name: "Đăng nhập", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Đăng xuất" })).toBeVisible();
+  // Sau đăng nhập có thể ở /tai-khoan (nút ở header và ở menu tài khoản): lấy nút đầu tiên để tránh lỗi strict mode.
+  await expect(page.getByRole("button", { name: "Đăng xuất" }).first()).toBeVisible();
 }
 
 export interface StockedProduct {

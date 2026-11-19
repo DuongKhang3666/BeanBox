@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { isAdminPath } from "@/lib/adminPath";
 import { useAuth } from "../AuthProvider";
 import { mapAuthError } from "../errors";
 import { safeRedirect } from "../safeRedirect";
@@ -54,7 +55,10 @@ export function LoginForm() {
     try {
       await login({ email: normalizeEmail(email), password });
       // Gộp giỏ guest vào giỏ tài khoản do CartProvider xử lý khi auth chuyển sang authenticated.
-      router.replace(safeRedirect(params.get("next")));
+      const dest = safeRedirect(params.get("next"));
+      // /admin có CSP riêng theo tài liệu: phải tải trang đầy đủ (phiên được khôi phục bằng refresh cookie).
+      if (isAdminPath(dest)) window.location.assign(dest);
+      else router.replace(dest);
     } catch (err) {
       const mapped = mapAuthError(err, FIELDS);
       setErrors(mapped.fieldErrors);

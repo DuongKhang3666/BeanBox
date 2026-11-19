@@ -1,6 +1,7 @@
 # BeanBox – Kiến trúc hệ thống
 
-> Phiên bản 0.6 · 2026-11-20 · Nguồn: `docs/requirements.md` + quyết định của Tech Lead.
+> Phiên bản 0.7 · 2026-11-20 · Nguồn: `docs/requirements.md` + quyết định của Tech Lead.
+> Thay đổi 0.7 (M8, D-036..D-040): nâng Prisma 7 với driver adapter `pg` và `prisma.config.ts`, client sinh ra ở `backend/src/generated` (không commit) (§1, §2, §10); entrypoint backend kiểm env trước `migrate deploy` và Caddy redirect đúng cổng (D-037, §1); backup off-site mã hóa tùy chọn (rclone + age, D-038) và giám sát uptime bằng tài liệu + `deploy/monitoring/check.sh` (D-039) ở §2; CSP đầy đủ chuyển sang thực thi, `/admin` dùng nonce qua `src/proxy.ts` (D-040, §4, ADR 13).
 > Thay đổi 0.6 (M7, D-025..D-035): triển khai production bằng Docker Compose với Caddy (TLS tự động, rate limit edge) ở §1, §2, §3; job dọn dẹp thêm xóa tin liên hệ cũ (D-029, §7); biến môi trường mới (Turnstile, `CONTACT_RETENTION_DAYS`, `SEED_ALLOW_PRODUCTION`, `INTERNAL_API_SECRET` bắt buộc ở production, biến compose prod) ở §8; thêm ADR 11-13 ở §9 (Caddy + edge rate limit, một instance không Redis, CSP tập con thực thi). Hướng dẫn vận hành: [`deployment.md`](deployment.md).
 > Thay đổi 0.5: M5 thanh toán online (D-014), hoàn tiền thủ công và job hết hạn mỗi 60 giây (D-015), biến môi trường mới và rate limit cấu hình được (D-016) ở §7, §8. Hướng dẫn cấu hình: [`payments-setup.md`](payments-setup.md).
 > Thay đổi 0.4: M4 Admin (D-013): module backend `modules/admin/` và `lib/audit.ts`, FE `features/admin/` (§2); router `/admin` chặn quyền ở cấp router, xóa cần `requireAdmin` (§4).
@@ -31,7 +32,7 @@ Trình duyệt ──► Next.js :3000 ──(rewrites /api/v1/*)──► Expre
 | Thành phần | Công nghệ | Cổng |
 |---|---|---|
 | Frontend | Next.js (App Router) + TypeScript + Tailwind | 3000 |
-| Backend | Express + TypeScript + Prisma + zod | 4000 |
+| Backend | Express + TypeScript + Prisma 7 (driver adapter `pg`) + zod | 4000 |
 | Database | PostgreSQL (extension `pg_trgm`) | 5432 |
 
 **Production / demo (D-025, D-026)** chạy bằng `docker-compose.prod.yml`; chỉ Caddy publish cổng ra host, các service còn lại chỉ nằm trong mạng Docker:
@@ -45,6 +46,8 @@ Internet ──► Caddy :80/:443 ──┬─ /api/v1/*, /uploads/* ───�
 
 Chi tiết triển khai và vận hành: [`deployment.md`](deployment.md).
 
+Entrypoint backend: `node dist/checkEnv.js` -> `prisma migrate deploy` -> `exec node dist/server.js` (env sai thì dừng trước khi áp migration, D-037). Caddy nhận cổng qua `HTTP_PORT`/`HTTPS_PORT` (mặc định 80/443; đổi chỉ để thử cục bộ). Backup: `pg_dump` + uploads cục bộ, tùy chọn đẩy off-site mã hóa age bằng rclone (D-038); uptime do monitor ngoài VPS kiểm (D-039, `deploy/monitoring/check.sh`).
+
 - Node >= 22 LTS, package manager `npm`. `frontend/` và `backend/` là hai project độc lập (không workspace, mỗi nơi có `package.json` + `package-lock.json` riêng).
 - Dev chạy bằng Docker Compose (Postgres bắt buộc; app tùy chọn). Email dev: Mailpit. Thanh toán: COD, VNPay sandbox, Stripe test.
 
@@ -55,14 +58,17 @@ BeanBox/
 ├─ docs/
 ├─ frontend/
 │  └─ src/
+│     ├─ proxy.ts       # chỉ /admin: nonce + CSP thực thi (Next 16, D-040); policy dựng ở lib/csp.ts
 │     ├─ app/           # App Router: route theo sitemap (/danh-muc/[slug], /san-pham/[slug], /admin/...)
 │     ├─ components/    # UI dùng chung (Button, Input, ProductCard, Skeleton...)
 │     ├─ features/      # theo nghiệp vụ: catalog, cart, checkout, account, admin (component + hook + api calls)
 │     └─ lib/           # api client (fetch wrapper, refresh single-flight), format tiền/ngày, utils
 ├─ backend/
+│  ├─ prisma.config.ts  # cấu hình Prisma CLI: nạp .env, SHADOW_DATABASE_URL, seed (D-036)
 │  ├─ prisma/           # schema.prisma, migrations/, seed.ts, seed-data/
 │  ├─ data/             # provinces-wards.json + README.md (nguồn) – danh mục hành chính 2 cấp, đọc lúc khởi động (D-006)
 │  ├─ src/
+│  │  ├─ generated/     # Prisma Client sinh bởi `npx prisma generate` (KHÔNG commit, D-036)
 │  │  ├─ config/        # env (zod-validated), constants; paths.ts (UPLOADS_DIR; AppOptions.uploadsDir cho test)
 │  │  ├─ lib/           # prisma client, logger (pino), errors (AppError), mailer, tokens, money, text (bỏ dấu), audit.ts (ghi AuditLog trong transaction, M4)
 │  │  ├─ middlewares/   # requestId, auth, requireRole, validate(zod), rateLimit, originCheck, errorHandler
@@ -74,7 +80,8 @@ BeanBox/
 │  └─ tests/            # unit (pricing, shipping, state machine) + integration (supertest)
 ├─ deploy/
 │  ├─ caddy/            # Caddyfile (TLS, rate limit edge, header, log JSON) + Dockerfile (xcaddy + caddy-ratelimit), D-026
-│  └─ backup/           # backup.sh, restore.sh, loop.sh (D-034)
+│  ├─ backup/           # Dockerfile (postgres:17 + rclone + age), backup.sh, restore.sh, loop.sh, fetch-remote.sh, selftest-offsite.sh (D-034, D-038)
+│  └─ monitoring/       # check.sh: kiểm health, trang chủ, hạn TLS cho monitor ngoài/cron (D-039)
 ├─ docker-compose.yml           # dev: db, mailpit; profile app: backend + frontend
 ├─ docker-compose.prod.yml      # production/demo: caddy, frontend, backend, db; profile backup, tools (D-025)
 ├─ .env.production.example      # mẫu biến production (sao chép thành .env.production, không commit)
@@ -104,7 +111,7 @@ Quy tắc phân lớp backend: `routes` (khai báo + middleware) -> `controller`
 | CSRF | Endpoint dùng cookie (`/auth/refresh`, `/auth/logout`): `SameSite=Strict` + kiểm tra header `Origin` thuộc whitelist (thiếu hoặc sai -> 403) |
 | Khóa tài khoản | 5 lần sai liên tiếp trong 15 phút -> `lockedUntil = now + 15 phút` (FR-AUTH-08) |
 | RBAC | `CUSTOMER`, `STAFF`, `ADMIN`; middleware `requireAuth` đọc lại `role/status` từ DB MỌI request đã xác thực (không chỉ admin), `requireRole` dùng role đó. User không tồn tại -> 401; `DISABLED` -> 403 |
-| CSP (D-024) | Frontend gửi `Content-Security-Policy-Report-Only` qua `headers()` trong `next.config.ts` (chỉ báo cáo, không chặn; `'unsafe-inline'` cho script/style là tạm thời; M7 KHÔNG chuyển sang nonce mà thêm header `Content-Security-Policy` thực thi tập con `frame-ancestors 'none'; base-uri 'self'; object-src 'none'`, D-032). Trình duyệt báo vi phạm tới `POST /api/v1/csp-report` (rate limit 20/phút/IP, log `warn` đã làm sạch, không lưu DB, không PII). Backend API vẫn giữ CSP mặc định của helmet cho response JSON. Chi tiết: api-contract §14.12 |
+| CSP (D-024, D-040) | Frontend gửi `Content-Security-Policy` THỰC THI (không còn report-only). Storefront: `headers()` trong `next.config.ts`, `script-src` còn `'unsafe-inline'` để giữ static/ISR. `/admin`: `src/proxy.ts` sinh nonce theo request + `'strict-dynamic'`, admin layout ép render động; vào `/admin` bằng tải trang đầy đủ. Policy dựng ở `src/lib/csp.ts`. Trình duyệt báo vi phạm tới `POST /api/v1/csp-report` (rate limit 20/phút/IP, log `warn` đã làm sạch, không lưu DB, không PII). Backend API vẫn giữ CSP mặc định của helmet cho response JSON. Chi tiết: api-contract §14.12 |
 | Admin | Router `/admin` áp `requireAuth` + `requireStaff` ở cấp router (mọi endpoint con tự động được bảo vệ); xóa sản phẩm/danh mục/brand cần thêm `requireAdmin`. Mọi thao tác ghi ghi `AuditLog` cùng transaction (`lib/audit.ts`) |
 | Frontend | Fetch wrapper tự gắn Bearer; gặp 401 -> refresh **single-flight** trong tab (nhiều request chờ chung 1 lần refresh) -> retry 1 lần. Giữa các tab: khóa bằng Web Locks API (`navigator.locks`) nếu trình duyệt hỗ trợ |
 | Hạn chế đã chấp nhận | Đổi/đặt lại mật khẩu không vô hiệu access token đang sống (tối đa 15 phút); refresh token thì bị thu hồi ngay |
@@ -169,7 +176,7 @@ Quy tắc phân lớp backend: `routes` (khai báo + middleware) -> `controller`
 | `CONTACT_RETENTION_DAYS` | mặc định `365`; số ngày giữ tin liên hệ `RESOLVED`/`SPAM` trước khi job xóa cứng; `0` = tắt (D-029) |
 | `SEED_ADMIN_PASSWORD`, `SEED_STAFF_PASSWORD`, `SEED_CUSTOMER_PASSWORD` | mật khẩu cho seed; mặc định seed từ chối chạy khi `NODE_ENV=production` |
 | `SEED_ALLOW_PRODUCTION` | `true` để cho phép seed ở production (D-031); khi đó cả 3 mật khẩu phải >= 12 ký tự, có chữ và số, khác giá trị mẫu |
-| Biến compose production (`PUBLIC_URL`, `SITE_ADDRESS`, `ACME_EMAIL`, `HTTP_PORT`, `HTTPS_PORT`, `POSTGRES_*`, `EDGE_RATE_*`, `BACKUP_*`) | chỉ dùng ở `docker-compose.prod.yml` / `.env.production`; `PUBLIC_URL` được compose gán cho `WEB_APP_URL`, `FRONTEND_ORIGINS` và `NEXT_PUBLIC_SITE_URL` (nhúng lúc build frontend). Bảng đầy đủ: [`deployment.md`](deployment.md) §4 |
+| Biến compose production (`PUBLIC_URL`, `SITE_ADDRESS`, `ACME_EMAIL`, `HTTP_PORT`, `HTTPS_PORT`, `POSTGRES_*`, `EDGE_RATE_*`, `BACKUP_*`) | chỉ dùng ở `docker-compose.prod.yml` / `.env.production`; `PUBLIC_URL` được compose gán cho `WEB_APP_URL`, `FRONTEND_ORIGINS` và `NEXT_PUBLIC_SITE_URL` (nhúng lúc build frontend). Bảng đầy đủ: [`deployment.md`](deployment.md) §4. Cấu hình backup off-site (`BACKUP_REMOTE`, `RCLONE_CONFIG_*`, `BACKUP_AGE_RECIPIENTS`...) nằm riêng ở `.env.backup` (mẫu `.env.backup.example`, D-038), xem [`deployment.md`](deployment.md) §11 |
 
 Backend validate toàn bộ env bằng zod khi khởi động, thiếu/sai thì dừng ngay.
 
@@ -189,11 +196,11 @@ Backend validate toàn bộ env bằng zod khi khởi động, thiếu/sai thì 
 | 10 | IP client & rate limit sau proxy (D-009) | `TRUST_PROXY` cấu hình được thay cho `trust proxy = 1`, backend bind `127.0.0.1`, SSR dùng `X-Internal-Secret` để không dồn chung một IP; chấp nhận rủi ro rate limit SSR phải đặt ở edge khi deploy |
 | 11 | Caddy làm reverse proxy + rate limit ở edge (D-026) | TLS Let's Encrypt tự động, một chỗ đặt header bảo mật/giới hạn body/log JSON, rate limit theo IP cho cả lưu lượng SSR; đánh đổi: plugin `caddy-ratelimit` bên thứ ba (ghim commit), bộ đếm trong bộ nhớ, reset khi restart |
 | 12 | Một instance backend, MemoryStore, không Redis (D-027) | Đủ cho demo, ít thành phần phải vận hành; job nền đã an toàn nhiều instance nhờ advisory lock, nhưng rate limit thì chưa, nên scale ngang cần store dùng chung |
-| 13 | CSP: chỉ thực thi tập con, phần còn lại report-only (D-024, D-032) | Nonce buộc mọi trang render động (mất ISR/cache catalog). Thực thi `frame-ancestors 'none'; base-uri 'self'; object-src 'none'`; `script-src`/`style-src` đầy đủ vẫn ở `Content-Security-Policy-Report-Only` với `'unsafe-inline'`, xem lại khi cần chặn XSS bằng nonce hoặc hash |
+| 13 | CSP thực thi: storefront không nonce, `/admin` có nonce (D-040, thay D-032) | Nonce cho toàn site buộc mọi trang render động (mất ISR/cache catalog) và hash không khả thi vì script inline của Next chứa payload RSC đổi theo trang/build. Storefront: CSP đầy đủ thực thi với `script-src 'unsafe-inline'` (chưa chặn XSS inline, chấp nhận). `/admin`: nonce + `'strict-dynamic'` ở `src/proxy.ts`, chỉ `/admin/*` render động. Bỏ header report-only; Caddy không được đặt thêm CSP |
 
 ## 10. Câu hỏi mở / Giả định
 
-- Prisma phiên bản: ghi nhận dùng **Prisma 6.x** (khối `datasource` còn `url = env(...)`). Nếu scaffold chọn Prisma 7, chuyển URL sang `prisma.config.ts`.
+- Prisma phiên bản: **Prisma 7** (D-036), URL DB và shadow DB cấu hình ở `backend/prisma.config.ts`, client sinh vào `backend/src/generated/prisma` bằng `npx prisma generate` (không commit; chạy sau mỗi `npm install`). Prisma 8 đang RC, chưa nâng.
 - Job nền chạy trong tiến trình API là đủ cho MVP một instance; khi scale ngang cần advisory lock (đã nêu) hoặc tách worker.
 - Chia sẻ type FE/BE: chưa làm (không monorepo). Có thể sinh type từ zod/OpenAPI sau.
 - Các điểm mở khác xem cuối `db-schema.md` và `api-contract.md`.

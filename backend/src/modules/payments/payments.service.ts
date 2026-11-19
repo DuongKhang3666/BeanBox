@@ -1,4 +1,4 @@
-import type { PaymentProvider, Prisma } from '@prisma/client';
+import type { PaymentProvider, Prisma } from '../../generated/prisma/client.js';
 import { getPaymentConfig, type PaymentConfig } from '../../config/payments.js';
 import { AppError } from '../../lib/errors.js';
 import { logger } from '../../lib/logger.js';

@@ -39,6 +39,11 @@
 - [D-033 CI (GitHub Actions)](#d-033-ci-github-actions)
 - [D-034 Backup và khôi phục](#d-034-backup-và-khôi-phục)
 - [D-035 Sửa hai rủi ro tồn đọng trước deploy](#d-035-sửa-hai-rủi-ro-tồn-đọng-trước-deploy)
+- [D-036 Nâng Prisma 7](#d-036-nâng-prisma-7)
+- [D-037 Kiểm env trước migrate và redirect cổng Caddy](#d-037-kiểm-env-trước-migrate-và-redirect-cổng-caddy)
+- [D-038 Backup off-site](#d-038-backup-off-site)
+- [D-039 Giám sát uptime](#d-039-giám-sát-uptime)
+- [D-040 CSP ở M8](#d-040-csp-ở-m8)
 
 ---
 
@@ -230,6 +235,7 @@
   3. **Rate limit cấu hình qua env:** `ORDER_RATE_LIMIT_PER_MIN`, `COUPON_RATE_LIMIT_PER_MIN`, `QUOTE_RATE_LIMIT_PER_MIN`, mặc định giữ 10/10/30 (D-011); giúp chạy e2e/demo không chạm giới hạn mà không sửa code.
 - **Hệ quả:** Phải thêm template email cho 4 trạng thái. Link cũ sau khi đổi slug vẫn hỏng tới M6. Giá trị env được validate bằng zod (số nguyên dương).
 - **Docs bị ảnh hưởng:** `api-contract.md` §1, §12.1, §13.0, §13.9, §15 mục 13–14; `architecture.md` §8.
+- **Cập nhật 2026-11-20 (M8):** thêm `GENERAL_RATE_LIMIT_PER_MIN` (mặc định 100) cho rate limit chung; E2E/CI đặt 1000 để chạy liền mạch không chạm giới hạn chung, production giữ mặc định.
 
 ## D-017 Đánh giá sản phẩm
 
@@ -344,6 +350,7 @@
   5. Backend API vẫn giữ CSP mặc định của helmet cho response JSON.
 - **Hệ quả/rủi ro:** Chưa có bảo vệ thực sự từ CSP cho đến M7; log `warn` có thể nhiều ở dev (đã giới hạn bằng rate limit).
 - **Cập nhật 2026-11-20:** kế hoạch nonce ở M7 đã được thay đổi, xem D-032.
+- **Cập nhật 2026-11-20 (M8):** CSP đầy đủ đã chuyển sang thực thi và không còn header report-only; `/admin` dùng nonce, xem D-040.
 - **Docs bị ảnh hưởng:** `api-contract.md` §14.12; `architecture.md`; `testing.md`.
 
 ## D-025 Mô hình triển khai demo
@@ -417,6 +424,7 @@
   2. Frontend có route `GET /healthz` (Next route handler, không gọi backend, `Cache-Control: no-store`) cho healthcheck container frontend.
   3. Log: backend pino JSON có `reqId` (đã có, nhận `X-Request-Id` hợp lệ từ Caddy), Caddy JSON access log; xem bằng `docker compose logs`. Không có metrics/APM ở M7.
 - **Hệ quả/rủi ro:** Không có cảnh báo tự động; chủ dự án tự theo dõi (uptime monitor ngoài nếu cần).
+- **Cập nhật 2026-11-20 (M8):** đã có hướng dẫn giám sát uptime và `deploy/monitoring/check.sh`, xem D-039 (stack vẫn không tự gửi cảnh báo).
 - **Docs bị ảnh hưởng:** `api-contract.md` §3, §15 mục 12; `docs/deployment.md`.
 
 ## D-031 Seed dữ liệu demo trên production (opt-in)
@@ -440,6 +448,7 @@
   1. KHÔNG chuyển sang nonce ở M7. Giữ `Content-Security-Policy-Report-Only` đầy đủ như D-024 (thêm Turnstile theo D-028).
   2. Thêm header `Content-Security-Policy` THỰC THI một tập con không cần nonce: `frame-ancestors 'none'; base-uri 'self'; object-src 'none'`.
 - **Hệ quả/rủi ro:** Chưa chặn XSS bằng `script-src`; xem lại khi có nhu cầu (nonce + dynamic hoặc hash).
+- **Cập nhật 2026-11-20 (M8):** quyết định không dùng nonce cho toàn site vẫn giữ, nhưng CSP đầy đủ nay được thực thi (storefront giữ `'unsafe-inline'`, `/admin` dùng nonce) và header report-only đã bỏ, xem D-040.
 - **Docs bị ảnh hưởng:** `api-contract.md` §14.12; `architecture.md`.
 
 ## D-033 CI (GitHub Actions)
@@ -456,6 +465,7 @@
   6. `docker`: build image backend/frontend/caddy, không push.
   7. Cache npm. KHÔNG có deploy tự động.
 - **Hệ quả/rủi ro:** E2E chuyển từ "chỉ cục bộ" (D-020) sang chạy trong CI; E2E có thể chậm/flaky hơn. `audit` không chặn nên cần xem báo cáo thủ công.
+- **Cập nhật 2026-11-20 (M8):** lệnh kiểm drift dùng `--to-schema` và bỏ `--shadow-database-url` theo Prisma 7 (D-036); job `docker` build thêm image backup và có thêm job `ops-lint` (shellcheck, `docker compose config`), xem `testing.md`.
 - **Docs bị ảnh hưởng:** `testing.md`; `.github/workflows/`.
 
 ## D-034 Backup và khôi phục
@@ -467,6 +477,7 @@
   1. Script trong `deploy/backup/`: `pg_dump -Fc` hằng ngày, xoay vòng giữ `BACKUP_RETENTION_DAYS` (mặc định 7) ngày; nén thư mục uploads (`tar.gz`) cùng lịch; khôi phục bằng `pg_restore --clean --if-exists --no-owner` vào DB đích (hướng dẫn trong `docs/deployment.md`).
   2. Chạy tùy chọn bằng service `backup` (profile `backup`, vòng lặp ngủ 24 giờ) hoặc cron của VPS gọi `docker compose run --rm backup ...`. Ghi ra `./backups` trên VPS.
 - **Hệ quả/rủi ro:** Backup nằm cùng máy với DB; chủ dự án phải tự sao chép ra ngoài (off-site). Phải thử khôi phục định kỳ.
+- **Cập nhật 2026-11-20 (M8):** thêm backup off-site mã hóa (tùy chọn, mặc định tắt) thay cho việc chủ dự án tự sao chép, xem D-038.
 - **Docs bị ảnh hưởng:** `docs/deployment.md`; `deploy/backup/`.
 
 ## D-035 Sửa hai rủi ro tồn đọng trước deploy
@@ -481,3 +492,77 @@
   - Các trang tĩnh đọc `/settings/public` (giới thiệu, liên hệ, chính sách, footer...) được prerender lúc build bằng cài đặt mặc định vì lúc build image không có backend; tự lành sau ISR 300 giây kể từ lần truy cập đầu tiên sau mốc đó (D-021). Build chậm thêm khoảng 1-2 phút do fetch thất bại. Sau deploy nên mở lướt các trang chính (xem `deployment.md` mục 8).
   - Form liên hệ lấy `contactCaptcha` mới nhất phía client (không dựa vào giá trị prerender) để bật/tắt Turnstile (D-028) có hiệu lực ngay mà không phải chờ ISR.
 - **Docs bị ảnh hưởng:** `docs/deployment.md` (mục 8); `docs/testing.md` (E2E).
+
+## D-036 Nâng Prisma 7
+
+- **Ngày:** 2026-11-20 · **Người chốt:** Tech Lead theo ủy quyền chủ dự án
+- **Trạng thái:** Áp dụng.
+- **Bối cảnh:** `npm audit` báo 3 lỗi high theo chuỗi `deepmerge-ts@7.1.5` (GHSA-ggr8-5vv4-36mx) -> `@prisma/config` 6.19.3 -> `prisma` 6.19.3.
+- **Quyết định:**
+  1. `prisma`, `@prisma/client`, `@prisma/adapter-pg` ~7.10.1.
+  2. Generator `prisma-client`, output `src/generated/prisma`, ESM, import có đuôi `.js`. Thư mục sinh ra KHÔNG commit: phải chạy `npx prisma generate` sau mỗi `npm install`/`npm ci`.
+  3. `backend/prisma.config.ts`: nạp `.env` bằng dotenv; URL đọc trực tiếp từ `process.env` (không dùng helper `env()` để `generate` chạy được khi không có DB); shadow DB qua `SHADOW_DATABASE_URL`; seed khai báo ở `migrations.seed`.
+  4. Driver adapter `pg` (`backend/src/lib/prisma.ts`): `connectionTimeoutMillis` 5000; pool pg mặc định 10 kết nối (Prisma 6 là `num_cpus*2+1`).
+  5. CLI `prisma` chuyển sang `dependencies` để `migrate deploy` lúc khởi động container dùng bản cài từ lockfile (bỏ `npm i --no-save`).
+  6. CI kiểm drift dùng `--to-schema` thay `--to-schema-datamodel` và bỏ `--shadow-database-url`. Script npm `postprisma:migrate`, `postdb:reset` giữ hành vi generate/seed như cũ (Prisma 7 không còn tự chạy).
+  7. Khác biệt hành vi đã xử lý: lỗi P2002 qua adapter không còn `meta.target` mà nằm ở `meta.driverAdapterError.cause.constraint` (`fields` hoặc `index`); `uniqueTarget` (`orders.service.ts`) đọc cả hai, có test `orderUnique.integration.test.ts`.
+  8. Schema model và migration không đổi.
+- **Hệ quả/rủi ro:** `pg` in cảnh báo deprecation về `client.query()` gọi đồng thời (nằm trong `adapter-pg`, sẽ lỗi ở pg@9): theo dõi bản adapter mới. Prisma 8 đang ở bản RC, chưa nâng. Sau nâng: `npm audit` backend 0 high (còn 7 moderate chỉ ở dev, chuỗi minimatch trong typescript-eslint); `--omit=dev` 0 lỗi.
+- **Docs bị ảnh hưởng:** `architecture.md` (bảng stack, §2, §10); `testing.md` (Yêu cầu chung, kiểm drift).
+
+## D-037 Kiểm env trước migrate và redirect cổng Caddy
+
+- **Ngày:** 2026-11-20 · **Người chốt:** Tech Lead theo ủy quyền chủ dự án
+- **Trạng thái:** Áp dụng. Đóng rủi ro tồn đọng của M7.
+- **Quyết định:**
+  1. Entrypoint backend: `node dist/checkEnv.js` -> `prisma migrate deploy` -> `exec node dist/server.js`. Env sai thì dừng TRƯỚC khi áp migration (cập nhật D-025 mục 4).
+  2. Caddy: `http_port {$HTTP_PORT:80}` và địa chỉ site `{$SITE_ADDRESS}:{$HTTPS_PORT:443}`; compose map cổng host = cổng container. KHÔNG dùng `https_port`: Caddy coi đó là cổng nội bộ và bỏ cổng khỏi `Location` khi redirect (đã kiểm mã nguồn autohttps). Production vẫn 80/443; `SITE_ADDRESS` chỉ là tên miền.
+- **Hệ quả:** Thử cục bộ ở cổng 8080/8443 redirect đúng (`http://localhost:8080` -> `https://localhost:8443/`). Đổi cổng thì phải tạo lại container `caddy`.
+- **Docs bị ảnh hưởng:** `deployment.md` mục 4, 15; `testing.md`.
+
+## D-038 Backup off-site
+
+- **Ngày:** 2026-11-20 · **Người chốt:** Tech Lead theo ủy quyền chủ dự án
+- **Trạng thái:** Áp dụng. Thay đổi hệ quả "chủ dự án tự sao chép" của D-034.
+- **Bối cảnh:** Backup cục bộ cùng máy với DB không chống được mất VPS.
+- **Quyết định:**
+  1. rclone + age, MẶC ĐỊNH TẮT (chỉ chạy khi `BACKUP_REMOTE` khác rỗng). Cấu hình trong `.env.backup` riêng (mẫu `.env.backup.example`); không nạp `.env.production` vào container backup.
+  2. Image `deploy/backup/Dockerfile`: postgres:17 + rclone 1.60.1 + age 1.2.1 từ apt Debian (không ghim).
+  3. Mã hóa bằng public key age; VPS không giữ private key. Thiếu recipient hợp lệ thì từ chối đẩy (mã thoát 4), trừ khi `BACKUP_REMOTE_ENCRYPTION=none`.
+  4. Tạo `SHA256SUMS`, kiểm bằng `rclone check --one-way` (tùy chọn `download`). Layout `<remote>/<TS>/`.
+  5. Xoay vòng remote theo tên thư mục: 30 ngày, luôn giữ tối thiểu 3 bản, chỉ xóa thư mục đúng mẫu TS. Heartbeat tùy chọn.
+  6. Khôi phục: `fetch-remote.sh` (kiểm checksum trước khi giải mã) rồi `restore.sh`. Mã thoát `backup.sh`: 0 thành công, 2 cấu hình sai, 3 đẩy/kiểm thất bại, 4 cấu hình off-site sai; bản cục bộ vẫn được giữ với mã 3 và 4.
+  7. `deploy/backup/selftest-offsite.sh` tự kiểm toàn luồng bằng remote local.
+- **Hệ quả/rủi ro:**
+  - Key trên VPS có quyền xóa (script xoay vòng cần): nên bật versioning/object lock ở bucket.
+  - Mất private key age = mất mọi bản off-site.
+  - rclone/age từ Debian không ghim: chạy lại `selftest-offsite.sh` sau khi build lại image.
+  - `SHA256SUMS` nằm cùng remote nên chỉ phát hiện hỏng/thiếu dữ liệu; tính xác thực nội dung dựa vào AEAD của age. Người có quyền ghi remote vẫn có thể thay bằng bản mã hóa khác cho cùng public key (chấp nhận cho demo).
+  - Không có khóa chống hai backup chạy chồng.
+- **Docs bị ảnh hưởng:** `deployment.md` mục 11; `.env.backup.example`; `testing.md`.
+
+## D-039 Giám sát uptime
+
+- **Ngày:** 2026-11-20 · **Người chốt:** Tech Lead theo ủy quyền chủ dự án
+- **Trạng thái:** Áp dụng. Cập nhật hệ quả "không có cảnh báo tự động" của D-030.
+- **Quyết định:** Chỉ tài liệu và `deploy/monitoring/check.sh`; KHÔNG thêm Uptime Kuma vào `docker-compose.prod.yml` (monitor cùng VPS không phát hiện VPS chết; thêm một giao diện web phải bảo vệ). Khuyến nghị dịch vụ ngoài hoặc Uptime Kuma ở máy khác. Bốn monitor: (1) `/api/v1/health` trả 200 và có `"db":"up"`; (2) trang chủ trả 200 có từ khóa; (3) TLS còn >= 14 ngày; (4) heartbeat backup chu kỳ 24 giờ. Cảnh báo sau 2-3 lần lỗi liên tiếp.
+- **Hệ quả:** Cảnh báo phụ thuộc dịch vụ ngoài do chủ dự án cấu hình; `check.sh` không tự thử lại.
+- **Docs bị ảnh hưởng:** `deployment.md` mục 16; `testing.md`.
+
+## D-040 CSP ở M8
+
+- **Ngày:** 2026-11-20 · **Người chốt:** Tech Lead theo ủy quyền chủ dự án
+- **Trạng thái:** Áp dụng. Thay D-032; cập nhật D-024.
+- **Bối cảnh:** Nonce cho toàn site buộc mọi trang render động, mất static/ISR (D-032). Hash không khả thi vì script inline của Next chứa payload RSC khác nhau theo trang và theo build.
+- **Quyết định:**
+  1. **Storefront:** CSP đầy đủ chuyển sang THỰC THI; `script-src` giữ `'unsafe-inline'` (thêm `'unsafe-eval'` chỉ ở dev) và cho `https://challenges.cloudflare.com` (Turnstile).
+  2. **`/admin`:** CSP thực thi với nonce theo request + `'strict-dynamic'`, đặt ở `frontend/src/proxy.ts` (Next 16, matcher chỉ `/admin`); admin layout gọi `connection()` để ép render động. Bảng route storefront không đổi, chỉ `/admin/*` thành dynamic. Hàm dựng policy dùng chung nằm ở `frontend/src/lib/csp.ts`.
+  3. **Bỏ `Content-Security-Policy-Report-Only`.** Phần còn lại (bỏ `'unsafe-inline'` ở storefront) nếu để report-only sẽ báo vi phạm ở mọi lượt xem, chỉ là nhiễu. Policy thực thi có `report-uri /api/v1/csp-report` (D-024 mục 3 giữ nguyên).
+  4. **Vào `/admin` từ storefront (link, và chuyển hướng sau đăng nhập) bằng tải trang đầy đủ, không client-side**, vì CSP gắn với tài liệu lúc tải.
+  5. **Admin `frame-src 'self' https://challenges.cloudflare.com`** để điều hướng ngược từ admin về storefront không làm vỡ form liên hệ (Turnstile).
+- **Hệ quả/rủi ro:**
+  - Storefront chưa chặn XSS inline (`'unsafe-inline'` cho script) và style.
+  - Nếu có đường vào `/admin` bằng điều hướng client-side chưa phát hiện thì trang admin chạy với CSP của storefront cho tới khi tải lại.
+  - Caddy không được đặt thêm header CSP (sẽ chồng policy).
+- **Kiểm thử:** `frontend/e2e/csp.spec.ts` (0 vi phạm CSP trên các trang storefront và admin chính), xem `testing.md`.
+- **Docs bị ảnh hưởng:** `api-contract.md` §14.12; `architecture.md` (§4, ADR 13); `testing.md`; `deployment.md`.

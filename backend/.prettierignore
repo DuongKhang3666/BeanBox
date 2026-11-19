@@ -4,3 +4,4 @@ coverage
 prisma/migrations
 package-lock.json
 data/provinces-wards.json
+src/generated

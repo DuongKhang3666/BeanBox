@@ -1,4 +1,4 @@
-import type { PaymentProvider } from '@prisma/client';
+import type { PaymentProvider } from '../../generated/prisma/client.js';
 import type { PaymentConfig } from '../../config/payments.js';
 import { stripeAdapter, type StripeHttp } from './stripe.js';
 import { buildVnpayUrl } from './vnpay.js';

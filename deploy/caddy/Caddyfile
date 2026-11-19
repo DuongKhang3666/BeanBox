@@ -1,5 +1,8 @@
 # Caddyfile production (D-026). Biến môi trường (compose truyền vào container caddy):
 #   SITE_ADDRESS            domain thật -> TLS Let's Encrypt tự động; "localhost" -> CA nội bộ để thử
+#   HTTP_PORT / HTTPS_PORT  cổng Caddy nghe trong container (mặc định 80/443); compose map host=container
+#                           cùng số, nên redirect http -> https giữ đúng cổng khi chạy thử ở cổng khác.
+#                           SITE_ADDRESS chỉ là tên miền (không kèm cổng, không kèm http://)
 #   ACME_EMAIL              tùy chọn, email đăng ký ACME (có thể để trống)
 #   EDGE_RATE_AUTH_PER_MIN  POST /api/v1/auth/*              (mặc định 30)
 #   EDGE_RATE_API_PER_MIN   /api/v1/*                        (mặc định 300)
@@ -17,13 +20,18 @@
 # Với cấu hình trên {client_ip} (dùng cho rate limit) lấy từ CF-Connecting-IP và XFF gửi lên backend
 # cũng được dựng lại đúng. Chỉ bật khi cổng 80/443 chỉ nhận lưu lượng từ Cloudflare (firewall VPS).
 {
+	# Cổng HTTP của Caddy (nghe và chuyển hướng sang HTTPS). Production thật giữ 80: Let's Encrypt chỉ kiểm tra 80/443.
+	# KHÔNG đặt `https_port` ở đây: Caddy coi nó là cổng "nội bộ" và bỏ cổng đó khỏi header Location của
+	# redirect http -> https. Thay vào đó cổng HTTPS được ghi thẳng vào địa chỉ site bên dưới (domain:cổng);
+	# khác 443 thì Location có :cổng, bằng 443 thì không.
+	http_port {$HTTP_PORT:80}
 	# email để trong dấu nháy: rỗng thì thành chuỗi rỗng (Caddy bỏ qua), không làm hỏng cấu hình
 	email "{$ACME_EMAIL:}"
 	# plugin rate limit không có thứ tự mặc định
 	order rate_limit before reverse_proxy
 }
 
-{$SITE_ADDRESS:localhost} {
+{$SITE_ADDRESS:localhost}:{$HTTPS_PORT:443} {
 	log {
 		output stdout
 		format filter {

@@ -1,4 +1,4 @@
-import { Prisma, type OrderStatus } from '@prisma/client';
+import { Prisma, type OrderStatus } from '../../generated/prisma/client.js';
 import { AppError } from '../../lib/errors.js';
 import { allowedTransitions, canTransition, type OrderActor } from '../../lib/orderStateMachine.js';
 import { refreshProductDenorm } from '../catalog/catalog.denorm.js';

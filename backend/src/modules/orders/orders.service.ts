@@ -1,4 +1,4 @@
-import { Prisma, type OrderStatus } from '@prisma/client';
+import { Prisma, type OrderStatus } from '../../generated/prisma/client.js';
 import { getPaymentConfig, isProviderEnabled, type PaymentConfig } from '../../config/payments.js';
 import { AppError } from '../../lib/errors.js';
 import { prisma } from '../../lib/prisma.js';
@@ -117,10 +117,27 @@ export interface PlaceOrderResult {
 
 type TxOutcome = { kind: 'created'; order: OrderDto } | { kind: 'replay'; order: OrderDto };
 
-function uniqueTarget(e: unknown): string | null {
+/**
+ * Chuỗi mô tả ràng buộc unique bị vi phạm (P2002), hoặc null nếu không phải P2002.
+ * Engine Rust cũ đặt cột ở `meta.target`; driver adapter (Prisma 7) đặt ở
+ * `meta.driverAdapterError.cause.constraint` dạng `{ fields: [...] }` hoặc `{ index: 'Order_code_key' }`.
+ * Gom cả hai dạng để so khớp theo tên cột/tên index.
+ */
+export function uniqueTarget(e: unknown): string | null {
   if (!(e instanceof Prisma.PrismaClientKnownRequestError) || e.code !== 'P2002') return null;
-  const t = e.meta?.target;
-  return Array.isArray(t) ? t.join(',') : String(t ?? '');
+  const meta = (e.meta ?? {}) as Record<string, unknown>;
+  const parts: string[] = [];
+  const add = (v: unknown) => {
+    if (Array.isArray(v)) parts.push(...v.map(String));
+    else if (typeof v === 'string') parts.push(v);
+  };
+  add(meta.target);
+  const cause = (meta.driverAdapterError as { cause?: { constraint?: unknown } } | undefined)
+    ?.cause;
+  const constraint = cause?.constraint as { fields?: unknown; index?: unknown } | undefined;
+  add(constraint?.fields);
+  add(constraint?.index);
+  return parts.join(',');
 }
 
 export async function placeOrder(args: PlaceOrderArgs): Promise<PlaceOrderResult> {

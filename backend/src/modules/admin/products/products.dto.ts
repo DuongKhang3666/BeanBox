@@ -1,4 +1,4 @@
-import type { Prisma, ProductStatus } from '@prisma/client';
+import type { Prisma, ProductStatus } from '../../../generated/prisma/client.js';
 import { effectivePrice, isOnSale } from '../../../lib/pricing.js';
 import { stockStatusOf, type StockStatus } from '../inventory/inventory.dto.js';
 

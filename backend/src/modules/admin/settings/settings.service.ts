@@ -1,4 +1,4 @@
-import type { Prisma } from '@prisma/client';
+import type { Prisma } from '../../../generated/prisma/client.js';
 import { deepEqual, writeAudit, type AuditDiff } from '../../../lib/audit.js';
 import { prisma } from '../../../lib/prisma.js';
 import { getAllSettings, type AllSettings } from '../../settings/settings.service.js';

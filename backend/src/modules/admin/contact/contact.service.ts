@@ -1,4 +1,4 @@
-import type { ContactStatus, Prisma } from '@prisma/client';
+import type { ContactStatus, Prisma } from '../../../generated/prisma/client.js';
 import { writeAudit, type AuditDiff } from '../../../lib/audit.js';
 import { AppError } from '../../../lib/errors.js';
 import { prisma } from '../../../lib/prisma.js';

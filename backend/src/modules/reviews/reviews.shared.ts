@@ -1,4 +1,4 @@
-import { Prisma, type ReviewStatus } from '@prisma/client';
+import { Prisma, type ReviewStatus } from '../../generated/prisma/client.js';
 import { AppError } from '../../lib/errors.js';
 import { prisma } from '../../lib/prisma.js';
 import { resolveSlugRedirect } from '../../lib/slugRedirect.js';

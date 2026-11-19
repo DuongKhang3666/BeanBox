@@ -1,4 +1,4 @@
-import type { InventoryReason, Prisma, ProductStatus } from '@prisma/client';
+import type { InventoryReason, Prisma, ProductStatus } from '../../../generated/prisma/client.js';
 
 export type StockStatus = 'OUT_OF_STOCK' | 'LOW_STOCK' | 'IN_STOCK';
 

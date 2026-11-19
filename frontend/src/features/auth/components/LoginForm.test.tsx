@@ -133,6 +133,22 @@ describe("LoginForm", () => {
     expect(replace).toHaveBeenCalledTimes(1);
   });
 
+  it("next=/admin/...: tải trang đầy đủ bằng location.assign, không router.replace", async () => {
+    search = new URLSearchParams({ next: "/admin/don-hang" });
+    const assign = vi.fn();
+    vi.stubGlobal("location", { ...window.location, assign });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonRes(200, { data: { user, accessToken: "tok", expiresIn: 900 } })),
+    );
+    const u = userEvent.setup();
+    renderForm();
+    await fillAndSubmit(u);
+    await waitFor(() => expect(assign).toHaveBeenCalledWith("/admin/don-hang"));
+    expect(assign).toHaveBeenCalledTimes(1);
+    expect(replace).not.toHaveBeenCalled();
+  });
+
   it("link đăng ký giữ ?next", () => {
     search = new URLSearchParams({ next: "/gio-hang" });
     vi.stubGlobal("fetch", vi.fn());

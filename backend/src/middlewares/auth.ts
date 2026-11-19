@@ -1,4 +1,4 @@
-import type { Role } from '@prisma/client';
+import type { Role } from '../generated/prisma/client.js';
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import { asyncHandler } from '../lib/asyncHandler.js';
 import { AppError } from '../lib/errors.js';

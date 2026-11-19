@@ -19,6 +19,7 @@
   "include": [
     "src",
     "tests",
+    "prisma.config.ts",
     "prisma/seed.ts",
     "prisma/seedGuard.ts",
     "prisma/seed-data",

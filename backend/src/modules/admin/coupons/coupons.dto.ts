@@ -1,4 +1,4 @@
-import type { Coupon } from '@prisma/client';
+import type { Coupon } from '../../../generated/prisma/client.js';
 import type { CouponStateName } from './coupons.schema.js';
 
 /** AdminCoupon (api-contract §13.8): mọi trường Coupon + `state` tính tại thời điểm gọi. */

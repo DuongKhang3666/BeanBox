@@ -1,4 +1,4 @@
-import type { Prisma, Role, UserStatus } from '@prisma/client';
+import type { Prisma, Role, UserStatus } from '../../../generated/prisma/client.js';
 import { writeAudit, type AuditDiff } from '../../../lib/audit.js';
 import { AppError } from '../../../lib/errors.js';
 import { prisma } from '../../../lib/prisma.js';

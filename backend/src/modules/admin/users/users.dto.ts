@@ -1,4 +1,4 @@
-import type { Role, UserStatus } from '@prisma/client';
+import type { Role, UserStatus } from '../../../generated/prisma/client.js';
 
 /** `select` tường minh: không bao giờ lấy passwordHash hay token. */
 export const USER_SELECT = {

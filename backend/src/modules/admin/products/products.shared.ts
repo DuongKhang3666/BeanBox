@@ -1,4 +1,4 @@
-import type { Prisma, ProductStatus } from '@prisma/client';
+import type { Prisma, ProductStatus } from '../../../generated/prisma/client.js';
 import { AppError } from '../../../lib/errors.js';
 import { ID_REGEX } from '../admin.schema.js';
 

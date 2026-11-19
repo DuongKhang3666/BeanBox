@@ -58,12 +58,12 @@ jobs:
       - name: Áp migration lên DB trống
         run: npx prisma migrate deploy
       - name: Kiểm drift giữa migrations và schema.prisma
+        # Prisma 7: shadow DB lấy từ SHADOW_DATABASE_URL qua backend/prisma.config.ts (không còn cờ --shadow-database-url)
         run: |
           set +e
           npx prisma migrate diff \
             --from-migrations prisma/migrations \
-            --to-schema-datamodel prisma/schema.prisma \
-            --shadow-database-url "$SHADOW_DATABASE_URL" \
+            --to-schema prisma/schema.prisma \
             --exit-code
           code=$?
           if [ "$code" -eq 2 ]; then
@@ -124,6 +124,7 @@ jobs:
       INTERNAL_API_SECRET: ci-only-internal-0123456789abcdefghijklm
       SMTP_HOST: localhost
       SMTP_PORT: "1025"
+      GENERAL_RATE_LIMIT_PER_MIN: "1000"
       ORDER_RATE_LIMIT_PER_MIN: "200"
       COUPON_RATE_LIMIT_PER_MIN: "200"
       QUOTE_RATE_LIMIT_PER_MIN: "200"
@@ -215,3 +216,34 @@ jobs:
         run: docker build -t beanbox-frontend:ci frontend
       - name: Build image Caddy
         run: docker build -t beanbox-caddy:ci deploy/caddy
+      - name: Build image backup
+        run: docker build -t beanbox-backup:ci deploy/backup
+      - name: Smoke image backup (rclone, age, pg_dump)
+        run: >-
+          docker run --rm --entrypoint sh beanbox-backup:ci
+          -c 'rclone version && age --version && pg_dump --version'
+
+  ops-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck (deploy/backup, deploy/monitoring)
+        run: >-
+          docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.10.0
+          -s sh deploy/backup/*.sh deploy/monitoring/check.sh
+      - name: docker compose config (prod) với env giả
+        run: |
+          # Giá trị giả chỉ dùng cho CI, không phải secret thật.
+          cat > "$RUNNER_TEMP/ci.env" <<'ENVEOF'
+          PUBLIC_URL=https://ci-only.example.test
+          SITE_ADDRESS=ci-only.example.test
+          POSTGRES_USER=ci_only_user
+          POSTGRES_DB=ci_only_db
+          POSTGRES_PASSWORD=ci-only-not-a-real-password
+          JWT_ACCESS_SECRET=ci-only-not-a-real-jwt-secret-0123456789
+          INTERNAL_API_SECRET=ci-only-not-a-real-internal-secret-0123456789
+          ENVEOF
+          docker compose -f docker-compose.prod.yml --env-file "$RUNNER_TEMP/ci.env" config -q
+          docker compose -f docker-compose.prod.yml --env-file "$RUNNER_TEMP/ci.env" \
+            --profile backup --profile tools config -q

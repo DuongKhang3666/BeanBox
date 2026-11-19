@@ -1,4 +1,4 @@
-import type { Prisma } from '@prisma/client';
+import type { Prisma } from '../../generated/prisma/client.js';
 import { effectivePrice, type PricedVariant } from '../../lib/pricing.js';
 import { normalizeSearch } from '../../lib/text.js';
 

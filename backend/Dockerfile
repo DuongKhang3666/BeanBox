@@ -12,17 +12,17 @@ RUN npm ci
 
 FROM deps AS build
 COPY prisma ./prisma
+COPY prisma.config.ts ./
+# Prisma 7 sinh client vào src/generated/prisma (tsc build ra dist); generate không cần DATABASE_URL
 RUN npx prisma generate
 COPY tsconfig.json tsconfig.build.json ./
 COPY src ./src
 RUN npm run build
 
-# Chỉ dependency production + prisma CLI (cần cho `migrate deploy` khi khởi động)
+# Chỉ dependency production (gồm prisma CLI + dotenv, cần cho `migrate deploy` khi khởi động)
 FROM base AS prod-deps
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
-COPY prisma ./prisma
-RUN npm i --no-save prisma@~6.19 && node_modules/.bin/prisma generate
 
 # Công cụ: seed demo (tsx + dev deps + src + prisma + data). KHÔNG dùng để chạy server.
 FROM build AS tools
@@ -37,15 +37,17 @@ COPY --chown=node:node --from=prod-deps /app/node_modules ./node_modules
 COPY --chown=node:node --from=build /app/dist ./dist
 COPY --chown=node:node package.json ./
 COPY --chown=node:node prisma ./prisma
+COPY --chown=node:node prisma.config.ts ./
 # Danh mục tỉnh/phường (đọc lúc khởi động, fail-fast nếu thiếu)
 COPY --chown=node:node data ./data
 # Ảnh tĩnh phục vụ tại /uploads (ảnh seed trong uploads/seed). Volume named khởi tạo từ nội dung này,
 # nên thư mục phải thuộc user node để backend ghi được ảnh tải lên.
 COPY --chown=node:node uploads ./uploads
-# Entrypoint: migrate rồi exec node (PID 1 nhận SIGTERM; kết hợp `init: true` ở compose). Không dùng npx/mạng.
+# Entrypoint: kiểm env (thoát trước khi migrate nếu sai) -> migrate -> exec node (PID 1 nhận SIGTERM; kết hợp `init: true` ở compose). Không dùng npx/mạng.
 COPY --chmod=755 <<'SH' /usr/local/bin/docker-entrypoint.sh
 #!/bin/sh
 set -e
+node dist/checkEnv.js
 node_modules/.bin/prisma migrate deploy
 exec node dist/server.js
 SH

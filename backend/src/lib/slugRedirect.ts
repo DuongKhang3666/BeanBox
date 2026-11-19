@@ -1,4 +1,4 @@
-import type { Prisma, SlugEntity } from '@prisma/client';
+import type { Prisma, SlugEntity } from '../generated/prisma/client.js';
 import { prisma } from './prisma.js';
 
 /**

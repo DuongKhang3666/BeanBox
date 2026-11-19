@@ -6,6 +6,7 @@ node_modules/
 .env.*
 !.env.example
 !.env.production.example
+!.env.backup.example
 
 # Backup DB/uploads chạy bằng deploy/backup (docker-compose.prod.yml)
 backups/
@@ -31,3 +32,6 @@ Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# Prisma Client sinh ra bởi `prisma generate` (không commit)
+backend/src/generated/

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { Prisma, type PrismaClient, type User } from '@prisma/client';
+import { Prisma, type PrismaClient, type User } from '../../generated/prisma/client.js';
 import { env } from '../../config/env.js';
 import { AppError } from '../../lib/errors.js';
 import { logger } from '../../lib/logger.js';

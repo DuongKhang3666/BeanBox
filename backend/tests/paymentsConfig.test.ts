@@ -72,6 +72,16 @@ describe('parseEnv: cấu hình thanh toán', () => {
     expectRejected({ ORDER_RATE_LIMIT_PER_MIN: '0' });
     expectRejected({ COUPON_RATE_LIMIT_PER_MIN: 'abc' });
   });
+
+  it('rate limit chung: mặc định 100, đọc được từ env, từ chối 0/âm/chữ', () => {
+    expect(parseEnv(base).GENERAL_RATE_LIMIT_PER_MIN).toBe(100);
+    expect(
+      parseEnv({ ...base, GENERAL_RATE_LIMIT_PER_MIN: '1000' }).GENERAL_RATE_LIMIT_PER_MIN,
+    ).toBe(1000);
+    expectRejected({ GENERAL_RATE_LIMIT_PER_MIN: '0' });
+    expectRejected({ GENERAL_RATE_LIMIT_PER_MIN: '-5' });
+    expectRejected({ GENERAL_RATE_LIMIT_PER_MIN: 'abc' });
+  });
 });
 
 describe('getPaymentConfig', () => {

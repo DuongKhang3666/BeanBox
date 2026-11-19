@@ -1,4 +1,4 @@
-import type { Cart, Prisma } from '@prisma/client';
+import type { Cart, Prisma } from '../../generated/prisma/client.js';
 import { AppError } from '../../lib/errors.js';
 import { prisma } from '../../lib/prisma.js';
 import { MAX_LINE_QUANTITY, priceCartLine, type PricedCartLine } from '../../lib/cartLine.js';

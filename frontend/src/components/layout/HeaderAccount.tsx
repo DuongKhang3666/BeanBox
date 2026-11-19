@@ -97,7 +97,9 @@ export function HeaderAccount() {
   return (
     <>
       {isStaff ? (
-        <Link
+        // Thẻ <a> thường (không next/link): vào /admin phải tải trang đầy đủ để áp CSP chặt của admin.
+        // eslint-disable-next-line @next/next/no-html-link-for-pages
+        <a
           href="/admin/don-hang"
           aria-label="Quản trị"
           className="inline-flex h-11 min-w-11 items-center justify-center gap-1.5 rounded-lg px-2 text-sm font-medium text-moss-800 hover:bg-coffee-100"
@@ -105,7 +107,7 @@ export function HeaderAccount() {
           <AdminIcon />
           {/* Dưới xl chỉ hiện icon để không ép ô tìm kiếm. */}
           <span className="hidden xl:inline">Quản trị</span>
-        </Link>
+        </a>
       ) : null}
       <Link href="/tai-khoan" className={iconLink} aria-label={`Tài khoản của ${user.fullName}`}>
         <UserIcon />

@@ -1,4 +1,4 @@
-import { Prisma, type ProductStatus } from '@prisma/client';
+import { Prisma, type ProductStatus } from '../../../generated/prisma/client.js';
 import { diffFields, writeAudit, type AuditDiff } from '../../../lib/audit.js';
 import { AppError } from '../../../lib/errors.js';
 import { prisma } from '../../../lib/prisma.js';

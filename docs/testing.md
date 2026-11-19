@@ -2,7 +2,9 @@
 
 ## Yêu cầu chung
 - Node >= 22, đã `npm install` trong `backend/` và `frontend/`.
+- Prisma 7: sau mỗi lần `npm install`/`npm ci` (và khi sửa `schema.prisma`) chạy `npx prisma generate` trong `backend/` để sinh client vào `backend/src/generated/prisma` (thư mục bị ignore, không commit; không có thì typecheck/test/dev đều lỗi). Cấu hình CLI nằm ở `backend/prisma.config.ts` (tự nạp `.env`, không ghi đè biến đã đặt; `SHADOW_DATABASE_URL` tùy chọn).
 - Docker Postgres chạy (`docker compose up -d db`), đã migrate: `npm run prisma:migrate` (hoặc `prisma migrate deploy`) trong `backend/`.
+- Prisma 7 không còn tự generate hay seed sau `migrate dev`/`migrate reset`: `npm run prisma:migrate` đã nối thêm `prisma generate`, `npm run db:reset` nối thêm `prisma generate` và `prisma db seed`; nếu gọi `npx prisma migrate ...` trực tiếp thì tự chạy `npx prisma generate` và `npm run prisma:seed`.
 - Dữ liệu seed cho E2E: `npm run prisma:seed` trong `backend/` (idempotent; từ chối chạy khi `NODE_ENV=production`).
 - `backend/.env` có `SEED_ADMIN_PASSWORD`, `SEED_STAFF_PASSWORD`, `SEED_CUSTOMER_PASSWORD` (xem `.env.example`).
 
@@ -25,20 +27,28 @@ Chạy: `npm run test:e2e` trong `frontend/`.
 - `playwright.config.ts` tự khởi động backend (`npm run dev` ở `backend/`, chờ `http://127.0.0.1:4000/api/v1/health`, `JOBS_ENABLED=false`) và frontend (`npm run dev`, cổng 3000); nếu cổng đã có server thì dùng lại (`reuseExistingServer`).
 - Mật khẩu tài khoản seed được đọc từ `backend/.env` ngay trong config, không hardcode và không in ra.
 - Kịch bản (`frontend/e2e/`): khách vãng lai mua COD, tra cứu và hủy đơn; customer xem đơn hàng, bị chặn ở `/admin`, đăng xuất; staff xác nhận rồi hủy đơn (hoàn kho).
-- Kịch bản M6b (`frontend/e2e/m6b.spec.ts`, thêm 1 lượt đăng nhập admin, tổng 3 lượt/lần chạy): khách gửi form `/lien-he` và thấy lời cảm ơn; admin tìm tin nhắn đó ở `/admin/lien-he`, đổi trạng thái sang "Đã xử lý" và lưu; `/admin/cai-dat` hiển thị các section (không lưu); `/admin/nguoi-dung` có `customer@beanbox.local`, chi tiết chính admin hiện ghi chú không thể tự khóa; `/chinh-sach/van-chuyen` hiển thị phí vận chuyển và trang chủ có cả header `content-security-policy-report-only` lẫn header `content-security-policy` thực thi tập con (`frame-ancestors 'none'; base-uri 'self'; object-src 'none'`, D-032). Các bước vào chi tiết trong bảng admin dùng click vào link thật (không `goto`), nên phát hiện được lỗi điều hướng bị debounce kéo lại (D-035). Tin nhắn liên hệ do E2E tạo được để lại ở trạng thái "Đã xử lý" (không xóa, chấp nhận được).
+- Kịch bản M6b (`frontend/e2e/m6b.spec.ts`, thêm 1 lượt đăng nhập admin, tổng 3 lượt/lần chạy): khách gửi form `/lien-he` và thấy lời cảm ơn; admin tìm tin nhắn đó ở `/admin/lien-he`, đổi trạng thái sang "Đã xử lý" và lưu; `/admin/cai-dat` hiển thị các section (không lưu); `/admin/nguoi-dung` có `customer@beanbox.local`, chi tiết chính admin hiện ghi chú không thể tự khóa; `/chinh-sach/van-chuyen` hiển thị phí vận chuyển và trang chủ có header `content-security-policy` thực thi (D-040; không còn header report-only). Các bước vào chi tiết trong bảng admin dùng click vào link thật (không `goto`), nên phát hiện được lỗi điều hướng bị debounce kéo lại (D-035). Tin nhắn liên hệ do E2E tạo được để lại ở trạng thái "Đã xử lý" (không xóa, chấp nhận được).
+- Kịch bản CSP (`frontend/e2e/csp.spec.ts`, D-040, thêm 1 lượt đăng nhập admin): storefront có CSP thực thi (`script-src 'self' 'unsafe-inline'`, không có header report-only); `/admin` có CSP với nonce theo request + `'strict-dynamic'`, không có `challenges.cloudflare.com` ở `script-src`. Chạy qua các trang chính (trang chủ, danh mục, chi tiết sản phẩm, giỏ hàng, đăng nhập, liên hệ, tra cứu đơn; dashboard, danh sách và chi tiết sản phẩm admin) và yêu cầu 0 sự kiện `securitypolicyviolation` và 0 lỗi console CSP. Chạy với bản production đã dựng bằng Docker (không khởi động webServer, bỏ qua lỗi chứng chỉ tự ký; cần `SEED_ADMIN_PASSWORD` khớp dữ liệu đã seed trên stack đó, đặt trong env hoặc `backend/.env`):
+  ```bash
+  cd frontend
+  E2E_BASE_URL=https://localhost:8443 npx playwright test e2e/csp.spec.ts
+  ```
 - Form liên hệ giới hạn 3 lần/10 phút/IP: chạy E2E quá 3 lần trong 10 phút sẽ gặp 429 ở kịch bản liên hệ; khởi động lại backend để xóa bộ đếm.
 - Test dùng DB dev: mỗi lần chạy tạo đơn mới (dùng email/SĐT ngẫu nhiên) và hủy lại để hoàn kho. Nếu test chết giữa chừng có thể còn đơn `CONFIRMED`/`PENDING`: hủy ở `/admin/don-hang`.
 - Máy chặn chạy file tải về (Windows "Application Control policy has blocked this file"): đặt `E2E_BROWSER_CHANNEL=msedge` (hoặc `chrome`) để dùng trình duyệt Chromium đã cài sẵn.
 
 ### Lưu ý rate limit
-Đăng nhập giới hạn 5 lần/phút/IP (`api-contract.md` §1); tra cứu đơn guest 10/phút; đặt đơn 10/phút. E2E chạy tuần tự (`workers: 1`) và chỉ đăng nhập 2 lần mỗi lượt. Chạy lại liên tiếp nhiều lần có thể gặp `429 RATE_LIMITED`: chờ khoảng 1 phút hoặc khởi động lại backend (bộ đếm nằm trong bộ nhớ). Form liên hệ (`POST /contact`) giới hạn 3 lần/10 phút/IP: kịch bản nào gửi form liên hệ thì chạy lặp lại sẽ gặp 429, cần chờ hoặc khởi động lại backend. CSP đầy đủ chỉ ở chế độ report-only (D-024) nên không chặn gì trong E2E; vi phạm chỉ hiện trong console trình duyệt và log `warn` của backend. Header `Content-Security-Policy` thực thi tập con (D-032) không ảnh hưởng tới việc chạy trang.
+Mỗi lần chạy E2E đầy đủ có khoảng 4 lượt đăng nhập admin (m6b + csp), gần ngưỡng đăng nhập 5/phút/IP; chạy lại liên tiếp có thể gặp 429 (chờ khoảng 1 phút hoặc khởi động lại backend).
+Ngoài ra backend có giới hạn chung 100 request/phút/IP cho `/api/v1` (`GENERAL_RATE_LIMIT_PER_MIN`). Playwright khởi động backend với `GENERAL_RATE_LIMIT_PER_MIN=1000` (CI cũng đặt) nên chạy cả bộ liền một mạch không chạm giới hạn này. Nếu dùng lại backend dev đang chạy sẵn (`reuseExistingServer`) thì backend đó phải được chạy với biến này (đặt trong `backend/.env`), nếu không `m6b.spec.ts` có thể gặp 429 ở `/admin/users`.
+
+Đăng nhập giới hạn 5 lần/phút/IP (`api-contract.md` §1); tra cứu đơn guest 10/phút; đặt đơn 10/phút. E2E chạy tuần tự (`workers: 1`) và chỉ đăng nhập ít lần mỗi spec (mỗi spec admin 1 lượt). Chạy lại liên tiếp nhiều lần có thể gặp `429 RATE_LIMITED`: chờ khoảng 1 phút hoặc khởi động lại backend (bộ đếm nằm trong bộ nhớ). Form liên hệ (`POST /contact`) giới hạn 3 lần/10 phút/IP: kịch bản nào gửi form liên hệ thì chạy lặp lại sẽ gặp 429, cần chờ hoặc khởi động lại backend. CSP đã thực thi từ M8 (D-040) nên vi phạm CSP làm vỡ trang thật và `csp.spec.ts` sẽ báo; log `warn` của backend (`POST /csp-report`) cũng ghi vi phạm.
 
 ## Kiểm thử Docker production cục bộ
 
 Kiểm bản production (`docker-compose.prod.yml`) trên máy dev trước khi deploy; cách dựng và các lưu ý (cổng 8080/8443, `-p beanbox-local`, `curl -k`, `MSYS_NO_PATHCONV=1` trên Git Bash) xem [`deployment.md`](deployment.md) mục 15. Đặt thêm `EDGE_RATE_API_PER_MIN=20` trong `.env.production` để thử rate limit nhanh. Các bước smoke (thay cổng nếu khác):
 
 1. **Health:** `docker compose -p beanbox-local --env-file .env.production -f docker-compose.prod.yml ps` thấy `db`, `backend`, `frontend`, `caddy` đều `healthy`. `curl -k https://localhost:8443/api/v1/health` trả 200 (`db: "up"`), `curl -k https://localhost:8443/api/v1/health/live` trả 200, `curl -k https://localhost:8443/healthz` trả `{"status":"ok"}`.
-2. **Header:** `curl -kI https://localhost:8443/` có `Strict-Transport-Security`, `X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options`, `Permissions-Policy`, `Content-Security-Policy` (tập con thực thi) và `Content-Security-Policy-Report-Only`; KHÔNG có header `Server`; mọi response có `X-Request-Id`.
+2. **Header:** `curl -kI https://localhost:8443/` có `Strict-Transport-Security`, `X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options`, `Permissions-Policy` và `Content-Security-Policy` (đầy đủ, thực thi, có `report-uri`); KHÔNG có `Content-Security-Policy-Report-Only` và KHÔNG có header `Server`; mọi response có `X-Request-Id`. `/admin` có CSP với `nonce-...` khác nhau mỗi request: `for i in 1 2; do curl -skI https://localhost:8443/admin | grep -i '^content-security-policy'; done` cho hai giá trị nonce khác nhau.
 3. **Rate limit edge:** gửi liên tiếp vượt ngưỡng tới endpoint không bị limiter backend, ví dụ với `EDGE_RATE_API_PER_MIN=20`:
    ```bash
    for i in $(seq 1 40); do curl -sk -o /dev/null -w "%{http_code}\n" https://localhost:8443/api/v1/health/live; done | sort | uniq -c
@@ -46,8 +56,17 @@ Kiểm bản production (`docker-compose.prod.yml`) trên máy dev trước khi 
    Kỳ vọng khoảng 20 phản hồi 200 rồi các phản hồi 429; xem `curl -ski https://localhost:8443/api/v1/health/live` trong lúc bị chặn: 429 có `Retry-After` và thân JSON `RATE_LIMITED` theo format lỗi §1. Chờ 1 phút (hoặc `restart caddy`) để bộ đếm về 0.
 4. **XFF giả:** `curl -sk -o /dev/null -w "%{http_code}\n" -H 'X-Forwarded-For: 1.2.3.4' https://localhost:8443/api/v1/health/live` lặp lại vượt ngưỡng: đổi giá trị `X-Forwarded-For` KHÔNG làm bộ đếm reset (Caddy bỏ XFF do client gửi và dùng IP kết nối thật). Đối chiếu log: `logs caddy` và `logs backend` cho cùng một request qua `request_id` (Caddy) và `reqId` (backend); IP trong log là IP kết nối thật, không phải `1.2.3.4`.
 5. **Giới hạn body:** `POST` thân hơn 1 MB tới `/api/v1/...` bị Caddy chặn (JSON `VALIDATION_ERROR`), tới `/api/v1/admin/uploads*` ngưỡng là 6 MB (`PAYLOAD_TOO_LARGE`).
-6. **Backup/restore:** chạy `backup.sh` một lần (xem `deployment.md` mục 11), kiểm có `backups/db/beanbox-*.dump` và `backups/uploads/uploads-*.tar.gz`, rồi restore vào DB tạm `beanbox_restore_test` và `\dt` thấy bảng (lệnh đầy đủ ở mục 11); xóa DB tạm sau khi kiểm.
-7. **Dọn dẹp:** `docker compose -p beanbox-local --env-file .env.production -f docker-compose.prod.yml down -v`.
+6. **Backup/restore cục bộ:** chạy `backup.sh` một lần (xem `deployment.md` mục 11), kiểm có `backups/db/beanbox-*.dump` và `backups/uploads/uploads-*.tar.gz`, rồi restore vào DB tạm `beanbox_restore_test` và `\dt` thấy bảng (lệnh đầy đủ ở mục 11); xóa DB tạm sau khi kiểm.
+7. **Backup off-site với remote local:** chạy `selftest-offsite.sh` (lệnh ở `deployment.md` mục 11, bước "Thiết lập" số 5): mọi mục phải PASS, thoát 0. Rồi thử vòng thật với remote là một thư mục local (khai báo remote rclone kiểu `local`, một public key age tạo bằng `age-keygen` của image backup): `backup.sh` -> thư mục `<TS>/` có hai file `.age` và `SHA256SUMS` -> `fetch-remote.sh <TS>` kèm khóa bí mật -> `restore.sh` vào DB tạm như bước 6. Sửa 1 byte file `.age` trên remote thì `fetch-remote.sh` phải dừng (mã 3) và không giải mã.
+8. **Redirect cổng:** `curl -sI http://localhost:8080/` trả 308 với `Location: https://localhost:8443/` (D-037).
+9. **Giám sát:** `sh deploy/monitoring/check.sh --insecure --min-tls-days 0 https://localhost:8443` in `OK` cho cả ba mục (health có `"db":"up"`, trang chủ có từ khóa, TLS) và thoát 0 (`deployment.md` mục 16).
+10. **CSP trên bản production:** chạy `e2e/csp.spec.ts` như ở mục E2E (`E2E_BASE_URL=https://localhost:8443`).
+11. **Dọn dẹp:** `docker compose -p beanbox-local --env-file .env.production -f docker-compose.prod.yml down -v`.
+
+## CI: ops-lint và image backup
+
+- Job `docker` build thêm image backup (`deploy/backup`) bên cạnh backend, frontend, Caddy; không push.
+- Job `ops-lint` kiểm các file vận hành mà test code không phủ: `shellcheck` cho script shell trong `deploy/` và `docker compose config` cho các file compose. Xem định nghĩa chính xác trong `.github/workflows/ci.yml`. Chạy cục bộ tương đương: `shellcheck deploy/backup/*.sh deploy/monitoring/check.sh` và `docker compose --env-file .env.production -f docker-compose.prod.yml config -q`.
 
 ## Quét secret (gitleaks)
 
@@ -64,21 +83,21 @@ Trên Git Bash của Windows thêm `MSYS_NO_PATHCONV=1` trước `docker run`. M
 
 ## Kiểm drift migration
 
-Job `backend` chạy `prisma migrate diff` để bắt trường hợp sửa `schema.prisma` mà quên tạo migration. Chạy cục bộ với một Postgres tạm làm DB shadow (không đụng DB dev):
+Job `backend` chạy `prisma migrate diff` để bắt trường hợp sửa `schema.prisma` mà quên tạo migration. Prisma 7 bỏ cờ `--shadow-database-url` và đổi `--to-schema-datamodel` thành `--to-schema`: DB shadow lấy từ biến `SHADOW_DATABASE_URL` qua `backend/prisma.config.ts` (phải khác DB chính, nếu trùng Prisma báo lỗi P3025). Chạy cục bộ với một Postgres tạm (không đụng DB dev):
 
 ```bash
 docker run -d --name bb-drift -e POSTGRES_PASSWORD=drift -p 55432:5432 postgres:17
 # chờ vài giây cho Postgres sẵn sàng, rồi:
-docker exec bb-drift psql -U postgres -c 'CREATE DATABASE beanbox_shadow'
+docker exec bb-drift psql -U postgres -c 'CREATE DATABASE beanbox_main' -c 'CREATE DATABASE beanbox_shadow'
 cd backend
-DATABASE_URL=postgresql://postgres:drift@localhost:55432/beanbox_shadow \
+DATABASE_URL=postgresql://postgres:drift@localhost:55432/beanbox_main \
+SHADOW_DATABASE_URL=postgresql://postgres:drift@localhost:55432/beanbox_shadow \
 npx prisma migrate diff \
   --from-migrations prisma/migrations \
-  --to-schema-datamodel prisma/schema.prisma \
-  --shadow-database-url postgresql://postgres:drift@localhost:55432/beanbox_shadow \
+  --to-schema prisma/schema.prisma \
   --exit-code
 echo "exit=$?"
-docker rm -f bb-drift
+docker rm -fv bb-drift
 ```
 
 Mã thoát `0` là khớp; `2` là drift (migrations khác `schema.prisma`: tạo migration mới bằng `npm run prisma:migrate`); mã khác là lỗi chạy lệnh. Mật khẩu `drift` chỉ dành cho container tạm này.

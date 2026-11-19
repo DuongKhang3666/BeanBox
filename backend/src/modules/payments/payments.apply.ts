@@ -5,7 +5,7 @@ import type {
   PaymentStatus,
   PaymentTxnStatus,
   Prisma,
-} from '@prisma/client';
+} from '../../generated/prisma/client.js';
 import { writeAudit } from '../../lib/audit.js';
 import { canTransition } from '../../lib/orderStateMachine.js';
 import { prisma } from '../../lib/prisma.js';

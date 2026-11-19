@@ -28,7 +28,10 @@ loadSeedPasswords();
 
 const IS_CI = !!process.env.CI;
 
-const FRONTEND_URL = "http://localhost:3000";
+// E2E_BASE_URL: chạy spec với một bản đã dựng sẵn (ví dụ production qua docker compose ở
+// https://localhost:8443): không khởi động webServer, bỏ qua lỗi chứng chỉ tự ký.
+const EXTERNAL_BASE_URL = process.env.E2E_BASE_URL;
+const FRONTEND_URL = EXTERNAL_BASE_URL ?? "http://localhost:3000";
 const BACKEND_HEALTH = "http://127.0.0.1:4000/api/v1/health";
 
 export default defineConfig({
@@ -42,6 +45,7 @@ export default defineConfig({
   reporter: IS_CI ? [["list"], ["html", { open: "never" }]] : [["list"]],
   use: {
     baseURL: FRONTEND_URL,
+    ...(EXTERNAL_BASE_URL ? { ignoreHTTPSErrors: true } : {}),
     locale: "vi-VN",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
@@ -57,21 +61,23 @@ export default defineConfig({
       },
     },
   ],
-  webServer: [
-    {
-      command: "npm run dev",
-      cwd: BACKEND_DIR,
-      url: BACKEND_HEALTH,
-      reuseExistingServer: !IS_CI,
-      timeout: 120_000,
-      env: { JOBS_ENABLED: "false" },
-    },
-    {
-      command: "npm run dev",
-      cwd: __dirname,
-      url: FRONTEND_URL,
-      reuseExistingServer: !IS_CI,
-      timeout: 180_000,
-    },
-  ],
+  webServer: EXTERNAL_BASE_URL
+    ? undefined
+    : [
+        {
+          command: "npm run dev",
+          cwd: BACKEND_DIR,
+          url: BACKEND_HEALTH,
+          reuseExistingServer: !IS_CI,
+          timeout: 120_000,
+          env: { JOBS_ENABLED: "false", GENERAL_RATE_LIMIT_PER_MIN: "1000" },
+        },
+        {
+          command: "npm run dev",
+          cwd: __dirname,
+          url: FRONTEND_URL,
+          reuseExistingServer: !IS_CI,
+          timeout: 180_000,
+        },
+      ],
 });

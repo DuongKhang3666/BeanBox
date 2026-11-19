@@ -1,5 +1,5 @@
 /* Ghi sản phẩm mẫu vào DB (dev). Dữ liệu ở products.ts; denormalize dùng chung hàm của service. */
-import type { Prisma, PrismaClient } from '@prisma/client';
+import type { Prisma, PrismaClient } from '../../src/generated/prisma/client.js';
 import { refreshProductDenorm } from '../../src/modules/catalog/catalog.denorm.js';
 import { rootCategorySlug } from './catalog.js';
 import { SEED_PRODUCTS, type ProductSeed, type SaleWindow } from './products.js';

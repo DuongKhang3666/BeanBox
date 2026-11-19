@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { connection } from "next/server";
 import { Container } from "@/components/ui/Container";
 import { AdminGuard } from "@/features/admin/components/AdminGuard";
 
@@ -7,7 +8,9 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
+// Ép render động theo request để Next gắn nonce (CSP admin, src/proxy.ts).
+export default async function AdminLayout({ children }: { children: React.ReactNode }) {
+  await connection();
   return (
     <Container className="py-6 sm:py-10">
       <AdminGuard>{children}</AdminGuard>

@@ -189,7 +189,7 @@ export function createApp(options: AppOptions = {}): Express {
   app.use(
     createRateLimiter({
       windowMs: 60_000,
-      limit: options.generalRateLimit ?? 100,
+      limit: options.generalRateLimit ?? env.GENERAL_RATE_LIMIT_PER_MIN,
       skip: (req) =>
         req.path === `${API_PREFIX}/health` ||
         req.path === `${API_PREFIX}/health/live` ||

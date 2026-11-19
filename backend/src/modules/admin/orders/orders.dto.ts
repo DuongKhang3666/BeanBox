@@ -1,4 +1,4 @@
-import type { Prisma } from '@prisma/client';
+import type { Prisma } from '../../../generated/prisma/client.js';
 import { allowedTransitions, type OrderActor } from '../../../lib/orderStateMachine.js';
 import {
   toShippingAddress,

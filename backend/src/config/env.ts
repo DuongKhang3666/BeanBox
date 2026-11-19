@@ -120,6 +120,7 @@ const schema = z
       )
       .optional(),
     STRIPE_WEBHOOK_SECRET: z.string().optional(),
+    GENERAL_RATE_LIMIT_PER_MIN: z.coerce.number().int().positive().default(100),
     ORDER_RATE_LIMIT_PER_MIN: z.coerce.number().int().positive().default(10),
     COUPON_RATE_LIMIT_PER_MIN: z.coerce.number().int().positive().default(10),
     QUOTE_RATE_LIMIT_PER_MIN: z.coerce.number().int().positive().default(30),
