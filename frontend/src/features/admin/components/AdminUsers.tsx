@@ -70,7 +70,7 @@ function UserLink({ u }: { u: AdminUserItem }) {
 
 function UsersTable({ items }: { items: AdminUserItem[] }) {
   return (
-    <div className="hidden overflow-x-auto rounded-2xl border border-coffee-200 bg-white md:block">
+    <div className="relative hidden overflow-x-auto rounded-2xl border border-coffee-200 bg-white md:block">
       <table className="w-full text-left text-sm text-coffee-900">
         <caption className="sr-only">Danh sách người dùng</caption>
         <thead className="bg-cream-50 text-coffee-700">

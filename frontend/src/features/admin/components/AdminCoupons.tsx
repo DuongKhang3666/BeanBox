@@ -84,7 +84,10 @@ const th = "px-3 py-3 font-medium";
 
 function CodeLink({ c }: { c: AdminCoupon }) {
   return (
-    <Link href={`${COUPONS_BASE}/${c.id}`} className="font-mono font-bold text-moss-800 underline">
+    <Link
+      href={`${COUPONS_BASE}/${c.id}`}
+      className="font-mono font-bold break-all text-moss-800 underline"
+    >
       {c.code}
     </Link>
   );
@@ -92,7 +95,7 @@ function CodeLink({ c }: { c: AdminCoupon }) {
 
 function CouponTable({ items }: { items: AdminCoupon[] }) {
   return (
-    <div className="hidden overflow-x-auto rounded-2xl border border-coffee-200 bg-white md:block">
+    <div className="relative hidden overflow-x-auto rounded-2xl border border-coffee-200 bg-white md:block">
       <table className="w-full text-left text-sm text-coffee-900">
         <caption className="sr-only">Danh sách mã giảm giá</caption>
         <thead className="bg-cream-50 text-coffee-700">

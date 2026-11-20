@@ -1,6 +1,7 @@
 import { Router, type RequestHandler } from 'express';
 import { UPLOADS_DIR } from '../../config/paths.js';
 import { requireAuth, requireStaff } from '../../middlewares/auth.js';
+import { adminAnalyticsRouter } from './analytics/analytics.routes.js';
 import { adminAuditRouter } from './audit/audit.routes.js';
 import { adminCatalogRouter } from './catalog/catalog.routes.js';
 import { adminContactRouter } from './contact/contact.routes.js';
@@ -36,6 +37,7 @@ export function createAdminRouter({ uploadLimiter, uploadsDir }: AdminRouterOpti
   router.use('/coupons', adminCouponsRouter);
   router.use('/reviews', adminReviewsRouter);
   router.use('/dashboard', adminDashboardRouter);
+  router.use('/analytics', adminAnalyticsRouter);
   router.use('/audit-logs', adminAuditRouter);
   router.use('/settings', adminSettingsRouter);
   router.use('/users', adminUsersRouter);

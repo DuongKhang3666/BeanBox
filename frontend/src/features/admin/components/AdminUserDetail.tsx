@@ -64,7 +64,7 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div>
+    <div className="min-w-0">
       <dt className="text-sm text-coffee-700">{label}</dt>
       <dd className="break-words text-coffee-900">{children}</dd>
     </div>

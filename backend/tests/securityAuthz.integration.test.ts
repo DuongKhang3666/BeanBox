@@ -145,6 +145,7 @@ const ADMIN_ONLY = new Set<string>([
   `DELETE ${A}/admin/coupons/:id`,
   `POST ${A}/admin/products/:id/restore`,
   `POST ${A}/admin/orders/:code/refunds`,
+  `GET ${A}/admin/analytics/overview`,
   `GET ${A}/admin/audit-logs`,
   `GET ${A}/admin/settings`,
   `PUT ${A}/admin/settings`,

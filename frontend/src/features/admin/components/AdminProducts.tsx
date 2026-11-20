@@ -89,7 +89,7 @@ function NameCell({ item }: { item: AdminProductListItem }) {
       <div className="min-w-0">
         <Link
           href={`${PRODUCTS_BASE}/${item.id}`}
-          className="font-medium text-coffee-900 underline-offset-2 hover:underline"
+          className="font-medium break-words text-coffee-900 underline-offset-2 hover:underline"
         >
           {item.name}
         </Link>
@@ -112,7 +112,7 @@ function ProductTable({
   onRestored?: () => void;
 }) {
   return (
-    <div className="hidden overflow-x-auto rounded-2xl border border-coffee-200 bg-white md:block">
+    <div className="relative hidden overflow-x-auto rounded-2xl border border-coffee-200 bg-white md:block">
       <table className="w-full text-left text-sm text-coffee-900">
         <caption className="sr-only">Danh sách sản phẩm</caption>
         <thead className="bg-cream-50 text-coffee-700">
@@ -207,9 +207,9 @@ function ProductCards({
           </div>
           <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-sm">
             <dt className="text-coffee-700">Danh mục</dt>
-            <dd>{it.category.name}</dd>
+            <dd className="min-w-0 break-words">{it.category.name}</dd>
             <dt className="text-coffee-700">Thương hiệu</dt>
-            <dd>{it.brand?.name ?? "—"}</dd>
+            <dd className="min-w-0 break-words">{it.brand?.name ?? "—"}</dd>
             <dt className="text-coffee-700">Giá thấp nhất</dt>
             <dd>{price(it)}</dd>
             <dt className="text-coffee-700">Biến thể</dt>

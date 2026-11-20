@@ -1,6 +1,7 @@
 # BeanBox – API Contract
 
-> Phiên bản 0.13 · 2026-11-20 · **Nguồn sự thật cho FE và BE.** Đổi contract phải sửa file này trước và nêu trong báo cáo.
+> Phiên bản 0.14 · 2026-11-20 · **Nguồn sự thật cho FE và BE.** Đổi contract phải sửa file này trước và nêu trong báo cáo.
+> Thay đổi 0.14 (D-049, D-050, phân tích kinh doanh): thêm §16 "Phân tích kinh doanh (Admin)": `GET /admin/analytics/overview?from&to&granularity` (§16.1, chỉ ADMIN, KPI so với kỳ trước + chuỗi theo ngày/tuần/tháng); §16.2 ghi dự kiến các endpoint Bước 2-4 (chưa triển khai). Không đổi §14.3 hay shape hiện có; cần migration index (`Order(paidAt)`, `Payment(refundedAt)`, không đổi cột).
 > Thay đổi 0.13 (D-047, so sánh sản phẩm): thêm `GET /products/compare?slugs=a,b,c` (§4.7, công khai, 2–4 slug, trả `items` + `missing`); slug sản phẩm `compare` được dành riêng (admin tạo/đổi slug bị từ chối 400, §12.4); `/products/compare` thuộc nhóm GET công khai không bị ép `no-store` (§1). Không đổi shape response hiện có, không cần migration.
 > Thay đổi 0.12 (D-046, gợi ý sản phẩm): `related` ở §4.4 chấm điểm theo nội dung (cùng danh mục, danh mục cha, brand, tag, thuộc tính cà phê, khoảng giá), không đổi shape; thêm `GET /products/:slug/bought-together` (§4.6, công khai, có ngưỡng riêng tư >= 2 khách). Không cần migration.
 > Thay đổi 0.11 (D-045, rà soát bảo mật): mọi response `/api/v1` mặc định có `Cache-Control: no-store`, trừ GET công khai (§1 "Cache"); access token mất hiệu lực ngay khi phiên bị thu hồi (§1, §5.4, §5.6, đổi mật khẩu); biến `AUTH_RATE_LIMIT_PER_MIN` cho nhóm nhạy cảm (§1). Không đổi shape response.
@@ -40,6 +41,7 @@
 14. [Hoàn thiện v1 (M6, M6b)](#14-hoàn-thiện-v1-m6-m6b)
     - 14.9 Cài đặt cửa hàng · 14.10 Quản lý người dùng · 14.11 Liên hệ · 14.12 CSP · 14.13 Còn hoãn
 15. [Câu hỏi mở / Giả định](#15-câu-hỏi-mở--giả-định)
+16. [Phân tích kinh doanh (Admin)](#16-phân-tích-kinh-doanh-admin)
 
 ## 1. Quy ước chung
 
@@ -2008,3 +2010,62 @@ Chỉ khi chạy development thêm `'unsafe-eval'` vào `script-src` (cả hai p
 14. **Đã chốt – xem decisions.md D-018.** Redirect khi đổi slug và khôi phục sản phẩm xóa mềm làm ở M6 (§14.5, §14.6).
 15. **Đã chốt – xem decisions.md D-029.** Job xóa cứng tin `RESOLVED`/`SPAM` quá `CONTACT_RETENTION_DAYS` ngày (mặc định 365; 0 = tắt); tin `NEW`/`IN_PROGRESS` giữ tới khi xử lý; không lưu IP.
 16. **Newsletter** vẫn hoãn (§14.13).
+
+## 16. Phân tích kinh doanh (Admin)
+
+Từ 0.14 (D-049, D-050; kế hoạch: [`admin-dashboard-plan.md`](admin-dashboard-plan.md)). Router `/admin/analytics/*` chỉ ADMIN: `requireAdmin` ở cấp router (chưa đăng nhập 401 `UNAUTHORIZED`, STAFF/CUSTOMER 403 `FORBIDDEN`), mọi response `Cache-Control: no-store` (§12.0). Không đổi §14.3 (`GET /admin/dashboard` vẫn dành cho Staff+). Tiền là `Int` VND. Mọi ngày là ngày lịch Việt Nam (UTC+7, không DST).
+
+### 16.1 Tổng quan (Bước 1, đã triển khai)
+
+`GET /admin/analytics/overview?from=YYYY-MM-DD&to=YYYY-MM-DD&granularity=day|week|month` – Admin.
+
+Tham số (đều tùy chọn):
+
+- `to`: ngày kết thúc (gồm cả ngày đó). Mặc định hôm nay (VN).
+- `from`: ngày bắt đầu (gồm cả ngày đó). Mặc định `to - 29 ngày`. Nếu chỉ có `from` (không có `to`) thì `to = min(from + 29 ngày, hôm nay)`; tức là thiếu một đầu thì khoảng mặc định dài 30 ngày.
+- `granularity`: mặc định `day` nếu khoảng <= 62 ngày, `week` nếu <= 184 ngày, còn lại `month`.
+
+Kiểm tra (400 `VALIDATION_ERROR`, `details: [{ field, message }]`, định dạng §1): `from`/`to` sai định dạng hoặc ngày không tồn tại (ví dụ `2026-02-30`); `from > to` (field `from`); `to` sau hôm nay VN (field `to`); khoảng > 366 ngày (field `to`); `from` trước `2020-01-01` (field `from`); `granularity` không thuộc `day|week|month`. Tham số lặp (`from=a&from=b`) cũng là 400.
+
+```json
+{
+  "data": {
+    "range": {
+      "from": "2026-10-22",
+      "to": "2026-11-20",
+      "days": 30,
+      "granularity": "day",
+      "timezone": "Asia/Ho_Chi_Minh"
+    },
+    "previousRange": { "from": "2026-09-22", "to": "2026-10-21" },
+    "kpis": {
+      "revenue": { "current": 5000000, "previous": 4444444, "changePct": 12.5 },
+      "paidOrders": { "current": 10, "previous": 8, "changePct": 25 },
+      "aov": { "current": 500000, "previous": 555555, "changePct": -10 },
+      "ordersPlaced": { "current": 14, "previous": 14, "changePct": 0 },
+      "cancelledOrders": { "current": 2, "previous": 1, "changePct": 100 },
+      "cancelRate": { "current": 0.1429, "previous": 0.0714, "changePts": 7.1 },
+      "discountTotal": { "current": 150000, "previous": 0, "changePct": null },
+      "refundedAmount": { "current": 40000, "previous": 0, "changePct": null },
+      "newCustomers": { "current": 3, "previous": 2, "changePct": 50 }
+    },
+    "series": [{ "start": "2026-10-22", "end": "2026-10-22", "revenue": 0, "paidOrders": 0, "ordersPlaced": 0 }],
+    "previousSeries": [{ "start": "2026-09-22", "end": "2026-09-22", "revenue": 0, "paidOrders": 0, "ordersPlaced": 0 }],
+    "generatedAt": "2026-11-20T05:00:00.000Z"
+  }
+}
+```
+
+- `range.days` = số ngày của khoảng; `previousRange` = kỳ liền trước cùng độ dài (`to = from - 1 ngày`, `from = to - (days - 1)`).
+- Định nghĩa (D-049): `revenue` = Σ `grandTotal` đơn `paymentStatus = PAID`, `status` không thuộc {`CANCELLED`, `RETURNED`}, theo `paidAt`; `paidOrders` = số đơn đó; `aov` = `round(revenue / paidOrders)`, 0 nếu `paidOrders = 0`; `ordersPlaced` = số đơn theo `createdAt`, mọi trạng thái (đơn COD chưa thu có ở đây nhưng không có ở `revenue`); `cancelledOrders` = số đơn tạo trong kỳ có `status = CANCELLED`; `cancelRate.current` = `cancelledOrders / ordersPlaced` (0..1, làm tròn 4 chữ số; 0 nếu không có đơn); `discountTotal` = Σ `discountTotal` của đơn tính doanh thu; `refundedAmount` = Σ `Payment.amount` có `refundedAt` trong kỳ; `newCustomers` = số `User` role `CUSTOMER` có `createdAt` trong kỳ.
+- So sánh (D-050): `changePct = round((current - previous) / previous x 100, 1)`, `null` khi `previous = 0`. `cancelRate.changePts = round((current - previous) x 100, 1)` (điểm phần trăm), `null` khi kỳ trước không có đơn đã đặt.
+- `series`: liên tục theo `granularity`, điền 0 cho bucket không có dữ liệu, tăng dần theo `start`. `day`: một bucket mỗi ngày; `week`: bắt đầu thứ Hai theo ngày VN; `month`: tháng lịch VN. Bucket đầu và cuối bị cắt theo khoảng (`start >= from`, `end <= to`), tổng `revenue` của `series` luôn bằng `kpis.revenue.current`. `revenue` và `paidOrders` gom theo ngày `paidAt`, `ordersPlaced` theo ngày `createdAt`. `previousSeries` có cấu trúc giống `series` cho `previousRange` với cùng `granularity`; số phần tử có thể khác `series` (FE căn theo chỉ số bucket). Tối đa 366 phần tử mỗi chuỗi.
+- Biên ngày: 23:59:59.999 VN thuộc ngày đó, 00:00:00 VN thuộc ngày kế tiếp.
+
+### 16.2 Dự kiến (chưa triển khai; Bước 2-4 chờ duyệt)
+
+Chỉ để định hướng, chưa phải contract: đặc tả đầy đủ sẽ thêm khi triển khai từng bước.
+
+- Bước 2: `GET /admin/analytics/breakdown?dimension=category|brand|paymentMethod|shippingMethod|province&from&to`, `GET /admin/analytics/top-products?from&to&by=revenue|quantity&limit`, `GET /admin/analytics/top-customers?from&to&limit` (limit <= 50; khách vãng lai gộp theo `lower(contactEmail)`).
+- Bước 3: `GET /admin/analytics/customers`, `GET /admin/analytics/operations`, `GET /admin/analytics/inventory`.
+- Bước 4: hiệu quả mã giảm giá và `GET /admin/analytics/export?report=overview|breakdown|top-products|top-customers|coupons&from&to` (CSV UTF-8 có BOM, chống CSV injection, ghi audit `analytics.export`, rate limit riêng).

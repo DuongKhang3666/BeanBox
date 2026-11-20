@@ -544,3 +544,58 @@ export interface AdminReviewQuery {
   page?: number;
   pageSize?: number;
 }
+
+/** Theo docs/api-contract.md §16.1 (phân tích kinh doanh, chỉ Admin). */
+
+export type AnalyticsGranularity = "day" | "week" | "month";
+
+export interface AnalyticsCompared {
+  current: number;
+  previous: number;
+  /** % thay đổi, 1 chữ số thập phân; null khi kỳ trước = 0. */
+  changePct: number | null;
+}
+
+export interface AnalyticsComparedRate {
+  /** Tỷ lệ 0..1. */
+  current: number;
+  previous: number;
+  /** Chênh lệch tính bằng điểm phần trăm; null khi kỳ trước không có đơn đặt. */
+  changePts: number | null;
+}
+
+export interface AnalyticsPoint {
+  /** YYYY-MM-DD (ngày VN), bucket đã cắt theo khoảng. */
+  start: string;
+  end: string;
+  revenue: number;
+  paidOrders: number;
+  ordersPlaced: number;
+}
+
+export interface AnalyticsKpis {
+  revenue: AnalyticsCompared;
+  paidOrders: AnalyticsCompared;
+  aov: AnalyticsCompared;
+  ordersPlaced: AnalyticsCompared;
+  cancelledOrders: AnalyticsCompared;
+  cancelRate: AnalyticsComparedRate;
+  discountTotal: AnalyticsCompared;
+  refundedAmount: AnalyticsCompared;
+  newCustomers: AnalyticsCompared;
+}
+
+export interface AnalyticsOverview {
+  range: {
+    from: string;
+    to: string;
+    days: number;
+    granularity: AnalyticsGranularity;
+    timezone: string;
+  };
+  previousRange: { from: string; to: string };
+  kpis: AnalyticsKpis;
+  series: AnalyticsPoint[];
+  previousSeries: AnalyticsPoint[];
+  generatedAt: string;
+}

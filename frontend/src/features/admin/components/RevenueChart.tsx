@@ -29,7 +29,7 @@ export function RevenueChart({ days }: { days: DashboardDay[] }) {
       <p className="min-h-5 text-sm text-coffee-800" aria-hidden="true" data-testid="chart-tooltip">
         {shown ? dayLabel(shown) : "Rê chuột hoặc nhấn Tab để xem từng ngày."}
       </p>
-      <div className="overflow-x-auto rounded-xl border border-coffee-100 bg-cream-50 p-3">
+      <div className="relative overflow-x-auto rounded-xl border border-coffee-100 bg-cream-50 p-3">
         <div className="min-w-[30rem]">
           <ul className="flex h-40 items-end gap-1" onMouseLeave={() => setActive(null)}>
             {days.map((d, i) => {

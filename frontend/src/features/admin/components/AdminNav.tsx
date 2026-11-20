@@ -15,6 +15,7 @@ interface NavItem {
 
 export const ADMIN_NAV: readonly NavItem[] = [
   { href: "/admin", label: "Tổng quan" },
+  { href: "/admin/phan-tich", label: "Phân tích", adminOnly: true },
   { href: "/admin/don-hang", label: "Đơn hàng" },
   { href: "/admin/ton-kho", label: "Tồn kho" },
   { href: "/admin/ma-giam-gia", label: "Mã giảm giá" },

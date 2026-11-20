@@ -1,6 +1,7 @@
 # BeanBox – Thiết kế cơ sở dữ liệu
 
-> Phiên bản 0.8 · 2026-11-19 · PostgreSQL + Prisma 6.x.
+> Phiên bản 0.9 · 2026-11-20 · PostgreSQL + Prisma 6.x.
+> Thay đổi 0.9: MIGRATION mới `m10_analytics_indexes` (D-049, D-050): thêm `Order @@index([paidAt])` (doanh thu theo ngày thanh toán) và `Payment @@index([refundedAt])` (tổng hoàn tiền theo kỳ) cho khu Phân tích kinh doanh; không đổi cột/enum.
 > Thay đổi 0.8: MIGRATION mới `m6b_contact_message` (D-023): thêm enum `ContactStatus`, model `ContactMessage` và 2 quan hệ ngược ở `User` (`contactMessages`, `handledContactMessages`); cập nhật giải thích `ContactMessage`, `Setting` (§3), ghi chú ràng buộc setting (§6), §7 mục 5. Quy tắc nghiệp vụ: api-contract §14.9–14.11.
 > Thay đổi 0.7: MIGRATION mới `m6_slug_redirect` (D-018): thêm enum `SlugEntity`, model `SlugRedirect`, `Review @@index([status, createdAt])` (danh sách duyệt đánh giá của admin) và `Review @@unique([userId, productId])` (1 đánh giá/user/sản phẩm, chặn gửi đồng thời; Tech Lead chốt); cập nhật giải thích `Review`, `Wishlist`, `SlugRedirect` (§3) và `ratingAvg/ratingCount` chỉ tính `PUBLISHED` (§5). Quy tắc nghiệp vụ: api-contract §14.
 > Thay đổi 0.6: MIGRATION mới `m5_payment_refund` (D-015): thêm vào `Payment` các cột `refundedAt`, `refundNote`, `refundedById` (+ relation `refundedBy`/`User.paymentRefunds`) và `@@index([status])`; cập nhật giải thích `Payment` (§3).
@@ -506,6 +507,7 @@ model Order {
   @@index([status, createdAt])
   @@index([status, expiresAt])
   @@index([paymentStatus])
+  @@index([paidAt]) // m10_analytics_indexes
   @@index([contactEmail])
   @@index([contactPhone])
   @@index([createdAt])
@@ -572,6 +574,7 @@ model Payment {
   @@index([orderId])
   @@index([providerRef])
   @@index([status])
+  @@index([refundedAt]) // m10_analytics_indexes
 }
 
 // ───────────── Khuyến mãi ─────────────

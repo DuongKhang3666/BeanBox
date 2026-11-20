@@ -1,0 +1,86 @@
+# BeanBox – Kế hoạch khu "Phân tích kinh doanh" (chỉ Admin)
+
+> Ngày: 2026-11-20 · Người chốt: Tech Lead theo ủy quyền chủ dự án · Quyết định liên quan: [D-049, D-050](decisions.md) · Contract: [api-contract.md §16](api-contract.md).
+
+## 1. Mục tiêu
+
+Cho chủ cửa hàng (Admin) một khu riêng để đọc số liệu kinh doanh: doanh thu và các chỉ số chính có so sánh với kỳ trước, cơ cấu doanh thu, khách hàng, vận hành, tồn kho, hiệu quả mã giảm giá, và xuất CSV. Khu này tách khỏi dashboard vận hành hằng ngày của nhân viên.
+
+## 2. Hiện trạng
+
+- Khu `/admin` dùng chung cho STAFF và ADMIN: `admin.routes.ts` áp `requireAuth, requireStaff` ở cấp router; route chỉ Admin dùng thêm `requireAdmin` (ví dụ settings, users, audit-logs).
+- Dashboard `GET /admin/dashboard` (api-contract §14.3, D-019): doanh thu hôm nay/7/30 ngày, `dailyRevenue` 30 ngày, đơn theo trạng thái, top 5 sản phẩm, tồn kho thấp, việc cần chú ý. FE vẽ biểu đồ bằng CSS (`RevenueChart.tsx`), không thư viện.
+- Schema đã có `Order.paidAt`, `paymentStatus`, `status`, `paymentMethod`, `shippingMethod`, `discountTotal`, `couponId/couponCode`, `grandTotal`, `cancelReason`, `userId` (nullable), `contactEmail`; `Payment.amount` và `Payment.refundedAt`. Trước kế hoạch này chưa có index theo `paidAt` hay `refundedAt`.
+- Ma trận phân quyền tự động `backend/tests/securityAuthz.integration.test.ts` phải được cập nhật mỗi khi thêm route.
+
+## 3. Phạm vi phân quyền và quyết định chung
+
+- Giữ `/admin` ("Tổng quan" vận hành) cho STAFF + ADMIN như hiện tại, không đổi API §14.3.
+- Thêm khu mới **`/admin/phan-tich`** ("Phân tích kinh doanh"), chỉ ADMIN:
+  - Backend: router `/api/v1/admin/analytics/*` gắn `requireAdmin` ở cấp router (STAFF nhận 403 `FORBIDDEN`, chưa đăng nhập 401), `Cache-Control: no-store` (kế thừa từ admin router).
+  - Frontend: mục nav `adminOnly`; STAFF vào URL trực tiếp thấy thông báo không đủ quyền và không gọi API.
+- Không thêm thư viện biểu đồ (giữ D-019): biểu đồ SVG/CSS tự vẽ, luôn kèm bảng dữ liệu thay thế cho trình đọc màn hình.
+- Mốc thời gian: ngày lịch Việt Nam (UTC+7 cố định, không DST). Khoảng `from`..`to` (`YYYY-MM-DD`, tính cả hai đầu), tối đa 366 ngày. Kỳ so sánh là kỳ liền trước cùng độ dài: `prevTo = from - 1 ngày`, `prevFrom = prevTo - (days - 1)`.
+- Hiệu năng: truy vấn tổng hợp `GROUP BY` bằng SQL (không N+1, không tải đơn lên bộ nhớ), thêm index cần thiết, giới hạn 366 ngày. Chưa có bảng tổng hợp (đủ cho quy mô hiện tại; Bước 5 đo `EXPLAIN` với dữ liệu lớn).
+
+## 4. Định nghĩa chỉ số
+
+| Chỉ số | Định nghĩa |
+| --- | --- |
+| Doanh thu | Như D-019: tổng `grandTotal` của đơn `paymentStatus = PAID`, `status` không thuộc {`CANCELLED`, `RETURNED`}, tính theo `paidAt` (ngày VN). |
+| Đơn đã thanh toán (`paidOrders`) | Số đơn thỏa định nghĩa doanh thu. |
+| AOV | `round(doanh thu / paidOrders)`; 0 nếu không có đơn. |
+| Đơn đã đặt (`ordersPlaced`) | Số đơn theo `createdAt`, mọi trạng thái. |
+| Tỷ lệ hủy | Số đơn tạo trong kỳ đang ở `CANCELLED` chia `ordersPlaced` (gồm cả đơn online hết hạn thanh toán; tách lý do ở Bước 3). |
+| Giảm giá | Tổng `discountTotal` của đơn được tính doanh thu. |
+| Hoàn tiền | Tổng `Payment.amount` của các Payment có `refundedAt` trong kỳ (số tiền là `Payment.amount`, Int VND, tính cả lần hoàn một phần nếu sau này có). |
+| Khách mới | `User` có `role = CUSTOMER` và `createdAt` trong kỳ (đăng ký mới). Khách mua lần đầu/quay lại để Bước 3. |
+
+Đánh đổi: doanh thu theo danh mục/thương hiệu lấy theo `Product` hiện tại (`OrderItem` không lưu snapshot category/brand), nên đổi danh mục của sản phẩm làm thay đổi số liệu quá khứ. Số liệu quá khứ nói chung không đóng băng (như D-019).
+
+## 5. Các bước
+
+### Bước 1 — Nền tảng, KPI tổng quan có so sánh kỳ trước, biểu đồ theo ngày/tuần/tháng
+
+- **Mục tiêu:** router analytics chỉ Admin; `GET /admin/analytics/overview`; trang `/admin/phan-tich` có bộ lọc khoảng ngày (preset + tùy chọn, lưu trong URL), nhóm theo ngày/tuần/tháng, 9 thẻ KPI so với kỳ trước, biểu đồ cột doanh thu kèm đường kỳ trước và bảng thay thế.
+- **File ảnh hưởng:** `backend/src/modules/admin/analytics/*` (routes, controller, service, schema, range), `admin.routes.ts`, `dashboard.service.ts` (chỉ export `vnDateKey`), migration index `Order.paidAt` và `Payment.refundedAt`, `schema.prisma`; FE: `app/admin/phan-tich/page.tsx`, `features/admin/components/{AdminAnalytics,AnalyticsChart}.tsx`, `features/admin/{analyticsRange.ts,api/analytics.ts}`, `AdminNav.tsx`, `AdminDashboard.tsx` (link cho Admin), `types/admin.ts`; docs, test, E2E.
+- **API:** `GET /admin/analytics/overview?from&to&granularity` (api-contract §16.1).
+- **Test:** backend integration (quyền 401/403/200, validate, định nghĩa chỉ số, biên ngày VN, kỳ trước, bucket tuần/tháng) + unit (khoảng ngày, bucket); FE (helper preset/khoảng ngày, định dạng so sánh, Forbidden không fetch, loading/error/empty, bảng thay thế, URL); E2E (admin mở trang, đổi preset; staff bị chặn); ma trận phân quyền.
+- **Tiêu chí xong:** lint/typecheck/test/build xanh ở cả hai phía; không cuộn ngang toàn trang ở 390/768/1440; số KPI khớp tính tay trên dữ liệu thật; không đổi §14.3.
+- **Trạng thái:** Đã làm (2026-11-20). Chờ duyệt kết quả.
+
+### Bước 2 — Cơ cấu doanh thu
+
+- **Mục tiêu:** doanh thu, số đơn, số lượng theo danh mục, thương hiệu, phương thức thanh toán, phương thức giao, tỉnh/thành; top sản phẩm (theo doanh thu và số lượng, có khoảng ngày); top khách (gộp theo `userId`, khách vãng lai gộp theo `lower(contactEmail)`; hiển thị tên + email, chỉ Admin).
+- **File ảnh hưởng:** module analytics (service/schema/routes), FE thêm các khối bảng + biểu đồ thanh ngang.
+- **API (dự kiến):** `GET /admin/analytics/breakdown?dimension=category|brand|paymentMethod|shippingMethod|province&from&to`, `GET /admin/analytics/top-products`, `GET /admin/analytics/top-customers` (limit <= 50).
+- **Test:** tổng các nhóm bằng doanh thu tổng; sản phẩm đổi danh mục; khách vãng lai gộp theo email không phân biệt hoa thường.
+- **Tiêu chí xong:** bảng + biểu đồ thanh ngang, responsive, a11y.
+- **Trạng thái:** Chờ duyệt.
+
+### Bước 3 — Khách hàng và vận hành
+
+- **Mục tiêu:** khách mua lần đầu so với quay lại, tỷ lệ mua lại; phân rã hủy (khách hủy / admin hủy / hết hạn thanh toán, theo `cancelReason` hoặc lịch sử trạng thái), tỷ lệ trả hàng, hoàn tiền; thời gian xử lý trung bình (tạo, xác nhận, giao; từ `OrderStatusHistory`); đơn cần xử lý (chờ xác nhận quá X giờ, cần hoàn tiền). Tồn kho: hết hàng, sắp hết, giá trị tồn (tồn x giá), hàng bán chậm (không bán trong N ngày).
+- **File ảnh hưởng:** module analytics, FE các khối mới; có thể cần index cho `OrderStatusHistory`.
+- **API (dự kiến):** `GET /admin/analytics/customers`, `/operations`, `/inventory`.
+- **Test:** theo từng chỉ số, gồm biên "lần đầu" và đơn bị hủy do hết hạn thanh toán.
+- **Tiêu chí xong:** định nghĩa từng chỉ số được ghi vào contract/decisions; không N+1.
+- **Trạng thái:** Chờ duyệt.
+
+### Bước 4 — Hiệu quả mã giảm giá và xuất CSV
+
+- **Mục tiêu:** theo mã: lượt dùng, tổng giảm, doanh thu đơn có mã, AOV có/không mã, tỷ lệ đơn dùng mã. Xuất CSV phía server: UTF-8 có BOM (Excel), chống CSV injection (ô bắt đầu bằng `=`, `+`, `-`, `@`, tab, CR thì thêm `'`), tên file có khoảng ngày, ghi audit log `analytics.export` (có dữ liệu cá nhân), rate limit riêng nhẹ.
+- **File ảnh hưởng:** module analytics, `lib/audit` (action mới), rate limiter, FE nút xuất.
+- **API (dự kiến):** `GET /admin/analytics/coupons`, `GET /admin/analytics/export?report=overview|breakdown|top-products|top-customers|coupons&from&to`.
+- **Test:** chống CSV injection, BOM, audit log, rate limit, quyền.
+- **Tiêu chí xong:** mở được trong Excel đúng tiếng Việt; mỗi lần xuất có một dòng audit.
+- **Trạng thái:** Chờ duyệt.
+
+### Bước 5 — Hoàn thiện
+
+- **Mục tiêu:** đo `EXPLAIN ANALYZE` với khoảng 50k đơn sinh trên DB tạm, thêm index hoặc điều chỉnh nếu cần; axe và kiểm 390/768 cho toàn khu; bản in; cập nhật README và ảnh chụp; ghi kết quả vào `testing.md`.
+- **File ảnh hưởng:** migration (nếu cần), CSS in, `a11y.spec.ts`, README, `docs/screenshots`, `testing.md`.
+- **API:** không thêm.
+- **Test:** axe không có vi phạm serious/critical trên các trang khu phân tích; E2E không tràn ngang.
+- **Tiêu chí xong:** truy vấn overview dưới ngưỡng đã ghi trong `testing.md` với 50k đơn; tài liệu cập nhật.
+- **Trạng thái:** Chờ duyệt.

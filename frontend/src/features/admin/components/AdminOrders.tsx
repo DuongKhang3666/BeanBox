@@ -65,7 +65,7 @@ const th = "px-3 py-3 font-medium";
 
 function OrdersTable({ orders }: { orders: AdminOrderListItem[] }) {
   return (
-    <div className="hidden overflow-x-auto rounded-2xl border border-coffee-200 bg-white md:block">
+    <div className="relative hidden overflow-x-auto rounded-2xl border border-coffee-200 bg-white md:block">
       <table className="w-full text-left text-sm text-coffee-900">
         <caption className="sr-only">Danh sách đơn hàng</caption>
         <thead className="bg-cream-50 text-coffee-700">
@@ -154,7 +154,7 @@ function OrderCards({ orders }: { orders: AdminOrderListItem[] }) {
                 {o.needsRefund ? <NeedsRefundBadge /> : null}
               </div>
             </div>
-            <p className="text-coffee-900">
+            <p className="break-words text-coffee-900">
               {o.customerName} · {o.contactPhone}
               {o.isGuest ? <span className="text-sm text-coffee-700"> (khách)</span> : null}
             </p>

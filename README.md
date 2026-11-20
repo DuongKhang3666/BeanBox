@@ -206,25 +206,59 @@ Danh sách đầy đủ ở [docs/decisions.md](docs/decisions.md).
 
 ## Ảnh chụp màn hình
 
-Chưa có ảnh. Ảnh sẽ đặt trong [`docs/screenshots/`](docs/screenshots/). Tên file đề xuất (theo route trong `frontend/src/app`):
+Ảnh chụp từ bản production chạy với dữ liệu demo. Chụp lại bằng script: xem [`docs/screenshots/README.md`](docs/screenshots/README.md).
 
-| File                     | Nội dung                       | Route                  |
-| ------------------------ | ------------------------------ | ---------------------- |
-| `home.png`               | Trang chủ                      | `/`                    |
-| `category.png`           | Danh sách sản phẩm, lọc        | `/danh-muc/[slug]`     |
-| `product.png`            | Chi tiết sản phẩm              | `/san-pham/[slug]`     |
-| `cart.png`               | Giỏ hàng                       | `/gio-hang`            |
-| `checkout.png`           | Thanh toán / đặt hàng          | `/thanh-toan`          |
-| `order-lookup.png`       | Tra cứu đơn của khách vãng lai | `/tra-cuu-don-hang`    |
-| `account-orders.png`     | Đơn hàng của tôi               | `/tai-khoan/don-hang`  |
-| `admin-dashboard.png`    | Dashboard quản trị             | `/admin`               |
-| `admin-orders.png`       | Quản lý đơn hàng               | `/admin/don-hang`      |
-| `admin-product-edit.png` | Sửa sản phẩm                   | `/admin/san-pham/[id]` |
-| `mobile-home.png`        | Trang chủ trên mobile          | `/`                    |
+**Trang chủ**
 
-<!-- Cú pháp nhúng khi đã có ảnh:
-![Trang chủ](docs/screenshots/home.png)
--->
+![Trang chủ (desktop)](docs/screenshots/home.png)
+
+**Danh sách sản phẩm có bộ lọc**
+
+![Danh sách sản phẩm cà phê hạt với bộ lọc](docs/screenshots/category.png)
+
+**Chi tiết sản phẩm**
+
+![Chi tiết sản phẩm với biến thể và giá sale](docs/screenshots/product.png)
+
+**So sánh sản phẩm**
+
+![Bảng so sánh ba sản phẩm](docs/screenshots/compare.png)
+
+**Giỏ hàng**
+
+![Giỏ hàng có ba sản phẩm](docs/screenshots/cart.png)
+
+**Thanh toán**
+
+![Form thanh toán đã điền dữ liệu demo](docs/screenshots/checkout.png)
+
+**Tra cứu đơn của khách vãng lai**
+
+![Kết quả tra cứu đơn bằng mã đơn và số điện thoại](docs/screenshots/order-lookup.png)
+
+**Đơn hàng của tôi**
+
+![Danh sách đơn hàng trong tài khoản khách](docs/screenshots/account-orders.png)
+
+**Dashboard quản trị**
+
+![Dashboard quản trị với doanh thu và đơn theo trạng thái](docs/screenshots/admin-dashboard.png)
+
+**Quản lý đơn hàng**
+
+![Trang quản lý đơn hàng của admin](docs/screenshots/admin-orders.png)
+
+**Sửa sản phẩm**
+
+![Form sửa sản phẩm trong admin](docs/screenshots/admin-product-edit.png)
+
+**Trang chủ trên mobile**
+
+![Trang chủ trên điện thoại](docs/screenshots/mobile-home.png)
+
+**Quản lý đơn hàng trên mobile**
+
+![Trang quản lý đơn hàng của admin trên điện thoại](docs/screenshots/mobile-admin-orders.png)
 
 ## Cấu trúc thư mục
 

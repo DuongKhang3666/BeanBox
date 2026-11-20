@@ -1,12 +1,17 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { errRes, jsonRes } from "@/features/account/testing";
+import { errRes, jsonRes, makeUser } from "@/features/account/testing";
 import { tokenStore } from "@/lib/api/client";
 import type { AdminDashboard as Dashboard } from "@/types/admin";
 import { ALL_ORDER_STATUSES } from "../api/orders";
 import { makeStatusCounts } from "../testing";
 import { AdminDashboard } from "./AdminDashboard";
+
+let role: "ADMIN" | "STAFF" = "ADMIN";
+vi.mock("@/features/auth/AuthProvider", () => ({
+  useAuth: () => ({ status: "authenticated", user: makeUser({ role }) }),
+}));
 
 function makeDashboard(over: Partial<Dashboard> = {}): Dashboard {
   const dailyRevenue = Array.from({ length: 30 }, (_, i) => ({
@@ -44,10 +49,31 @@ function makeDashboard(over: Partial<Dashboard> = {}): Dashboard {
   };
 }
 
-beforeEach(() => tokenStore.clear());
+beforeEach(() => {
+  tokenStore.clear();
+  role = "ADMIN";
+});
 afterEach(() => vi.unstubAllGlobals());
 
 describe("AdminDashboard", () => {
+  it("chỉ ADMIN thấy link Xem phân tích chi tiết", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonRes(200, { data: makeDashboard() })),
+    );
+    const { unmount } = render(<AdminDashboard />);
+    await screen.findByRole("region", { name: "Hôm nay" });
+    expect(screen.getByRole("link", { name: "Xem phân tích chi tiết" })).toHaveAttribute(
+      "href",
+      "/admin/phan-tich",
+    );
+    unmount();
+    role = "STAFF";
+    render(<AdminDashboard />);
+    await screen.findByRole("region", { name: "Hôm nay" });
+    expect(screen.queryByRole("link", { name: "Xem phân tích chi tiết" })).not.toBeInTheDocument();
+  });
+
   it("hiển thị doanh thu và số đơn hôm nay / 7 / 30 ngày", async () => {
     vi.stubGlobal(
       "fetch",

@@ -177,7 +177,7 @@ export function VariantsSection({
         </p>
       ) : (
         <>
-          <div className="hidden overflow-x-auto rounded-xl border border-coffee-200 lg:block">
+          <div className="relative hidden overflow-x-auto rounded-xl border border-coffee-200 lg:block">
             <table className="w-full text-left text-sm text-coffee-900">
               <caption className="sr-only">Biến thể của sản phẩm</caption>
               <thead className="bg-cream-50 text-coffee-700">
@@ -266,8 +266,8 @@ export function VariantsSection({
               <li key={v.id} className="space-y-3 rounded-xl border border-coffee-200 p-4">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="font-medium text-coffee-900">{v.name}</p>
-                    <p className="font-mono text-xs text-coffee-700">SKU {v.sku}</p>
+                    <p className="font-medium break-words text-coffee-900">{v.name}</p>
+                    <p className="font-mono text-xs break-all text-coffee-700">SKU {v.sku}</p>
                   </div>
                   <ActiveBadge active={v.isActive} />
                 </div>

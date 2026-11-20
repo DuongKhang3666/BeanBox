@@ -69,7 +69,7 @@ const actorName = (m: InventoryMovement) => m.actor?.fullName ?? "Hệ thống";
 
 function MovementsTable({ items }: { items: InventoryMovement[] }) {
   return (
-    <div className="hidden overflow-x-auto rounded-2xl border border-coffee-200 bg-white md:block">
+    <div className="relative hidden overflow-x-auto rounded-2xl border border-coffee-200 bg-white md:block">
       <table className="w-full text-left text-sm text-coffee-900">
         <caption className="sr-only">Lịch sử biến động tồn kho</caption>
         <thead className="bg-cream-50 text-coffee-700">

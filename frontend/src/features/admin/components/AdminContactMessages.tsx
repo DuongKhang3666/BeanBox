@@ -61,7 +61,7 @@ function MessageLink({ m }: { m: ContactMessageItem }) {
 
 function MessagesTable({ items }: { items: ContactMessageItem[] }) {
   return (
-    <div className="hidden overflow-x-auto rounded-2xl border border-coffee-200 bg-white md:block">
+    <div className="relative hidden overflow-x-auto rounded-2xl border border-coffee-200 bg-white md:block">
       <table className="w-full text-left text-sm text-coffee-900">
         <caption className="sr-only">Danh sách tin nhắn liên hệ</caption>
         <thead className="bg-cream-50 text-coffee-700">
@@ -120,7 +120,7 @@ function MessagesCards({ items }: { items: ContactMessageItem[] }) {
             <MessageLink m={m} />
           </p>
           <p className="text-sm break-words text-coffee-800">{contactExcerpt(m.message)}</p>
-          <p className="text-sm text-coffee-700">
+          <p className="text-sm break-words text-coffee-700">
             {m.name} · <span className="break-all">{m.email}</span>
           </p>
           {m.handledBy ? (

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { useAuth } from "@/features/auth/AuthProvider";
 import { ORDER_STATUS_LABEL } from "@/features/orders/labels";
 import { useResource } from "@/features/orders/useResource";
 import { formatVND } from "@/lib/format";
@@ -170,6 +171,7 @@ function LowStock({ data }: { data: Dashboard }) {
 }
 
 export function AdminDashboard() {
+  const { user } = useAuth();
   const res = useResource<Dashboard>("dashboard", load);
 
   let body: React.ReactNode;
@@ -224,6 +226,11 @@ export function AdminDashboard() {
             <p className="text-sm text-coffee-700" aria-live="polite">
               Cập nhật lúc {formatVnDateTime(res.data!.generatedAt)}
             </p>
+          ) : null}
+          {user?.role === "ADMIN" ? (
+            <Link href="/admin/phan-tich" className={`${link} inline-flex min-h-11 items-center`}>
+              Xem phân tích chi tiết
+            </Link>
           ) : null}
           <Button
             variant="outline"

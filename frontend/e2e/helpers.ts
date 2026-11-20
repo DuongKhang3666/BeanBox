@@ -88,3 +88,15 @@ export async function createGuestCodOrder(request: APIRequestContext, variantId:
   const code = ((await res.json()) as { data: { code: string } }).data.code;
   return { code, phone: contact.phone };
 }
+
+/** Hủy đơn guest qua API (mã + SĐT, không cần đăng nhập) để hoàn kho sau khi test tạo đơn. */
+export async function cancelGuestOrderApi(
+  request: APIRequestContext,
+  code: string,
+  phone: string,
+): Promise<void> {
+  const res = await request.post(`${API}/orders/${encodeURIComponent(code)}/cancel`, {
+    data: { reason: "Dọn dẹp đơn test E2E", phone },
+  });
+  expect(res.status(), "POST /orders/:code/cancel").toBe(200);
+}

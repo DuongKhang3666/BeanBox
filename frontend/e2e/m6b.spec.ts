@@ -34,6 +34,21 @@ test("admin xử lý tin nhắn, xem cài đặt và người dùng", async ({ p
   await page.getByRole("button", { name: "Lưu", exact: true }).click();
   await expect(page.getByText("Đã lưu thay đổi.")).toBeVisible();
 
+  // Phân tích kinh doanh (chỉ Admin): KPI hiển thị, đổi preset đổi URL, không lỗi
+  await page.goto("/admin");
+  await page.getByRole("link", { name: "Xem phân tích chi tiết" }).click();
+  await expect(page).toHaveURL(/\/admin\/phan-tich$/);
+  await expect(page.getByRole("heading", { name: "Phân tích kinh doanh" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Doanh thu", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "7 ngày", exact: true }).click();
+  await expect(page).toHaveURL(/\/admin\/phan-tich\?from=\d{4}-\d{2}-\d{2}&to=\d{4}-\d{2}-\d{2}$/);
+  await expect(page.getByRole("button", { name: "7 ngày", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(page.getByRole("region", { name: "Doanh thu", exact: true })).toBeVisible();
+  await expect(page.getByText("Không tải được số liệu phân tích")).toHaveCount(0);
+
   // Cài đặt: chỉ xem, không lưu
   await page.goto("/admin/cai-dat");
   await expect(page.getByRole("heading", { name: "Cài đặt cửa hàng" })).toBeVisible();

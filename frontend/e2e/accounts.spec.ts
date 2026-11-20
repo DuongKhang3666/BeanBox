@@ -22,6 +22,18 @@ test("staff: xác nhận đơn COD của khách rồi hủy để hoàn kho", as
   const { code } = await createGuestCodOrder(request, product.variantId);
 
   await login(page, "staff@beanbox.local", seedPassword("STAFF"));
+
+  // Khu Phân tích kinh doanh chỉ Admin: STAFF không thấy menu, vào thẳng URL bị báo không đủ quyền
+  await page.goto("/admin");
+  await expect(page.getByRole("heading", { name: "Tổng quan" })).toBeVisible();
+  const nav = page.getByRole("navigation", { name: "Quản trị" });
+  await expect(nav.getByRole("link", { name: "Đơn hàng" })).toBeVisible();
+  await expect(nav.getByRole("link", { name: "Phân tích" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Xem phân tích chi tiết" })).toHaveCount(0);
+  await page.goto("/admin/phan-tich");
+  await expect(page.getByText("Bạn không đủ quyền xem phân tích kinh doanh")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Doanh thu", exact: true })).toHaveCount(0);
+
   await page.goto("/admin/don-hang");
   await page.getByRole("link", { name: code }).first().click();
   await expect(page.getByRole("heading", { name: `Đơn hàng ${code}` })).toBeVisible();

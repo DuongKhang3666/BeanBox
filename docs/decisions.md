@@ -51,6 +51,9 @@
 - [D-045 Rà soát bảo mật sau M8](#d-045-rà-soát-bảo-mật-sau-m8)
 - [D-046 Gợi ý sản phẩm liên quan và mua cùng](#d-046-gợi-ý-sản-phẩm-liên-quan-và-mua-cùng)
 - [D-047 So sánh sản phẩm](#d-047-so-sánh-sản-phẩm)
+- [D-048 Kiểm tra giao diện /admin trên mobile (390 và 768)](#d-048-kiểm-tra-giao-diện-admin-trên-mobile-390-và-768)
+- [D-049 Khu phân tích kinh doanh chỉ Admin](#d-049-khu-phân-tích-kinh-doanh-chỉ-admin)
+- [D-050 Khoảng ngày, kỳ so sánh và gom nhóm của phân tích kinh doanh](#d-050-khoảng-ngày-kỳ-so-sánh-và-gom-nhóm-của-phân-tích-kinh-doanh)
 
 ---
 
@@ -703,3 +706,62 @@
   - Mỗi lần xem là một request tới DB (không cache phía server); chỉ một `findMany` tối đa 4 sản phẩm nên tải thấp.
   - Một sản phẩm tên `compare` đã tồn tại sẵn trước khi triển khai sẽ bị che (không có trong seed; chưa có migration kiểm tra dữ liệu thật).
 - **Docs bị ảnh hưởng:** `api-contract.md` §1, §4.7, §12.4 (0.13), `architecture.md`, `testing.md` (E2E `compare.spec.ts`), `README.md`.
+
+## D-048 Kiểm tra giao diện /admin trên mobile (390 và 768)
+
+- **Ngày:** 2026-11-20 · **Người chốt:** Tech Lead theo ủy quyền chủ dự án
+- **Trạng thái:** Áp dụng.
+- **Bối cảnh:** Ở M9 bảng so sánh gặp lỗi: phần tử `sr-only` (`position: absolute`) nằm trong vùng `overflow-x-auto` không có containing block định vị nên không bị vùng cuộn cắt, thò ra ngoài và làm cả trang cuộn ngang. Các bảng admin có cùng mẫu (cột "Thao tác" dùng `sr-only` trong `th`) và chưa ai kiểm admin ở màn hình nhỏ. Ở 768px (đúng breakpoint `md`) bảng `md:block` hiện ra nên dễ tràn nhất.
+- **Quyết định:**
+  1. **Quy ước vùng cuộn ngang phải `relative`:** mọi phần tử có `overflow-x-auto` (hoặc `overflow-auto`) chứa nội dung định vị tuyệt đối, kể cả `sr-only` trong `th`/`caption`, phải có thêm class `relative` để làm containing block. Áp dụng cho tất cả vùng cuộn bảng ở admin và `RevenueChart`.
+  2. **Chuẩn kiểm viewport admin:** mọi trang `/admin/**` phải không cuộn ngang toàn trang (`documentElement.scrollWidth <= clientWidth`, không dung sai) ở **390x844** và **768x1024**. Kiểm tự động bằng `frontend/e2e/admin-mobile.spec.ts` (1 lượt đăng nhập admin, 20 trang chính + chi tiết, khẳng định mềm để một lần chạy liệt kê hết trang lỗi, kèm danh sách phần tử gây tràn). Bộ đo tính cả chữ dài không ngắt dòng tràn khỏi hộp của nó (không chỉ `getBoundingClientRect` của phần tử), và bỏ qua phần tử bị vùng overflow cắt thật (phần tử absolute chỉ bị cắt từ containing block của nó trở lên). Spec thêm kiểm khả dụng ở 390: menu "Menu quản trị" mở được, mọi link điều hướng nằm trong viewport và cao >= 40px, nút "Thêm sản phẩm" nằm trong viewport, hộp thoại điều chỉnh tồn kho vừa màn hình.
+  3. **Đã sửa (chỉ CSS/markup, không đổi nghiệp vụ, API, chữ hay điều hướng):**
+     - Thêm `relative` cho vùng cuộn bảng: `AdminAuditLog` (2 chỗ), `AdminBrands`, `AdminContactMessages`, `AdminCoupons`, `AdminInventory`, `AdminMovements`, `AdminOrders`, `AdminProducts`, `AdminUsers`, `VariantsSection`, `RevenueChart`. Lỗi tái hiện được ở `/admin/thuong-hieu` ở 768 khi tên/slug thương hiệu dài làm bảng rộng hơn khung (scrollWidth 2638 so với 768, phần tử `span.sr-only` "Thao tác" thò ra).
+     - Chuỗi dài không ngắt dòng trong thẻ mobile và chi tiết: `min-w-0` cho ô lưới `Field` của `AdminContactDetail` và `AdminUserDetail` (email dài làm cột lưới `1fr` giãn theo min-content, `break-words` không đủ), `break-words`/`break-all` + `min-w-0` cho tên/slug/SKU/mã ở `AdminProducts` (thẻ và link tên), `AdminCategories`, `AdminBrands`, `AdminCoupons` (mã), `AdminContactMessages` (thẻ), `AdminOrders` (tên khách ở thẻ), `VariantsSection` (tên/SKU thẻ biến thể).
+  4. Lỗi tương tự ở storefront (`overflow-x-auto` kèm `sr-only`): không có chỗ nào còn thiếu `relative` (đã rà `grep overflow-x-auto` trong `src`; `CompareTable` đã sửa ở M9; các vùng cuộn còn lại là danh sách ngang `ul` chỉ chứa link/ảnh tĩnh, không có phần tử absolute).
+- **Phát hiện khi rà:** với dữ liệu seed sạch, mọi trang admin đã không tràn ở cả hai viewport; lỗi chỉ lộ khi dữ liệu có chuỗi dài không khoảng trắng (email, slug, SKU, mã giảm giá, tên). Vì vậy việc rà phải thực hiện trên DB tạm được chèn dữ liệu "xấu" (xem `testing.md`), không chỉ dữ liệu seed.
+- **Hệ quả/rủi ro (giới hạn còn lại):**
+  - `admin-mobile.spec.ts` chạy trên dữ liệu của DB E2E (seed + đơn do chính spec tạo), nên không tự bắt được lỗi chuỗi dài nếu DB không có dữ liệu như vậy; ca chuỗi dài đã được kiểm tay trên DB tạm, chưa tự động hóa (tránh để E2E ghi dữ liệu bẩn vào DB).
+  - Chỉ kiểm chiều ngang ở 390 và 768; chưa kiểm 320px, chế độ ngang điện thoại, hay trình duyệt WebKit/Firefox (E2E chỉ chạy Chromium/Edge).
+  - Trang `/admin/lien-he/[id]` chỉ được kiểm khi danh sách có tin nhắn (spec bỏ qua nếu rỗng, vì form liên hệ giới hạn 3 lần/10 phút/IP).
+  - Các hộp thoại khác ngoài điều chỉnh tồn kho (đổi trạng thái đơn, hoàn tiền, biến thể, xóa) dùng chung `AdminModal` (`max-h-[90dvh]`, `max-w-md`) nhưng chưa có khẳng định riêng.
+- **Docs bị ảnh hưởng:** `testing.md` (E2E `admin-mobile.spec.ts`, mục rate limit).
+
+## D-049 Khu phân tích kinh doanh chỉ Admin
+
+- **Ngày:** 2026-11-20 · **Người chốt:** Tech Lead theo ủy quyền chủ dự án
+- **Trạng thái:** Áp dụng (Bước 1 đã triển khai; Bước 2-5 chờ duyệt, xem [`admin-dashboard-plan.md`](admin-dashboard-plan.md)).
+- **Bối cảnh:** Dashboard `/admin` (§14.3, D-019) dành cho cả STAFF và ADMIN và chỉ trả số liệu vận hành 30 ngày cố định. Chủ cửa hàng cần phân tích theo khoảng ngày tùy chọn, so sánh kỳ trước, cơ cấu doanh thu và dữ liệu khách hàng; dữ liệu này nhạy cảm hơn mức nhân viên cần.
+- **Quyết định:**
+  1. **Tách khu mới, không đổi dashboard:** giữ `/admin` và `GET /admin/dashboard` nguyên như cũ cho STAFF + ADMIN. Thêm trang FE `/admin/phan-tich` ("Phân tích kinh doanh") và router BE `/api/v1/admin/analytics/*`.
+  2. **Phân quyền hai lớp:** backend gắn `requireAdmin` ở cấp router analytics (STAFF 403 `FORBIDDEN`, chưa đăng nhập 401, mọi response `no-store`), không chỉ ẩn menu. Frontend: mục nav `adminOnly`; STAFF vào URL trực tiếp thấy thông báo không đủ quyền và không gọi API; 403 từ API cũng hiện thông báo đó. Dashboard chỉ cho ADMIN thấy link "Xem phân tích chi tiết".
+  3. **Không thêm thư viện biểu đồ** (giữ D-019): biểu đồ SVG tự vẽ, luôn kèm bảng dữ liệu thay thế (`<details>` "Xem dạng bảng") để trình đọc màn hình và bàn phím dùng được.
+  4. **Định nghĩa chỉ số** (một nguồn duy nhất, dùng cho mọi bước): doanh thu theo D-019 (`paidAt`, `paymentStatus = PAID`, `status` không thuộc {`CANCELLED`, `RETURNED`}, giờ VN); đơn đã thanh toán = số đơn thỏa định nghĩa doanh thu; AOV = `round(doanh thu / đơn đã thanh toán)` (0 nếu không có đơn); đơn đã đặt = theo `createdAt`, mọi trạng thái; tỷ lệ hủy = đơn tạo trong kỳ đang `CANCELLED` / đơn đã đặt (gồm đơn online hết hạn thanh toán, tách lý do ở Bước 3); giảm giá = tổng `discountTotal` của đơn tính doanh thu; hoàn tiền = tổng `Payment.amount` có `refundedAt` trong kỳ (tính theo ngày hoàn, không theo ngày đơn); khách mới = `User` role `CUSTOMER` có `createdAt` trong kỳ.
+  5. **Hiệu năng:** truy vấn tổng hợp `GROUP BY` ngày bằng SQL tham số hóa (không nối chuỗi, không N+1, không tải đơn lên bộ nhớ), giới hạn 366 ngày, thêm index `Order(paidAt)` và `Payment(refundedAt)`. Chưa có bảng tổng hợp; Bước 5 đo `EXPLAIN ANALYZE` với khoảng 50k đơn.
+- **Hệ quả/rủi ro:**
+  - Doanh thu theo danh mục/thương hiệu (Bước 2) lấy theo `Product` hiện tại vì `OrderItem` không lưu snapshot category/brand: đổi danh mục của sản phẩm làm thay đổi số liệu quá khứ. Đây là đánh đổi chấp nhận để không đổi schema đơn hàng.
+  - Số liệu quá khứ không đóng băng (như D-019): hủy/hoàn trả đơn cũ làm doanh thu kỳ đó giảm.
+  - Hoàn tiền và doanh thu tính theo hai mốc khác nhau (`refundedAt` và `paidAt`), nên không cộng trừ trực tiếp để ra "doanh thu ròng".
+  - Tỷ lệ hủy gồm cả đơn online hết hạn thanh toán, nên cao hơn tỷ lệ khách chủ động hủy.
+  - Mỗi lần xem chạy 4 truy vấn tổng hợp trên Postgres thật (không cache); đủ cho quy mô hiện tại, đo lại ở Bước 5.
+- **Docs bị ảnh hưởng:** `api-contract.md` §16 (0.14), `db-schema.md` (0.9), `admin-dashboard-plan.md`, `testing.md`.
+
+## D-050 Khoảng ngày, kỳ so sánh và gom nhóm của phân tích kinh doanh
+
+- **Ngày:** 2026-11-20 · **Người chốt:** Tech Lead theo ủy quyền chủ dự án
+- **Trạng thái:** Áp dụng.
+- **Bối cảnh:** D-049 cần quy tắc thống nhất cho tham số thời gian, kỳ so sánh và cách gom bucket để số liệu giữa API, biểu đồ và các bước sau không lệch nhau.
+- **Quyết định:**
+  1. **Tham số** `from`, `to` (`YYYY-MM-DD`, ngày lịch VN, tính cả hai đầu), `granularity` (`day|week|month`). Mặc định: `to` = hôm nay (VN), `from` = `to - 29 ngày`. Chỉ có `from`: `to = min(from + 29 ngày, hôm nay)`; chỉ có `to`: `from = to - 29 ngày`. `granularity` mặc định: `day` nếu khoảng <= 62 ngày, `week` nếu <= 184, còn lại `month`.
+  2. **Giới hạn (400 `VALIDATION_ERROR`, có `field`):** sai định dạng hoặc ngày không tồn tại (ví dụ `2026-02-30`), `from > to`, `to` sau hôm nay (VN), khoảng > 366 ngày, `from` trước `2020-01-01`, `granularity` sai.
+  3. **Múi giờ:** UTC+7 cố định (không DST); gom theo `(paidAt | createdAt | refundedAt) + 7 giờ`. Biên ngày: 23:59:59.999 VN thuộc ngày đó, 00:00:00 VN thuộc ngày kế tiếp.
+  4. **Kỳ so sánh** là kỳ liền trước cùng độ dài: `previousTo = from - 1`, `previousFrom = previousTo - (days - 1)`; `series` và `previousSeries` dùng cùng `granularity`.
+  5. **Bucket:** `day` = từng ngày; `week` bắt đầu từ thứ Hai theo ngày VN; `month` = tháng lịch VN. Bucket liên tục, điền 0; bucket đầu và cuối bị cắt theo khoảng (`start` = max(đầu bucket, `from`), `end` = min(cuối bucket, `to`)), nên `series.length` có thể khác `previousSeries.length`; FE căn hai chuỗi theo chỉ số bucket.
+  6. **So sánh:** `changePct = round((hiện tại - trước) / trước x 100, 1)`, `null` khi kỳ trước = 0. Tỷ lệ (tỷ lệ hủy) so sánh bằng điểm phần trăm: `changePts = round((hiện tại - trước) x 100, 1)`, `null` khi kỳ trước không có đơn đã đặt; bản thân tỷ lệ lưu dạng 0..1 làm tròn 4 chữ số.
+  7. **Index mới (migration `m10_analytics_indexes`):** `Order(paidAt)`, `Payment(refundedAt)`. `Order(createdAt)` và `User(createdAt)`, `User(role)` đã có.
+- **Hệ quả/rủi ro:**
+  - Kỳ trước của khoảng gần `2020-01-01` có thể nằm trước mốc đó; chấp nhận (chỉ trả 0), không validate.
+  - `changePct` rất lớn khi kỳ trước nhỏ; FE chỉ hiển thị, không cắt.
+  - Ngày "hôm nay" tính theo đồng hồ server; khoảng kết thúc hôm nay là kỳ chưa trọn ngày nên so với kỳ trước đã trọn sẽ thấp hơn (đúng bản chất, không điều chỉnh).
+  - Hai chỉ số so sánh theo hai mốc khác nhau (xem D-049) không nên cộng trừ với nhau.
+- **Docs bị ảnh hưởng:** `api-contract.md` §16.1, `db-schema.md`, `admin-dashboard-plan.md`.

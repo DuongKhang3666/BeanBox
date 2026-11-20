@@ -473,6 +473,7 @@ model Order {
   @@index([status, createdAt])
   @@index([status, expiresAt])
   @@index([paymentStatus])
+  @@index([paidAt]) // m10_analytics_indexes: phân tích doanh thu theo paidAt
   @@index([contactEmail])
   @@index([contactPhone])
   @@index([createdAt])
@@ -539,6 +540,7 @@ model Payment {
   @@index([orderId])
   @@index([providerRef])
   @@index([status])
+  @@index([refundedAt]) // m10_analytics_indexes: tổng hoàn tiền theo kỳ
 }
 
 // ───────────── Khuyến mãi ─────────────

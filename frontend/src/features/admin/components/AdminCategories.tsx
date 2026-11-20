@@ -49,7 +49,7 @@ function CategoryRow({
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0">
         <p className="flex flex-wrap items-center gap-2">
-          <span className="font-medium text-coffee-900">{cat.name}</span>
+          <span className="min-w-0 font-medium break-words text-coffee-900">{cat.name}</span>
           {!cat.isActive ? (
             <span className="rounded-full bg-coffee-800 px-2 py-0.5 text-xs text-cream-50">
               Đang ẩn
@@ -57,8 +57,8 @@ function CategoryRow({
           ) : null}
         </p>
         <p className="text-sm text-coffee-700">
-          <span className="font-mono">{cat.slug}</span> · {cat.productCount} sản phẩm · Thứ tự{" "}
-          {cat.sortOrder}
+          <span className="font-mono break-all">{cat.slug}</span> · {cat.productCount} sản phẩm ·
+          Thứ tự {cat.sortOrder}
         </p>
       </div>
       <div className="flex flex-wrap gap-2">

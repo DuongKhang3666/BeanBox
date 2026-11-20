@@ -99,7 +99,7 @@ function DiffDialog({ item, onClose }: { item: AuditLogItem; onClose: () => void
         {rows.length === 0 ? (
           <p className="text-sm text-coffee-800">Không có chi tiết thay đổi.</p>
         ) : (
-          <div className="overflow-x-auto rounded-lg border border-coffee-200">
+          <div className="relative overflow-x-auto rounded-lg border border-coffee-200">
             <table className="w-full text-left text-sm text-coffee-900">
               <caption className="sr-only">Thay đổi của thao tác</caption>
               <thead className="bg-cream-50 text-coffee-700">
@@ -164,7 +164,7 @@ function AuditTable({
   onOpen: (i: AuditLogItem) => void;
 }) {
   return (
-    <div className="hidden overflow-x-auto rounded-2xl border border-coffee-200 bg-white md:block">
+    <div className="relative hidden overflow-x-auto rounded-2xl border border-coffee-200 bg-white md:block">
       <table className="w-full text-left text-sm text-coffee-900">
         <caption className="sr-only">Nhật ký thao tác</caption>
         <thead className="bg-cream-50 text-coffee-700">
