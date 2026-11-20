@@ -9,3 +9,5 @@ Dockerfile
 e2e
 test-results
 playwright-report
+scripts/screenshots
+playwright.screenshots.config.ts
