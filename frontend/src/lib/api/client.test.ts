@@ -293,7 +293,7 @@ describe("ApiClient.download", () => {
       query: { report: "top-products", from: "2026-10-22", to: "2026-11-20", sort: undefined },
     });
     expect(r.filename).toBe("beanbox-top-products-2026-10-22_2026-11-20.csv");
-    expect(r.blob).toBeInstanceOf(Blob);
+    expect(Object.prototype.toString.call(r.blob)).toBe("[object Blob]");
     expect(await r.blob.text()).toContain("Hạng,Sản phẩm");
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe(

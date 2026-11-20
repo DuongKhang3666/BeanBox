@@ -147,7 +147,7 @@ describe("ExportCsvButton", () => {
     await waitFor(() => expect(saveBlob).toHaveBeenCalledTimes(1));
     const [blob, filename] = vi.mocked(saveBlob).mock.calls[0]!;
     expect(filename).toBe("beanbox-top-customers-2026-10-22_2026-11-20.csv");
-    expect(blob).toBeInstanceOf(Blob);
+    expect(Object.prototype.toString.call(blob)).toBe("[object Blob]");
     const [url, init] = fn.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe(
       "/api/v1/admin/analytics/export?report=top-customers&from=2026-10-22&to=2026-11-20&sort=orders",
