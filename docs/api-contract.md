@@ -1,6 +1,7 @@
 # BeanBox – API Contract
 
-> Phiên bản 0.15 · 2026-11-20 · **Nguồn sự thật cho FE và BE.** Đổi contract phải sửa file này trước và nêu trong báo cáo.
+> Phiên bản 0.16 · 2026-11-20 · **Nguồn sự thật cho FE và BE.** Đổi contract phải sửa file này trước và nêu trong báo cáo.
+> Thay đổi 0.16 (D-052, phân tích kinh doanh Bước 3): §16.3 thành đặc tả đầy đủ cho `GET /admin/analytics/customers?from&to`, `GET /admin/analytics/operations?from&to`, `GET /admin/analytics/inventory?slowDays` (chỉ ADMIN, no-store; hai endpoint đầu dùng cùng khoảng ngày và kỳ trước với §16.1, endpoint tồn kho là ảnh chụp hiện tại); phần "dự kiến" Bước 4 dời sang §16.4. Không đổi §14.3, §16.1, §16.2 hay shape hiện có; không cần migration (đã kiểm `EXPLAIN`, chưa thêm index).
 > Thay đổi 0.15 (D-051, phân tích kinh doanh Bước 2): §16.2 thành đặc tả đầy đủ cho `GET /admin/analytics/breakdown?dimension&from&to`, `GET /admin/analytics/top-products?from&to&sort&limit`, `GET /admin/analytics/top-customers?from&to&sort&limit` (chỉ ADMIN, no-store, cùng khoảng ngày và kỳ trước với §16.1); §16.3 ghi dự kiến Bước 3-4. Không đổi §14.3, §16.1 hay shape hiện có; không cần migration.
 > Thay đổi 0.14 (D-049, D-050, phân tích kinh doanh): thêm §16 "Phân tích kinh doanh (Admin)": `GET /admin/analytics/overview?from&to&granularity` (§16.1, chỉ ADMIN, KPI so với kỳ trước + chuỗi theo ngày/tuần/tháng); §16.2 ghi dự kiến các endpoint Bước 2-4 (Bước 2 đã triển khai ở 0.15). Không đổi §14.3 hay shape hiện có; cần migration index (`Order(paidAt)`, `Payment(refundedAt)`, không đổi cột).
 > Thay đổi 0.13 (D-047, so sánh sản phẩm): thêm `GET /products/compare?slugs=a,b,c` (§4.7, công khai, 2–4 slug, trả `items` + `missing`); slug sản phẩm `compare` được dành riêng (admin tạo/đổi slug bị từ chối 400, §12.4); `/products/compare` thuộc nhóm GET công khai không bị ép `no-store` (§1). Không đổi shape response hiện có, không cần migration.
@@ -43,7 +44,7 @@
     - 14.9 Cài đặt cửa hàng · 14.10 Quản lý người dùng · 14.11 Liên hệ · 14.12 CSP · 14.13 Còn hoãn
 15. [Câu hỏi mở / Giả định](#15-câu-hỏi-mở--giả-định)
 16. [Phân tích kinh doanh (Admin)](#16-phân-tích-kinh-doanh-admin)
-    - 16.1 Tổng quan · 16.2 Cơ cấu doanh thu, top sản phẩm, top khách hàng · 16.3 Dự kiến
+    - 16.1 Tổng quan · 16.2 Cơ cấu doanh thu, top sản phẩm, top khách hàng · 16.3 Khách hàng, vận hành, tồn kho · 16.4 Dự kiến
 
 ## 1. Quy ước chung
 
@@ -2171,9 +2172,129 @@ Từ 0.15 (D-051). Cả ba endpoint chỉ ADMIN, `no-store`, dùng **cùng `from
 - `customerType`: `registered` | `guest`. `name`: `User.fullName` (registered) hoặc `fullName` trong `shippingAddress` của đơn mới nhất (guest; thiếu thì dùng email). `email`: `User.email` hoặc `contactEmail` đã `lower`. `revenue` = Σ `grandTotal`, `orders` = số đơn, `aov = round(revenue / orders)`, `lastPaidAt` = `paidAt` mới nhất (ISO UTC).
 - **Không trả SĐT hay địa chỉ** (chỉ tên + email). Dữ liệu cá nhân nên chỉ ADMIN; xuất CSV có audit ở Bước 4 (§16.3).
 
-### 16.3 Dự kiến (chưa triển khai; Bước 3-4 chờ duyệt)
+### 16.3 Khách hàng, vận hành, tồn kho (Bước 3, đã triển khai)
 
-Chỉ để định hướng, chưa phải contract: đặc tả đầy đủ sẽ thêm khi triển khai từng bước.
+Từ 0.16 (D-052). Ba endpoint chỉ ADMIN, `no-store`, lỗi 400 theo §1 (`details: [{ field, message }]`, tham số lặp cũng là 400). `customers` và `operations` dùng **cùng `from`/`to`, mặc định, giới hạn và kỳ trước** với §16.1 (D-050); `inventory` là ảnh chụp hiện tại, không có khoảng ngày và không có kỳ trước. Mọi chỉ số theo kỳ có `previous` và `changePct`/`changePts` như §16.1 (`null` khi kỳ trước = 0; tỷ lệ so sánh bằng điểm phần trăm). Không trả dữ liệu cá nhân (email, tên, SĐT, địa chỉ); chỉ có mã đơn trong danh sách "đơn chờ xác nhận".
 
-- Bước 3: `GET /admin/analytics/customers`, `GET /admin/analytics/operations`, `GET /admin/analytics/inventory`.
+**Khóa khách hàng** = `userId` nếu có, ngược lại `lower(contactEmail)` (như D-051). **Đơn tính doanh thu** = định nghĩa D-019/§16.1 (PAID, không `CANCELLED`/`RETURNED`) tính theo `paidAt`.
+
+#### `GET /admin/analytics/customers?from&to`
+
+```json
+{
+  "data": {
+    "range": { "from": "2026-10-22", "to": "2026-11-20", "days": 30, "timezone": "Asia/Ho_Chi_Minh" },
+    "previousRange": { "from": "2026-09-22", "to": "2026-10-21" },
+    "buyers": { "current": 40, "previous": 32, "changePct": 25 },
+    "firstTime": { "current": 25, "previous": 20, "changePct": 25 },
+    "returning": { "current": 15, "previous": 12, "changePct": 25 },
+    "repeatRate": { "current": 0.175, "previous": 0.15, "changePts": 2.5 },
+    "firstTimeRevenue": { "current": 9000000, "previous": 0, "changePct": null },
+    "returningRevenue": { "current": 6000000, "previous": 5000000, "changePct": 20 },
+    "generatedAt": "2026-11-20T05:00:00.000Z"
+  }
+}
+```
+
+- `buyers` = số khách có ít nhất một đơn tính doanh thu trong kỳ. `firstTime` = khách mua trong kỳ mà đơn tính doanh thu **sớm nhất mọi thời điểm** của khách nằm trong kỳ. `returning` = `buyers - firstTime` = khách mua trong kỳ đã có đơn tính doanh thu trước `from`. Đơn đã bị hủy/hoàn trả không tính vào lịch sử mua: khách có đơn cũ nhưng đã `CANCELLED` vẫn là khách lần đầu.
+- `repeatRate` = số khách có >= 2 đơn tính doanh thu trong kỳ / `buyers` (0..1, 4 chữ số; 0 khi không có khách); `changePts` `null` khi kỳ trước không có khách.
+- `firstTimeRevenue`/`returningRevenue` = Σ `grandTotal` của các đơn tính doanh thu trong kỳ của hai nhóm khách.
+- **Bất biến:** `firstTime + returning = buyers` (cả hai kỳ); `firstTimeRevenue + returningRevenue = kpis.revenue` của §16.1 cùng khoảng ngày.
+- Đánh đổi: người vừa có tài khoản vừa mua vãng lai cùng email tính là hai khách; hai email khác nhau của một người cũng là hai khách (như D-051).
+
+#### `GET /admin/analytics/operations?from&to`
+
+```json
+{
+  "data": {
+    "range": { "from": "2026-10-22", "to": "2026-11-20", "days": 30, "timezone": "Asia/Ho_Chi_Minh" },
+    "previousRange": { "from": "2026-09-22", "to": "2026-10-21" },
+    "cancellations": {
+      "total": { "current": 10, "previous": 5, "changePct": 100 },
+      "byType": [
+        { "type": "customer", "label": "Khách hủy", "current": 4, "previous": 2 },
+        { "type": "store", "label": "Cửa hàng hủy", "current": 3, "previous": 1 },
+        { "type": "expired", "label": "Hết hạn thanh toán", "current": 2, "previous": 2 },
+        { "type": "unknown", "label": "Không rõ", "current": 1, "previous": 0 }
+      ]
+    },
+    "returns": {
+      "delivered": { "current": 20, "previous": 10, "changePct": 100 },
+      "returned": { "current": 2, "previous": 0, "changePct": null },
+      "rate": { "current": 0.1, "previous": 0, "changePts": 10 }
+    },
+    "refunds": {
+      "count": { "current": 3, "previous": 1, "changePct": 200 },
+      "amount": { "current": 450000, "previous": 100000, "changePct": 350 }
+    },
+    "fulfillment": {
+      "confirmHours": { "avg": 3.5, "median": 2, "n": 12, "previousAvg": null },
+      "deliveryHours": { "avg": 54, "median": 48, "n": 8, "previousAvg": 30.5 }
+    },
+    "attention": {
+      "pendingOver24h": {
+        "count": 2,
+        "oldest": [
+          { "code": "BB-261101-AAAA", "createdAt": "2026-11-18T03:00:00.000Z", "grandTotal": 320000, "waitingHours": 50 }
+        ]
+      },
+      "needsRefund": 1,
+      "returnRequested": 3,
+      "failedDelivery": 0
+    },
+    "generatedAt": "2026-11-20T05:00:00.000Z"
+  }
+}
+```
+
+- **`cancellations`**: đơn **tạo** trong kỳ đang `CANCELLED` (nên `total.current` = `kpis.cancelledOrders.current` của §16.1; `byType` luôn đủ 4 phần tử theo thứ tự `customer`, `store`, `expired`, `unknown` và tổng `current` = `total.current`). Loại đọc từ dòng `OrderStatusHistory` có `toStatus = CANCELLED` **mới nhất** của đơn:
+  - `expired`: `actorId` null, `fromStatus = PENDING_PAYMENT` và `note` = "Quá hạn thanh toán" (đúng như job hết hạn §13.6 ghi; hằng `EXPIRE_REASON` dùng chung);
+  - `store`: người thao tác hiện có role `STAFF` hoặc `ADMIN`;
+  - `customer`: các trường hợp còn lại có dòng lịch sử (khách có tài khoản, khách vãng lai, hoặc người thao tác đã bị xóa);
+  - `unknown`: đơn `CANCELLED` không có dòng lịch sử.
+  - Đánh đổi: dựa vào role **hiện tại** của người thao tác (đổi role sau này làm số liệu cũ đổi); tài khoản người hủy bị xóa (`actorId` về null) rơi vào `customer`; một khách vãng lai hủy đơn `PENDING_PAYMENT` và tự nhập đúng lý do "Quá hạn thanh toán" sẽ bị tính là `expired` (chấp nhận, chỉ ảnh hưởng phân loại).
+- **`returns`**: `delivered` = số đơn có `deliveredAt` trong kỳ; `returned` = trong số đó, đơn hiện đang `RETURNED`; `rate` = `returned / delivered` (0 khi không có đơn giao; `changePts` `null` khi kỳ trước không có đơn giao).
+- **`refunds`**: `count` = số `Payment` có `refundedAt` trong kỳ; `amount` = Σ `Payment.amount` (bằng `kpis.refundedAmount` của §16.1).
+- **`fulfillment`** (đơn vị: giờ, làm tròn 1 chữ số thập phân; `n` = số mẫu của kỳ này; `avg`/`median` `null` khi `n = 0`; `previousAvg` `null` khi kỳ trước không có mẫu):
+  - `confirmHours` = `createdAt -> confirmedAt` chỉ cho đơn **COD** có `confirmedAt` trong kỳ (đơn online tự xác nhận khi thanh toán nên bị loại);
+  - `deliveryHours` = `confirmedAt -> deliveredAt` cho đơn có `deliveredAt` trong kỳ (và có `confirmedAt`);
+  - `median` = `percentile_cont(0.5)`.
+- **`attention`** là ảnh chụp hiện tại, không theo khoảng ngày và không có kỳ trước: `pendingOver24h.count` = số đơn `PENDING` tạo cách đây hơn 24 giờ; `oldest` = tối đa 10 đơn cũ nhất (`code`, `createdAt`, `grandTotal`, `waitingHours` = số giờ đã chờ, làm tròn xuống; không có thông tin cá nhân); `needsRefund` = số đơn cần hoàn tiền (cùng định nghĩa §13.7 và `attention.needsRefund` của §14.3); `returnRequested` = số đơn `RETURN_REQUESTED`; `failedDelivery` = số đơn `FAILED_DELIVERY`.
+
+#### `GET /admin/analytics/inventory?slowDays=30`
+
+`slowDays`: số nguyên 7..365, mặc định 30 (chuỗi chữ số; `6`, `366`, `abc`, `7.5`, `-30`, tham số lặp -> 400, `field: "slowDays"`).
+
+```json
+{
+  "data": {
+    "summary": {
+      "variants": 30, "outOfStock": 2, "lowStock": 1, "stockUnits": 400,
+      "stockValue": 38000000, "slowMovers": 1, "slowMoversValue": 2000000
+    },
+    "outOfStock": [
+      {
+        "variantId": "cm...", "productId": "cm...", "productName": "Phin nhôm số 1", "variantName": "Size M",
+        "sku": "PHIN-M", "stock": 0, "lowStockThreshold": 5, "price": 100000, "stockValue": 0, "lastSoldAt": null
+      }
+    ],
+    "lowStock": [],
+    "slowMovers": [],
+    "slowDays": 30,
+    "generatedAt": "2026-11-20T05:00:00.000Z"
+  }
+}
+```
+
+- **Phạm vi biến thể** như `lowStock` của §14.3: `isActive = true`, `deletedAt` null, sản phẩm chưa xóa mềm. `variants` = số biến thể trong phạm vi.
+- `outOfStock` = `stock <= 0`; `lowStock` = `0 < stock <= lowStockThreshold` (số đếm đủ ở `summary`); `stockUnits` = Σ `stock` của biến thể còn hàng; `stockValue` = Σ `stock x price` của biến thể còn hàng, **dùng giá niêm yết `price`, không dùng `salePrice`**.
+- `slowMovers` = biến thể còn hàng (`stock > 0`) **không bán được** trong `slowDays` ngày gần nhất và **không được tạo** trong khoảng đó (hàng mới). "Bán" = có `OrderItem` thuộc đơn tạo (`createdAt`) với `status` không phải `CANCELLED`/`PENDING_PAYMENT` (cùng quy ước top sản phẩm §14.3). `slowMovers`/`slowMoversValue` ở `summary` là tổng toàn bộ, không bị cắt ở 20.
+- Mỗi danh sách tối đa **20** phần tử. Sắp xếp: `outOfStock` theo tên sản phẩm rồi tên biến thể; `lowStock` theo `stock` tăng dần; `slowMovers` theo `stockValue` giảm dần.
+- Item: `stockValue` = `stock x price` khi `stock > 0`, ngược lại 0; `lastSoldAt` = `createdAt` của đơn bán gần nhất của biến thể (mọi thời điểm), `null` nếu chưa từng bán.
+- `slowDays` tính từ thời điểm gọi (không theo ngày lịch VN).
+
+### 16.4 Dự kiến (chưa triển khai; Bước 4 chờ duyệt)
+
+Chỉ để định hướng, chưa phải contract: đặc tả đầy đủ sẽ thêm khi triển khai.
+
 - Bước 4: hiệu quả mã giảm giá và `GET /admin/analytics/export?report=overview|breakdown|top-products|top-customers|coupons&from&to` (CSV UTF-8 có BOM, chống CSV injection, ghi audit `analytics.export`, rate limit riêng).

@@ -64,9 +64,31 @@ test("admin xử lý tin nhắn, xem cài đặt và người dùng", async ({ p
   ).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("heading", { name: "Top sản phẩm" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Top khách hàng" })).toBeVisible();
+  // Bước 3: mục lục neo, khách hàng, vận hành, tồn kho (cùng phiên admin)
+  const toc = page.getByRole("navigation", { name: "Mục lục phân tích" });
+  await expect(toc.getByRole("link")).toHaveCount(6);
+  await toc.getByRole("link", { name: "Tồn kho", exact: true }).click();
+  await expect(page).toHaveURL(/#an-inventory$/);
+  for (const t of ["Khách hàng", "Vận hành", "Tồn kho"]) {
+    await expect(page.getByRole("heading", { name: t, exact: true })).toBeVisible();
+  }
+  const inventory = page
+    .getByRole("heading", { name: "Tồn kho", exact: true })
+    .locator("xpath=ancestor::section[1]");
+  await expect(inventory.getByText("Số liệu hiện tại, không theo khoảng ngày.")).toBeVisible();
+  await expect(page.getByRole("status", { name: /^Đang tải/ })).toHaveCount(0);
+  await inventory.getByRole("button", { name: /^Bán chậm \(\d+\)$/ }).click();
+  await expect(inventory.getByRole("button", { name: /^Bán chậm \(\d+\)$/ })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(inventory.getByRole("button", { name: "60 ngày", exact: true })).toBeVisible();
   // Mỗi khối ra kết quả (bảng hoặc thông báo rỗng), không khối nào lỗi hay còn loading
   await expect(page.getByRole("status", { name: /^Đang tải/ })).toHaveCount(0);
   for (const t of [
+    "Không tải được số liệu khách hàng",
+    "Không tải được số liệu vận hành",
+    "Không tải được số liệu tồn kho",
     "Không tải được cơ cấu doanh thu",
     "Không tải được top sản phẩm",
     "Không tải được top khách hàng",

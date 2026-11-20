@@ -55,6 +55,7 @@
 - [D-049 Khu phân tích kinh doanh chỉ Admin](#d-049-khu-phân-tích-kinh-doanh-chỉ-admin)
 - [D-050 Khoảng ngày, kỳ so sánh và gom nhóm của phân tích kinh doanh](#d-050-khoảng-ngày-kỳ-so-sánh-và-gom-nhóm-của-phân-tích-kinh-doanh)
 - [D-051 Cơ cấu doanh thu, top sản phẩm, top khách hàng (Bước 2)](#d-051-cơ-cấu-doanh-thu-top-sản-phẩm-top-khách-hàng-bước-2)
+- [D-052 Khách hàng, vận hành, tồn kho (Bước 3)](#d-052-khách-hàng-vận-hành-tồn-kho-bước-3)
 
 ---
 
@@ -790,3 +791,29 @@
   - Tổng doanh thu chiều dòng hàng nhỏ hơn hoặc lớn hơn doanh thu overview tùy giảm giá và phí ship; UI ghi rõ cơ sở tính.
   - Mỗi lần xem chạy thêm 3 truy vấn nhóm/tổng trên Postgres thật (không cache); đo `EXPLAIN` ở Bước 5.
 - **Docs bị ảnh hưởng:** `api-contract.md` §16.2 (0.15), `admin-dashboard-plan.md`, `testing.md`.
+
+
+## D-052 Khách hàng, vận hành, tồn kho (Bước 3)
+
+- **Ngày:** 2026-11-20 · **Người chốt:** Tech Lead; chủ dự án đã duyệt Bước 3 với 5 mặc định (mua lần đầu, phân loại hủy, đơn cần xử lý, giá trị tồn, hàng bán chậm)
+- **Trạng thái:** Áp dụng.
+- **Bối cảnh:** Bước 3 của khu phân tích (D-049, D-050, D-051) cần định nghĩa khách mua lần đầu so với quay lại, phân loại đơn hủy, thời gian xử lý, đơn cần xử lý và số liệu tồn kho, sao cho số liệu khớp với overview và không lệch giữa các màn.
+- **Quyết định:**
+  1. **Khóa khách** = `userId` nếu có, ngược lại `lower(contactEmail)` (như D-051). **Đơn tính doanh thu** = định nghĩa D-019 (PAID, không `CANCELLED`/`RETURNED`) theo `paidAt`.
+  2. **Mua lần đầu / quay lại:** khách mua trong kỳ (có đơn tính doanh thu trong kỳ) là *lần đầu* nếu đơn tính doanh thu sớm nhất **mọi thời điểm** của khách nằm trong kỳ; ngược lại là *quay lại* (đã có đơn tính doanh thu trước `from`). Đơn cũ đã hủy/hoàn trả không tính nên khách đó vẫn là lần đầu. *Tỷ lệ mua lại* = khách có >= 2 đơn tính doanh thu trong kỳ / khách mua trong kỳ (0 khi không có khách). Bất biến: lần đầu + quay lại = khách mua; doanh thu hai nhóm = doanh thu overview. Một truy vấn gộp theo khách (CTE + `FILTER`) cho cả hai kỳ.
+  3. **Phân loại hủy** (đơn tạo trong kỳ đang `CANCELLED`, để tổng = `kpis.cancelledOrders`), đọc từ dòng `OrderStatusHistory` `toStatus = CANCELLED` mới nhất (`LATERAL ... LIMIT 1`, dùng index `[orderId, createdAt]`): `expired` = `actorId` null, `fromStatus = PENDING_PAYMENT`, `note` = `EXPIRE_REASON` (hằng export từ `jobs/cleanup.ts`, dùng chung với job, không chép chuỗi); `store` = actor hiện có role `STAFF`/`ADMIN`; `customer` = các trường hợp còn lại có dòng lịch sử; `unknown` = không có dòng lịch sử. **Đánh đổi:** dựa role *hiện tại* của actor (đổi role sau này làm số liệu cũ đổi); actor bị xóa (`SetNull`) rơi về `customer`; khách vãng lai tự nhập đúng lý do "Quá hạn thanh toán" khi hủy đơn `PENDING_PAYMENT` sẽ bị tính `expired`.
+  4. **Tỷ lệ trả hàng** = đơn có `deliveredAt` trong kỳ hiện đang `RETURNED` / đơn có `deliveredAt` trong kỳ (0 khi mẫu = 0).
+  5. **Thời gian xử lý** (giờ, 1 chữ số thập phân, trung bình + trung vị `percentile_cont(0.5)`, số mẫu `n`, `null` khi `n = 0`): *xác nhận* = `createdAt -> confirmedAt` chỉ cho đơn **COD** có `confirmedAt` trong kỳ (đơn online tự xác nhận khi thanh toán nên bỏ); *giao* = `confirmedAt -> deliveredAt` cho đơn có `deliveredAt` trong kỳ. Kèm `previousAvg` của kỳ trước.
+  6. **Đơn cần xử lý** (ảnh chụp hiện tại, không theo khoảng ngày): đơn `PENDING` tạo quá 24 giờ (đếm + tối đa 10 đơn cũ nhất: mã, `createdAt`, `grandTotal`, giờ chờ, không có thông tin cá nhân), đơn cần hoàn tiền (dùng lại `ordersNeedingRefund`), đơn `RETURN_REQUESTED`, đơn `FAILED_DELIVERY`.
+  7. **Tồn kho** (ảnh chụp hiện tại; phạm vi biến thể như `lowStock` của dashboard: `isActive`, chưa xóa mềm, sản phẩm chưa xóa mềm): hết hàng = `stock <= 0`; sắp hết = `0 < stock <= lowStockThreshold`; **giá trị tồn** = Σ `stock x price` (giá niêm yết, không dùng `salePrice`), chỉ `stock > 0`; **bán chậm** = còn hàng, không bán được trong `slowDays` ngày (7..365, mặc định 30) và không tạo trong khoảng đó; "bán" = có `OrderItem` thuộc đơn tạo trong khoảng với `status` không phải `CANCELLED`/`PENDING_PAYMENT` (cùng quy ước top sản phẩm §14.3). Danh sách tối đa 20 mục, đếm và tổng giá trị ở `summary` là toàn bộ.
+  8. **Truy vấn:** SQL `$queryRaw` tham số hóa (mảnh dùng chung bằng `Prisma.sql`, không nối chuỗi từ input), `Promise.all` giữa các truy vấn: customers 1, operations 7 (hủy, trả hàng, hoàn tiền, thời gian xử lý, đơn chờ, đếm trạng thái, đơn cần hoàn tiền), inventory 4. Không N+1.
+  9. **Index:** kiểm `EXPLAIN ANALYZE` sơ bộ cho truy vấn "khách lần đầu" trên 50.000 đơn sinh trong DB tạm: quét tuần tự bảng `Order` (45.000 đơn PAID) mất khoảng 33 ms. Truy vấn buộc phải quét toàn bộ lịch sử đơn tính doanh thu (cần mốc đơn đầu tiên mọi thời điểm), index `paidAt` hiện có không giúp được, và khóa khách là biểu thức `lower(contactEmail)`/`userId` nên index đơn cột cũng không thay thế được quét. **Không thêm migration**; để Bước 5 đo lại với dữ liệu lớn hơn (và cân nhắc index biểu thức hoặc bảng tổng hợp nếu vượt ngưỡng).
+  10. **Giao diện** (trong `/admin/phan-tich`, dưới các khối Bước 1-2): mục lục neo (Tổng quan, Cơ cấu doanh thu, Top, Khách hàng, Vận hành, Tồn kho; heading có `id`); khối "Khách hàng" (6 thẻ KPI có so sánh kỳ trước), "Vận hành" (đơn hủy theo loại bằng bảng + thanh CSS + %, tỷ lệ trả hàng, hoàn tiền, thời gian xử lý "x,y giờ" / "x ngày y giờ" / "Chưa có dữ liệu", "Cần xử lý ngay" có link `/admin/don-hang/[code]` và link lọc sẵn có `status=...`, `needsRefund=true`), "Tồn kho" (ghi rõ "Số liệu hiện tại, không theo khoảng ngày", thẻ tóm tắt, nhóm nút Hết hàng / Sắp hết / Bán chậm `aria-pressed`, chọn `slowDays` 30/60/90, bảng link `/admin/san-pham/[productId]`). Mỗi khối loading/lỗi (thử lại)/rỗng riêng; "Làm mới" tải lại tất cả; bảng trong vùng cuộn `relative overflow-x-auto` focus được (D-048).
+- **Hệ quả/rủi ro (đánh đổi đã chấp nhận):**
+  - Phân loại hủy phụ thuộc role hiện tại và lý do ghi trong lịch sử (xem mục 3); đơn hủy cũ không có lịch sử (trước khi có `OrderStatusHistory`) hiện là `unknown`.
+  - Khách có tài khoản và khách vãng lai cùng email là hai khách; hai email của một người là hai khách (như D-051).
+  - Truy vấn "khách lần đầu" quét toàn bộ lịch sử đơn tính doanh thu mỗi lần xem (không cache); đo lại ở Bước 5.
+  - Giá trị tồn dùng giá niêm yết nên có thể cao hơn giá trị bán thực tế khi đang giảm giá; không phải giá vốn.
+  - "Bán" dùng ngày tạo đơn (không phải ngày thanh toán), nên đơn COD chưa giao vẫn tính là đã bán; đơn `PENDING_PAYMENT` chưa thanh toán không tính.
+  - Thời gian xác nhận chỉ đo đơn COD; thời gian giao đo từ lúc xác nhận (không gồm thời gian chờ xác nhận).
+- **Docs bị ảnh hưởng:** `api-contract.md` §16.3 (0.16), `admin-dashboard-plan.md`, `testing.md`. Không đổi `db-schema.md` (không có migration).

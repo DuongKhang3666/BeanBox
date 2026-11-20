@@ -18,7 +18,7 @@ import {
 import { adminErrorMessage } from "../errors";
 
 export const card = "rounded-2xl border border-coffee-200 bg-white p-4";
-export const h2 = "font-serif text-lg font-bold text-coffee-900";
+export const h2 = "scroll-mt-20 font-serif text-lg font-bold text-coffee-900";
 export const chip = (active: boolean) =>
   cn(
     "inline-flex h-11 items-center rounded-lg border px-3 text-sm font-medium focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-moss-600",

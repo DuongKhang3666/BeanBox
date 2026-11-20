@@ -53,3 +53,28 @@ export const topCustomersQuerySchema = z.object({
   limit: limitSchema,
 });
 export type TopCustomersQuery = z.infer<typeof topCustomersQuerySchema>;
+
+/** `GET /admin/analytics/customers` và `/operations` (§16.3): chỉ khoảng ngày. */
+export const rangeOnlyQuerySchema = z.object({
+  from: dateOnly('from').optional(),
+  to: dateOnly('to').optional(),
+});
+export type RangeOnlyQuery = z.infer<typeof rangeOnlyQuerySchema>;
+
+export const SLOW_DAYS_MIN = 7;
+export const SLOW_DAYS_MAX = 365;
+export const SLOW_DAYS_DEFAULT = 30;
+
+/** `GET /admin/analytics/inventory` (§16.3): `slowDays` số nguyên 7..365 (chuỗi chữ số; tham số lặp -> 400). */
+export const inventoryQuerySchema = z.object({
+  slowDays: z
+    .string({ error: `slowDays phải là số nguyên từ ${SLOW_DAYS_MIN} đến ${SLOW_DAYS_MAX}` })
+    .regex(/^\d{1,3}$/, `slowDays phải là số nguyên từ ${SLOW_DAYS_MIN} đến ${SLOW_DAYS_MAX}`)
+    .transform(Number)
+    .refine(
+      (n) => n >= SLOW_DAYS_MIN && n <= SLOW_DAYS_MAX,
+      `slowDays phải là số nguyên từ ${SLOW_DAYS_MIN} đến ${SLOW_DAYS_MAX}`,
+    )
+    .optional(),
+});
+export type InventoryQuery = z.infer<typeof inventoryQuerySchema>;

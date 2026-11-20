@@ -1,7 +1,10 @@
 import { api } from "@/lib/api/client";
 import type {
   AnalyticsBreakdown,
+  AnalyticsCustomers,
   AnalyticsGranularity,
+  AnalyticsInventory,
+  AnalyticsOperations,
   AnalyticsOverview,
   AnalyticsTopCustomers,
   AnalyticsTopProducts,
@@ -59,6 +62,42 @@ export async function getAnalyticsTopCustomers(
 ): Promise<AnalyticsTopCustomers> {
   const { data } = await api.get<AnalyticsTopCustomers>("/admin/analytics/top-customers", {
     query: { from: q.from, to: q.to, sort: q.sort, limit: q.limit ?? 10 },
+    signal,
+  });
+  return data;
+}
+
+/** GET /admin/analytics/customers (§16.3). Chỉ Admin. */
+export async function getAnalyticsCustomers(
+  q: { from: string; to: string },
+  signal?: AbortSignal,
+): Promise<AnalyticsCustomers> {
+  const { data } = await api.get<AnalyticsCustomers>("/admin/analytics/customers", {
+    query: { from: q.from, to: q.to },
+    signal,
+  });
+  return data;
+}
+
+/** GET /admin/analytics/operations (§16.3). Chỉ Admin. */
+export async function getAnalyticsOperations(
+  q: { from: string; to: string },
+  signal?: AbortSignal,
+): Promise<AnalyticsOperations> {
+  const { data } = await api.get<AnalyticsOperations>("/admin/analytics/operations", {
+    query: { from: q.from, to: q.to },
+    signal,
+  });
+  return data;
+}
+
+/** GET /admin/analytics/inventory (§16.3). Chỉ Admin; số liệu hiện tại, không theo khoảng ngày. */
+export async function getAnalyticsInventory(
+  q: { slowDays: number },
+  signal?: AbortSignal,
+): Promise<AnalyticsInventory> {
+  const { data } = await api.get<AnalyticsInventory>("/admin/analytics/inventory", {
+    query: { slowDays: q.slowDays },
     signal,
   });
   return data;

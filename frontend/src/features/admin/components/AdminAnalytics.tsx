@@ -35,16 +35,29 @@ import {
   shortDate,
   todayVn,
   validateRange,
-  type Delta,
 } from "../analyticsRange";
 import { adminErrorMessage } from "../errors";
 import { formatVnDateTime } from "../format";
 import { AnalyticsChart, AnalyticsTable } from "./AnalyticsChart";
 import { BreakdownBlock } from "./AnalyticsBreakdown";
+import { CustomersBlock } from "./AnalyticsCustomers";
+import { InventoryBlock } from "./AnalyticsInventory";
+import { Kpi } from "./AnalyticsKpi";
+import { OperationsBlock } from "./AnalyticsOperations";
 import { TopCustomersBlock, TopProductsBlock } from "./AnalyticsTops";
 
 const card = "rounded-2xl border border-coffee-200 bg-white p-4";
 const h2 = "font-serif text-lg font-bold text-coffee-900";
+
+/** Mục lục neo trong trang (trang dài); id là id của heading từng khối. */
+const SECTIONS: ReadonlyArray<{ id: string; label: string }> = [
+  { id: "an-overview", label: "Tổng quan" },
+  { id: "an-breakdown", label: "Cơ cấu doanh thu" },
+  { id: "an-top-products", label: "Top" },
+  { id: "an-customers", label: "Khách hàng" },
+  { id: "an-operations", label: "Vận hành" },
+  { id: "an-inventory", label: "Tồn kho" },
+];
 
 const GRANULARITIES: ReadonlyArray<{ id: AnalyticsGranularity; label: string }> = [
   { id: "day", label: "Ngày" },
@@ -90,63 +103,6 @@ function AnalyticsSkeleton() {
       </div>
       <Skeleton className="h-72 w-full" />
     </div>
-  );
-}
-
-/** Dòng so sánh: không chỉ dùng màu (mũi tên + chữ + text cho trình đọc màn hình). */
-function DeltaLine({
-  delta,
-  upIsBad,
-  neutral,
-  prevLabel,
-}: {
-  delta: Delta;
-  upIsBad?: boolean;
-  neutral?: boolean;
-  prevLabel: string;
-}) {
-  if (delta.direction === "none") {
-    return <p className="mt-1 text-sm text-coffee-700">{delta.visual}</p>;
-  }
-  const bad = delta.direction === "up" ? upIsBad : delta.direction === "down" ? !upIsBad : false;
-  const tone =
-    neutral || delta.direction === "flat"
-      ? "text-coffee-800"
-      : bad
-        ? "text-danger-600"
-        : "text-moss-800";
-  return (
-    <p className="mt-1 text-sm text-coffee-800">
-      <span className={cn("font-semibold", tone)}>
-        <span aria-hidden="true">{delta.visual}</span>
-        <span className="sr-only">{delta.spoken}</span>
-      </span>{" "}
-      so với kỳ trước ({prevLabel})
-    </p>
-  );
-}
-
-function Kpi({
-  label,
-  value,
-  delta,
-  upIsBad,
-  neutral,
-  prevLabel,
-}: {
-  label: string;
-  value: string;
-  delta: Delta;
-  upIsBad?: boolean;
-  neutral?: boolean;
-  prevLabel: string;
-}) {
-  return (
-    <section aria-label={label} className={card}>
-      <p className="text-sm text-coffee-700">{label}</p>
-      <p className="mt-1 font-serif text-2xl font-bold break-words text-coffee-900">{value}</p>
-      <DeltaLine delta={delta} upIsBad={upIsBad} neutral={neutral} prevLabel={prevLabel} />
-    </section>
   );
 }
 
@@ -443,11 +399,25 @@ export function AdminAnalytics() {
         </div>
       </section>
 
+      <nav aria-label="Mục lục phân tích" className="flex flex-wrap gap-2">
+        {SECTIONS.map((x) => (
+          <a key={x.id} href={`#${x.id}`} className={chipClass(false)}>
+            {x.label}
+          </a>
+        ))}
+      </nav>
+
+      <h2 id="an-overview" className={cn(h2, "scroll-mt-20")}>
+        Tổng quan
+      </h2>
       {body}
 
       <BreakdownBlock from={sel.from} to={sel.to} dim={dim} onDim={goDim} refresh={refresh} />
       <TopProductsBlock from={sel.from} to={sel.to} refresh={refresh} />
       <TopCustomersBlock from={sel.from} to={sel.to} refresh={refresh} />
+      <CustomersBlock from={sel.from} to={sel.to} refresh={refresh} />
+      <OperationsBlock from={sel.from} to={sel.to} refresh={refresh} />
+      <InventoryBlock refresh={refresh} />
     </div>
   );
 }

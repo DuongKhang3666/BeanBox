@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { errRes, jsonRes, makeUser } from "@/features/account/testing";
 import { tokenStore } from "@/lib/api/client";
 import type { AnalyticsOverview, AnalyticsPoint } from "@/types/admin";
+import { step3Response } from "../analyticsTesting";
 import { AdminAnalytics } from "./AdminAnalytics";
 import { ADMIN_NAV, AdminNav } from "./AdminNav";
 
@@ -82,6 +83,8 @@ function stub(handler: (url: string) => Response | Promise<Response>) {
       });
     }
     if (url.includes("/analytics/top-")) return jsonRes(200, { data: { items: [] } });
+    const s3 = step3Response(url);
+    if (s3) return s3;
     return handler(url);
   });
   vi.stubGlobal("fetch", fn);
@@ -257,7 +260,10 @@ describe("AdminAnalytics - biểu đồ và bảng thay thế", () => {
     expect(img).toHaveAccessibleName(/tổng 5\.000\.000₫ từ 10 đơn đã thanh toán/);
     const summary = screen.getByText("Xem dạng bảng");
     expect(summary.tagName).toBe("SUMMARY");
-    const table = screen.getByRole("table", { hidden: true });
+    const table = screen.getByRole("table", {
+      name: /Doanh thu theo (ngày|tuần|tháng), /,
+      hidden: true,
+    });
     expect(within(table).getByText(/30 dòng/)).toBeInTheDocument();
     const rows = within(table).getAllByRole("row", { hidden: true });
     expect(rows).toHaveLength(31); // 1 hàng tiêu đề + 30 bucket
@@ -288,7 +294,10 @@ describe("AdminAnalytics - biểu đồ và bảng thay thế", () => {
       }),
     );
     render(<AdminAnalytics />);
-    const table = await screen.findByRole("table", { hidden: true });
+    const table = await screen.findByRole("table", {
+      name: /Doanh thu theo (ngày|tuần|tháng), /,
+      hidden: true,
+    });
     expect(within(table).getAllByRole("rowheader", { hidden: true })).toHaveLength(3);
     expect(within(table).getByText("22/10–25/10")).toBeInTheDocument();
     expect(within(table).getByText("02/11–08/11")).toBeInTheDocument();

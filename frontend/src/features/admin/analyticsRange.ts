@@ -209,3 +209,16 @@ function deltaOf(value: number | null, unit: "%" | "điểm %"): Delta {
 
 export const deltaPct = (c: AnalyticsCompared): Delta => deltaOf(c.changePct, "%");
 export const deltaPts = (c: AnalyticsComparedRate): Delta => deltaOf(c.changePts, "điểm %");
+
+/**
+ * Thời gian xử lý (giờ) -> chữ tiếng Việt: "3,5 giờ", "1 ngày 6 giờ"; null -> "Chưa có dữ liệu".
+ * Làm tròn tới 0,1 giờ; từ 24 giờ trở lên tách ngày.
+ */
+export function formatHours(hours: number | null | undefined): string {
+  if (hours === null || hours === undefined || !Number.isFinite(hours)) return "Chưa có dữ liệu";
+  const h = Math.max(0, Math.round(hours * 10) / 10);
+  if (h < 24) return `${decimalVi(h)} giờ`;
+  const days = Math.floor(h / 24);
+  const rest = Math.round((h - days * 24) * 10) / 10;
+  return rest === 0 ? `${days} ngày` : `${days} ngày ${decimalVi(rest)} giờ`;
+}

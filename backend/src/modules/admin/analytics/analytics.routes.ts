@@ -1,10 +1,20 @@
 import { Router } from 'express';
 import { requireAdmin } from '../../../middlewares/auth.js';
 import { validate } from '../../../middlewares/validate.js';
-import { breakdown, overview, topCustomers, topProducts } from './analytics.controller.js';
+import {
+  breakdown,
+  customers,
+  inventory,
+  operations,
+  overview,
+  topCustomers,
+  topProducts,
+} from './analytics.controller.js';
 import {
   breakdownQuerySchema,
+  inventoryQuerySchema,
   overviewQuerySchema,
+  rangeOnlyQuerySchema,
   topCustomersQuerySchema,
   topProductsQuerySchema,
 } from './analytics.schema.js';
@@ -21,3 +31,6 @@ adminAnalyticsRouter.get(
   validate(topCustomersQuerySchema, 'query'),
   topCustomers,
 );
+adminAnalyticsRouter.get('/customers', validate(rangeOnlyQuerySchema, 'query'), customers);
+adminAnalyticsRouter.get('/operations', validate(rangeOnlyQuerySchema, 'query'), operations);
+adminAnalyticsRouter.get('/inventory', validate(inventoryQuerySchema, 'query'), inventory);

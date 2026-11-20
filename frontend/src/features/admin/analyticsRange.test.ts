@@ -4,6 +4,7 @@ import {
   analyticsHref,
   deltaPct,
   deltaPts,
+  formatHours,
   formatInt,
   formatRate,
   isValidYmd,
@@ -186,5 +187,18 @@ describe("parseDim / analyticsHref với dim", () => {
     expect(analyticsHref(r, "week", "brand")).toBe(
       "/admin/phan-tich?from=2026-11-01&to=2026-11-20&g=week&dim=brand",
     );
+  });
+});
+
+describe("formatHours", () => {
+  it("dưới 24 giờ: x,y giờ; từ 24 giờ: x ngày y giờ; null -> Chưa có dữ liệu", () => {
+    expect(formatHours(0)).toBe("0 giờ");
+    expect(formatHours(3.5)).toBe("3,5 giờ");
+    expect(formatHours(23.96)).toBe("1 ngày");
+    expect(formatHours(24)).toBe("1 ngày");
+    expect(formatHours(25)).toBe("1 ngày 1 giờ");
+    expect(formatHours(54.5)).toBe("2 ngày 6,5 giờ");
+    expect(formatHours(null)).toBe("Chưa có dữ liệu");
+    expect(formatHours(undefined)).toBe("Chưa có dữ liệu");
   });
 });

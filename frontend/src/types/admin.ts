@@ -684,3 +684,94 @@ export interface AnalyticsTopCustomers {
   items: AnalyticsTopCustomer[];
   generatedAt: string;
 }
+
+/** Theo docs/api-contract.md §16.3 (Bước 3: khách hàng, vận hành, tồn kho). */
+
+export interface AnalyticsCustomers {
+  range: AnalyticsRangeInfo;
+  previousRange: { from: string; to: string };
+  buyers: AnalyticsCompared;
+  firstTime: AnalyticsCompared;
+  returning: AnalyticsCompared;
+  repeatRate: AnalyticsComparedRate;
+  firstTimeRevenue: AnalyticsCompared;
+  returningRevenue: AnalyticsCompared;
+  generatedAt: string;
+}
+
+export type CancelType = "customer" | "store" | "expired" | "unknown";
+
+export interface CancelTypeRow {
+  type: CancelType;
+  /** Nhãn tiếng Việt do backend trả. */
+  label: string;
+  current: number;
+  previous: number;
+}
+
+export interface HoursStat {
+  /** Giờ (1 chữ số thập phân); null khi chưa có mẫu. */
+  avg: number | null;
+  median: number | null;
+  n: number;
+  previousAvg: number | null;
+}
+
+export interface PendingOrderItem {
+  code: string;
+  createdAt: string;
+  grandTotal: number;
+  waitingHours: number;
+}
+
+export interface AnalyticsOperations {
+  range: AnalyticsRangeInfo;
+  previousRange: { from: string; to: string };
+  cancellations: { total: AnalyticsCompared; byType: CancelTypeRow[] };
+  returns: {
+    delivered: AnalyticsCompared;
+    returned: AnalyticsCompared;
+    rate: AnalyticsComparedRate;
+  };
+  refunds: { count: AnalyticsCompared; amount: AnalyticsCompared };
+  fulfillment: { confirmHours: HoursStat; deliveryHours: HoursStat };
+  attention: {
+    pendingOver24h: { count: number; oldest: PendingOrderItem[] };
+    needsRefund: number;
+    returnRequested: number;
+    failedDelivery: number;
+  };
+  generatedAt: string;
+}
+
+export interface AnalyticsInventoryItem {
+  variantId: string;
+  productId: string;
+  productName: string;
+  variantName: string;
+  sku: string;
+  stock: number;
+  lowStockThreshold: number;
+  price: number;
+  stockValue: number;
+  lastSoldAt: string | null;
+}
+
+export type SlowDays = 30 | 60 | 90;
+
+export interface AnalyticsInventory {
+  summary: {
+    variants: number;
+    outOfStock: number;
+    lowStock: number;
+    stockUnits: number;
+    stockValue: number;
+    slowMovers: number;
+    slowMoversValue: number;
+  };
+  outOfStock: AnalyticsInventoryItem[];
+  lowStock: AnalyticsInventoryItem[];
+  slowMovers: AnalyticsInventoryItem[];
+  slowDays: number;
+  generatedAt: string;
+}

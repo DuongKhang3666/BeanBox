@@ -111,7 +111,7 @@ export interface ExpiredOrder {
 export type ExpirePaymentsResult =
   { skipped: true } | { skipped: false; cancelled: ExpiredOrder[]; errors: number };
 
-const EXPIRE_REASON = 'Quá hạn thanh toán';
+export const EXPIRE_REASON = 'Quá hạn thanh toán';
 
 /** Hủy 1 đơn trong transaction riêng; trả null nếu đã đổi trạng thái/được gia hạn. */
 async function expireOneOrder(orderId: string, now: Date): Promise<ExpiredOrder | null> {

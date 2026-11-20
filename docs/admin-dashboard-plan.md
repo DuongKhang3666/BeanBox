@@ -1,6 +1,6 @@
 # BeanBox – Kế hoạch khu "Phân tích kinh doanh" (chỉ Admin)
 
-> Ngày: 2026-11-20 · Người chốt: Tech Lead theo ủy quyền chủ dự án · Quyết định liên quan: [D-049, D-050, D-051](decisions.md) · Contract: [api-contract.md §16](api-contract.md).
+> Ngày: 2026-11-20 · Người chốt: Tech Lead theo ủy quyền chủ dự án · Quyết định liên quan: [D-049, D-050, D-051, D-052](decisions.md) · Contract: [api-contract.md §16](api-contract.md).
 
 ## 1. Mục tiêu
 
@@ -63,10 +63,11 @@ Cho chủ cửa hàng (Admin) một khu riêng để đọc số liệu kinh doa
 
 - **Mục tiêu:** khách mua lần đầu so với quay lại, tỷ lệ mua lại; phân rã hủy (khách hủy / admin hủy / hết hạn thanh toán, theo `cancelReason` hoặc lịch sử trạng thái), tỷ lệ trả hàng, hoàn tiền; thời gian xử lý trung bình (tạo, xác nhận, giao; từ `OrderStatusHistory`); đơn cần xử lý (chờ xác nhận quá X giờ, cần hoàn tiền). Tồn kho: hết hàng, sắp hết, giá trị tồn (tồn x giá), hàng bán chậm (không bán trong N ngày).
 - **File ảnh hưởng:** module analytics, FE các khối mới; có thể cần index cho `OrderStatusHistory`.
-- **API (dự kiến):** `GET /admin/analytics/customers`, `/operations`, `/inventory`.
+- **API:** `GET /admin/analytics/customers?from&to`, `/operations?from&to`, `/inventory?slowDays` (api-contract §16.3).
 - **Test:** theo từng chỉ số, gồm biên "lần đầu" và đơn bị hủy do hết hạn thanh toán.
 - **Tiêu chí xong:** định nghĩa từng chỉ số được ghi vào contract/decisions; không N+1.
-- **Trạng thái:** Chờ duyệt.
+- **Trạng thái:** Đã làm (2026-11-20). Chờ duyệt kết quả.
+- **Thực tế đã làm (D-052):** backend thêm `analytics.customers.ts` (1 truy vấn gộp theo khách cho hai kỳ), `analytics.operations.ts` (7 truy vấn chạy `Promise.all`), `analytics.inventory.ts` (4 truy vấn), schema zod (`slowDays` 7..365) và 3 route (`requireAdmin` kế thừa cấp router); export `EXPIRE_REASON` từ `jobs/cleanup.ts` để phân loại hủy dùng đúng chuỗi của job. Định nghĩa: khách lần đầu/quay lại theo đơn tính doanh thu sớm nhất mọi thời điểm (khóa `userId`/`lower(contactEmail)`); hủy phân loại `customer`/`store`/`expired`/`unknown` từ `OrderStatusHistory` mới nhất; trả hàng theo `deliveredAt`; thời gian xác nhận (chỉ COD) và giao, trung bình + trung vị; đơn cần xử lý là ảnh chụp hiện tại; giá trị tồn dùng `price`; bán chậm theo `slowDays`. Không có migration: `EXPLAIN` sơ bộ truy vấn khách lần đầu (50.000 đơn, quét tuần tự khoảng 33 ms) cho thấy index không thay được quét lịch sử, để Bước 5 đo lại. FE: mục lục neo, `AnalyticsCustomers.tsx`, `AnalyticsOperations.tsx`, `AnalyticsInventory.tsx`, `AnalyticsKpi.tsx` (tách `Kpi`/`DeltaLine` dùng chung), `formatHours` trong `analyticsRange.ts`. Test: `backend/tests/adminAnalyticsStep3.integration.test.ts`, `AnalyticsStep3.test.tsx`, E2E trong `m6b.spec.ts` (kèm axe).
 
 ### Bước 4 — Hiệu quả mã giảm giá và xuất CSV
 

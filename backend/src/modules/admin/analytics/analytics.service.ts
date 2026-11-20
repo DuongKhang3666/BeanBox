@@ -70,7 +70,7 @@ interface Totals {
   newCustomers: number;
 }
 
-const round = (v: number, digits: number) => {
+export const round = (v: number, digits: number) => {
   const f = 10 ** digits;
   return Math.round(v * f) / f;
 };
@@ -80,7 +80,7 @@ export function changePct(current: number, previous: number): number | null {
   return previous === 0 ? null : round(((current - previous) / previous) * 100, 1);
 }
 
-const compared = (current: number, previous: number): Compared => ({
+export const compared = (current: number, previous: number): Compared => ({
   current,
   previous,
   changePct: changePct(current, previous),

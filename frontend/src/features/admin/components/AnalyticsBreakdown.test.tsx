@@ -9,6 +9,7 @@ import type {
   AnalyticsTopProducts,
   BreakdownDimension,
 } from "@/types/admin";
+import { step3Response } from "../analyticsTesting";
 import { AdminAnalytics } from "./AdminAnalytics";
 
 let role: "ADMIN" | "STAFF" = "ADMIN";
@@ -191,6 +192,8 @@ function stub(h: Handlers = {}) {
     if (url.includes("/analytics/top-customers")) {
       return h.customers ? h.customers(url) : jsonRes(200, { data: customers() });
     }
+    const s3 = step3Response(url);
+    if (s3) return s3;
     return h.overview ? h.overview() : jsonRes(200, { data: overviewBody });
   });
   vi.stubGlobal("fetch", fn);
