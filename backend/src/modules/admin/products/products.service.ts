@@ -40,8 +40,17 @@ interface ListMeta {
 
 const DESC_MARK = '(đã sửa)';
 
+/** Slug trùng route tĩnh `/products/<slug>` (vd `/products/compare`) nên không cho dùng làm slug sản phẩm. */
+export const RESERVED_PRODUCT_SLUGS: ReadonlySet<string> = new Set(['compare']);
+export const RESERVED_SLUG_MSG = 'Slug này được hệ thống dành riêng, vui lòng chọn slug khác';
+
+function assertNotReserved(slug: string): void {
+  if (RESERVED_PRODUCT_SLUGS.has(slug)) throw fieldError('slug', RESERVED_SLUG_MSG);
+}
+
 function resolveSlug(name: string, given: string | undefined): string {
   const slug = given ?? slugify(name);
+  assertNotReserved(slug);
   if (slug.length < 2 || !SLUG_REGEX.test(slug)) {
     throw fieldError('slug', 'Không thể tạo slug từ tên này, vui lòng nhập slug');
   }
@@ -265,7 +274,10 @@ export async function updateProduct(
 
       const data: Prisma.ProductUncheckedUpdateInput = {};
       if (input.name !== undefined) data.name = input.name;
-      if (input.slug !== undefined) data.slug = input.slug;
+      if (input.slug !== undefined) {
+        assertNotReserved(input.slug);
+        data.slug = input.slug;
+      }
       if (input.categoryId !== undefined) data.categoryId = input.categoryId;
       if (input.brandId !== undefined) data.brandId = input.brandId;
       if (input.shortDesc !== undefined) data.shortDesc = input.shortDesc;

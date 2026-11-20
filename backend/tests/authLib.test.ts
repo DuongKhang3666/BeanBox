@@ -168,12 +168,8 @@ describe('env helpers', () => {
       parseEnv({ ...base, NODE_ENV: 'production', INTERNAL_API_SECRET: 'x'.repeat(40) })
         .COOKIE_SECURE,
     ).toBe(true);
-    const off = parseEnv({
-      ...base,
-      NODE_ENV: 'production',
-      COOKIE_SECURE: 'false',
-      INTERNAL_API_SECRET: 'x'.repeat(40),
-    });
+    // B3: production + COOKIE_SECURE=false bị từ chối (xem envSecrets.test.ts); dev thì được.
+    const off = parseEnv({ ...base, NODE_ENV: 'development', COOKIE_SECURE: 'false' });
     expect(off.COOKIE_SECURE).toBe(false);
   });
 });

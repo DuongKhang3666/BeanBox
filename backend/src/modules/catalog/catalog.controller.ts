@@ -1,6 +1,11 @@
 import { asyncHandler } from '../../lib/asyncHandler.js';
 import { AppError } from '../../lib/errors.js';
-import type { ProductListQuery, SuggestQuery } from './catalog.schema.js';
+import type {
+  BoughtTogetherQuery,
+  CompareQuery,
+  ProductListQuery,
+  SuggestQuery,
+} from './catalog.schema.js';
 import { slugSchema } from './catalog.schema.js';
 import * as service from './catalog.service.js';
 
@@ -33,4 +38,17 @@ export const getProduct = asyncHandler(async (req, res) => {
 
 export const getSuggest = asyncHandler(async (req, res) => {
   res.json({ data: await service.suggest(req.query as unknown as SuggestQuery) });
+});
+
+export const getBoughtTogether = asyncHandler(async (req, res) => {
+  const slug = slugSchema.safeParse(req.params.slug);
+  if (!slug.success) throw new AppError(404, 'NOT_FOUND', 'Không tìm thấy sản phẩm');
+  res.json({
+    data: await service.getBoughtTogether(slug.data, req.query as unknown as BoughtTogetherQuery),
+  });
+});
+
+export const getCompare = asyncHandler(async (req, res) => {
+  const { slugs } = req.query as unknown as CompareQuery;
+  res.json({ data: await service.compareProducts(slugs) });
 });

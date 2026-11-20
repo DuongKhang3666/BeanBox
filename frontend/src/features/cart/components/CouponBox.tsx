@@ -72,6 +72,7 @@ export function CouponBox() {
               maxLength={50}
               autoComplete="off"
               aria-invalid={error ? true : undefined}
+              aria-describedby={error ? `${inputId}-error` : undefined}
               className="h-11 min-w-0 flex-1 rounded-lg border border-coffee-400 bg-white px-3 text-base uppercase text-coffee-900 placeholder:normal-case"
               placeholder="Nhập mã"
             />
@@ -82,7 +83,7 @@ export function CouponBox() {
         </form>
       )}
       {error ? (
-        <p role="alert" className="text-sm text-danger-600">
+        <p id={`${inputId}-error`} role="alert" className="text-sm text-danger-600">
           {error}
         </p>
       ) : null}

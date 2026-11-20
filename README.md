@@ -22,6 +22,8 @@ BeanBox là web thương mại điện tử bán hạt cà phê, dụng cụ pha
 ### Khách hàng
 
 - Duyệt danh mục, trang chi tiết sản phẩm (biến thể, giá khuyến mãi, tồn kho), lọc, sắp xếp và tìm kiếm không phân biệt dấu tiếng Việt, có gợi ý khi gõ.
+- Gợi ý sản phẩm: "Sản phẩm liên quan" chấm điểm theo danh mục, thương hiệu, tag, thông số cà phê và khoảng giá; "Thường được mua cùng" tính từ đơn hàng thật, chỉ hiện khi có ít nhất 2 khách khác nhau đã mua cùng (ngưỡng riêng tư). Dữ liệu demo không có đơn giả nên mục này trống cho tới khi có đơn thật.
+- So sánh sản phẩm: chọn 2–4 sản phẩm bằng nút "So sánh" (lưu ở trình duyệt, không cần đăng nhập), xem bảng so sánh giá, biến thể, đánh giá và thông số cà phê (xuất xứ, sơ chế, mức rang, hương vị, cách pha) tại `/so-sanh`; có thể chỉ hiện điểm khác nhau và chia sẻ bằng đường dẫn `?sp=`.
 - Giỏ hàng lưu ở server cho cả khách vãng lai (token giỏ) lẫn người đăng nhập; gộp giỏ khi đăng nhập.
 - Checkout: mã giảm giá, phí vận chuyển tính theo khu vực, phương thức giao và khối lượng, thanh toán COD, VNPay sandbox hoặc Stripe test mode.
 - Khách vãng lai tra cứu và hủy đơn bằng mã đơn + số điện thoại; email xác nhận và email đổi trạng thái đơn.

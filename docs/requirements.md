@@ -384,7 +384,7 @@ Base: `/api/v1` · JSON · lỗi thống nhất `{ "error": { "code", "message",
 |---|---|
 | Auth | `POST /auth/register`, `/auth/login`, `/auth/logout`, `/auth/refresh`, `/auth/forgot-password`, `/auth/reset-password`, `/auth/verify-email` |
 | Tôi | `GET/PATCH /me`, `GET/POST/PATCH/DELETE /me/addresses`, `GET /me/orders`, `GET/POST/DELETE /me/wishlist` |
-| Catalog | `GET /categories`, `GET /brands`, `GET /products?q=&category=&minPrice=&maxPrice=&roast=&origin=&sort=&page=`, `GET /products/:slug`, `GET /products/:slug/reviews`, `GET /search/suggest?q=` |
+| Catalog | `GET /categories`, `GET /brands`, `GET /products?q=&category=&minPrice=&maxPrice=&roast=&origin=&sort=&page=`, `GET /products/:slug`, `GET /products/:slug/bought-together`, `GET /products/:slug/reviews`, `GET /search/suggest?q=` |
 | Giỏ hàng | `GET /cart`, `POST /cart/items`, `PATCH /cart/items/:id`, `DELETE /cart/items/:id`, `POST /cart/merge`, `POST /cart/apply-coupon` |
 | Checkout | `POST /checkout/quote` (tính giá, phí ship), `POST /orders` (Idempotency-Key), `GET /orders/:code`, `POST /orders/:code/cancel`, `GET /orders/track?code=&phone=` |
 | Thanh toán | `POST /payments/vnpay/create`, `GET /payments/vnpay/ipn`, `GET /payments/vnpay/return`, `POST /payments/stripe/webhook` |

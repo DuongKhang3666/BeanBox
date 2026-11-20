@@ -17,6 +17,7 @@ const MODULES: Record<string, () => Promise<Mod>> = {
   "/tai-khoan/don-hang": () => import("./tai-khoan/don-hang/page"),
   "/tai-khoan/dia-chi": () => import("./tai-khoan/dia-chi/page"),
   "/gio-hang": () => import("./gio-hang/page"),
+  "/so-sanh": () => import("./so-sanh/page"),
   "/thanh-toan": () => import("./thanh-toan/page"),
   "/thanh-toan/ket-qua": () => import("./thanh-toan/ket-qua/page"),
   "/dat-hang-thanh-cong/[code]": () => import("./dat-hang-thanh-cong/[code]/page"),

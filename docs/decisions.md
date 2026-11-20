@@ -47,6 +47,10 @@
 - [D-041 Ghim rclone trong image backup](#d-041-ghim-rclone-trong-image-backup)
 - [D-042 Khóa chống hai backup chạy chồng](#d-042-khóa-chống-hai-backup-chạy-chồng)
 - [D-043 Selftest backup trong CI](#d-043-selftest-backup-trong-ci)
+- [D-044 Khả năng truy cập và Lighthouse](#d-044-khả-năng-truy-cập-và-lighthouse)
+- [D-045 Rà soát bảo mật sau M8](#d-045-rà-soát-bảo-mật-sau-m8)
+- [D-046 Gợi ý sản phẩm liên quan và mua cùng](#d-046-gợi-ý-sản-phẩm-liên-quan-và-mua-cùng)
+- [D-047 So sánh sản phẩm](#d-047-so-sánh-sản-phẩm)
 
 ---
 
@@ -604,3 +608,98 @@
 - **Quyết định:** Job `docker` của `.github/workflows/ci.yml` có `services: postgres` (postgres:17, giá trị giả chỉ dành cho CI, health-cmd `pg_isready`) và step sau "Smoke image backup" chạy `selftest-offsite.sh` trong image `beanbox-backup:ci` (`--network host`, `PG*` trỏ `localhost:5432`, mount `deploy/backup` chỉ đọc, `timeout-minutes: 5`). Mô phỏng cục bộ (network + container Postgres tạm) cho 46 PASS, 0 FAIL qua 3 lần chạy liên tiếp.
 - **Hệ quả/rủi ro:** Thêm khoảng 20 giây (đo cục bộ) cho job `docker`; selftest cần mạng nội bộ tới Postgres, nếu service lỗi thì step fail (không bị che). `.sh` phải là LF (`.gitattributes` đã đặt).
 - **Docs bị ảnh hưởng:** `testing.md` (mục CI).
+
+## D-044 Khả năng truy cập và Lighthouse
+
+- **Ngày:** 2026-11-20 · **Người chốt:** Tech Lead theo ủy quyền chủ dự án
+- **Trạng thái:** Áp dụng.
+- **Bối cảnh:** Chưa có kiểm tra a11y tự động; chưa có số đo Lighthouse. Cần một chuẩn rõ và một lưới chống hồi quy trước khi mở cho khách thật.
+- **Quyết định:**
+  1. **Chuẩn:** WCAG 2.1 mức AA cho storefront (không gồm `/admin`, vốn dành cho nhân viên nội bộ).
+  2. **Axe tự động** (`frontend/e2e/a11y.spec.ts`, `@axe-core/playwright` ghim 4.14.0, tag `wcag2a/2aa/21a/21aa`) chạy trong E2E và CI cho 16 trang storefront. FAIL khi có vi phạm `serious`/`critical`; `moderate`/`minor` chỉ in ra (axe hay báo nhầm ở mức này và chúng không chặn người dùng). Spec dùng thêm 1 lượt đăng nhập customer.
+  3. **Lỗi tìm được và đã sửa:** (a) trang chủ, nút "Khám phá cà phê hạt" chữ nâu đậm trên nền xanh rêu (contrast 1.88:1, `serious`): class `bg-cream-100` thua `bg-moss-700` của variant primary, đổi thành `!bg-cream-100` đúng như thiết kế dự định (`app/page.tsx`); (b) chi tiết sản phẩm, 5 nút lọc theo sao có `aria-label` không chứa chữ hiển thị (`label-content-name-mismatch`, `serious`): bỏ `aria-label`, dùng đoạn `sr-only` làm tên (`ReviewSummaryPanel.tsx`). Rà mã nguồn (axe không bắt) bổ sung: ô mã giảm giá và ghi chú đơn có `aria-invalid` nhưng thiếu `aria-describedby` tới thông báo lỗi; ô tìm kiếm không đóng gợi ý khi Tab ra ngoài; `<main>` thêm `tabIndex={-1}` để skip link đặt focus chắc chắn.
+  4. **Lighthouse** (13.6.0, đo trên production build, Edge headless, cả mobile và desktop): sửa `favicon.ico` 404 làm Best Practices 96 (thêm `app/icon.svg`), `fetchPriority="high"` cho ảnh ưu tiên (LCP) ở `ProductImage`, `<h2>` ẩn trước lưới sản phẩm để thứ tự tiêu đề h1 -> h2 -> h3 đúng, và lỗi contrast ở trang chủ. Trước -> sau: Accessibility trang chủ 96 -> 100, danh mục/tìm kiếm mobile 98 -> 100; Best Practices mọi trang 96 -> 100; Performance danh mục mobile 91 -> 92, tìm kiếm mobile 91 -> 95 (trong biên dao động); các ô khác không đổi (đã 100). Bảng điểm sau khi sửa và điều kiện đo ở `testing.md`.
+  5. **Lighthouse đo thủ công, KHÔNG đưa vào CI:** điểm Performance dao động vài điểm giữa các lần đo (throttling mô phỏng, tải máy runner chia sẻ), nên ngưỡng cứng sẽ làm CI chập chờn; còn lỗi a11y thật đã có axe chặn. Đo lại trước mỗi lần phát hành lớn bằng lệnh ở `testing.md`.
+  6. **Không sửa / chấp nhận:**
+     - SEO 66 ở `/tim-kiem`: chủ ý `noindex` (tránh lập chỉ mục kết quả tìm kiếm vô hạn).
+     - `bf-cache` (2 lý do "Not actionable"): tài liệu chính và một request JS trả `Cache-Control: no-store` (Lighthouse gắn nhãn "Not actionable"); chưa điều tra nguồn, đổi header cache có thể ảnh hưởng dữ liệu phiên nên để ngoài phạm vi.
+     - `unused-javascript` (~25 KiB), `legacy-javascript-insight` (~14 KiB), `render-blocking-insight` (CSS của Next, ~120 ms mô phỏng), `network-dependency-tree`, `cache-insight`: thuộc runtime/bundle của Next.js và cấu hình cache tĩnh; không có thay đổi rủi ro thấp trong phạm vi (không đổi kiến trúc render, không thêm nonce).
+     - LCP mobile 3.0 đến 3.5 giây ở trang danh sách: do mô phỏng Slow 4G + CPU 4x cộng CSS chặn render; phần thật (tải ảnh, trễ hiển thị) chỉ khoảng 0.14 giây.
+     - Ảnh sản phẩm seed dùng SVG dùng chung (`unoptimized`), nên chưa đánh giá được `sizes`/định dạng ảnh thật; đo lại khi có ảnh thật.
+- **Hệ quả/rủi ro:**
+  - Tổng lượt đăng nhập của bộ E2E là 5, đúng bằng giới hạn 5/phút/IP; thêm lượt hoặc CI thử lại cả bộ trong vòng 1 phút có thể gặp 429.
+  - Axe chỉ bắt được khoảng một phần vấn đề a11y; kiểm bằng bàn phím/trình đọc màn hình thật vẫn cần khi thêm thành phần tương tác mới.
+  - Thêm 1 devDependency (`@axe-core/playwright`), không đổi runtime.
+- **Cập nhật 2026-11-20:** rủi ro 429 đăng nhập E2E đã xử lý ở D-045 (mục 5, `AUTH_RATE_LIMIT_PER_MIN=30` cho E2E/CI); `a11y.spec.ts` nay quét 18 trang (thêm `/so-sanh` và danh mục khi thanh so sánh hiện, D-047).
+- **Docs bị ảnh hưởng:** `testing.md` (mục "Khả năng truy cập và Lighthouse", mục rate limit).
+
+## D-045 Rà soát bảo mật sau M8
+
+- **Ngày:** 2026-11-20 · **Người chốt:** Tech Lead theo ủy quyền chủ dự án
+- **Trạng thái:** Áp dụng.
+- **Bối cảnh:** Sau M8 cần một lượt rà soát bảo mật toàn diện trước khi mở cho khách thật. Phần lớn đã tốt; còn bốn điểm cần sửa (B1 đến B4).
+- **Quyết định:**
+  1. **Phạm vi đã rà (không có lỗ hổng nghiêm trọng):** xác thực/phiên (argon2id, JWT cố định HS256, rotation + reuse detection); RBAC (router `/admin` áp `requireAuth` + `requireStaff`, `requireAdmin` cho thao tác xóa/hoàn tiền, ma trận `securityAuthz`); IDOR (đơn, địa chỉ, giỏ, review, wishlist, tra cứu đơn guest đều lọc theo chủ sở hữu hoặc mã + SĐT); validate input (zod, giới hạn body 100kb, 1MB cho webhook, 6MB cho upload); upload (kiểm magic bytes, tên file ngẫu nhiên, `nosniff`); webhook thanh toán (chữ ký HMAC so sánh hằng thời gian, chống replay 300 giây, đối chiếu số tiền và providerRef); CSP (D-040); rate limit; secrets (env qua zod, chặn giá trị `dev-` và `sk_live_` ở production, gitleaks); XSS (JSON-LD escape, review là văn bản thuần); open redirect (`safeRedirect`, `href` banner chỉ nội bộ); email (escape HTML).
+  2. **B1 `Cache-Control: no-store`:** middleware `apiCacheControl` trong `backend/src/app.ts` (sau `requestId`, chỉ `/api/v1`) đặt `no-store` mặc định cho mọi response, trừ GET/HEAD công khai (`/categories*`, `/brands`, `/products`, `/products/:slug`, `/products/:slug/reviews`, `/search/suggest`, `/locations/*`, `/settings/public`, `/health*`). `/products/:slug/reviews/me` (cần đăng nhập) vẫn `no-store`. Route tự đặt header (locations, settings/public, admin) giữ nguyên. `npm run build` frontend cho bảng route và `prerender-manifest` giống hệt trước khi sửa (ISR catalog không đổi, vì mọi `serverGet` của SSR chỉ gọi các path được loại trừ). Test: `cacheControl.integration.test.ts`.
+  3. **B2 access token gắn với phiên:** `authenticate` (`middlewares/auth.ts`) đọc user kèm một refresh token còn sống của family `sid` (chưa thu hồi, chưa hết hạn) trong cùng truy vấn; không có -> 401 `UNAUTHORIZED`. Thứ tự: user không tồn tại 401, `DISABLED` 403 `ACCOUNT_DISABLED`, rồi phiên 401. Logout, reset/đổi mật khẩu, phát hiện dùng lại refresh token, admin khóa/đổi role user nên chặn access token ngay (trước đây tối đa 15 phút). Đã xác nhận `refresh()` thu hồi token cũ và tạo token mới trong cùng transaction, nên family luôn còn một token sống; không đổi hành vi refresh. Fetch wrapper frontend đã đúng (401 `UNAUTHORIZED` -> refresh single-flight -> thất bại thì xóa token, xóa cờ phiên, gọi `onLogout`), không cần sửa. Test: `sessionRevocation.integration.test.ts` và cập nhật `authMiddleware`, `securityHardening`, `adminUsers` (token của user bị đổi role giờ trả 401 thay vì 403; ở hai test đua "A khóa B và B khóa A" bên thua có thể nhận 401).
+  4. **B3:** `NODE_ENV=production` với `COOKIE_SECURE=false` là lỗi cấu hình (thông báo không in secret), cùng mẫu `superRefine` với chặn `dev-`. Test: `envSecrets.test.ts`; `authLib.test.ts` cập nhật.
+  5. **B4:** env `AUTH_RATE_LIMIT_PER_MIN` (số nguyên dương, mặc định 5) cho `limiters.sensitive`; `AppOptions.authRateLimit` vẫn ưu tiên. Playwright và job `e2e` của CI đặt 30 để bộ E2E (5 lượt đăng nhập) không dính 429 khi CI thử lại; production giữ 5.
+  6. **Chấp nhận, không sửa:**
+     - (a) Lộ sự tồn tại tài khoản qua `ACCOUNT_LOCKED` (đăng nhập) và `EMAIL_TAKEN` (đăng ký): đăng ký vốn đã lộ, ưu tiên UX; có rate limit.
+     - (b) Khóa tài khoản 15 phút (FR-AUTH-08) có thể bị lợi dụng để khóa người khác; giảm nhẹ bằng rate limit IP.
+     - (c) Storefront `script-src 'unsafe-inline'` (D-040) để giữ static/ISR.
+     - (d) Ảnh polyglot vì không re-encode (D-013); phục vụ với `nosniff`.
+     - (e) Rate limit dùng MemoryStore, một instance (D-027); chạy nhiều instance phải đổi store.
+     - (f) Access token trong memory vẫn đọc được nếu có XSS (giảm nhẹ bằng CSP); thu hồi phiên có hiệu lực ngay nhưng không chặn kẻ đã lấy token trước đó.
+     - (g) `npm audit`: backend 10 cảnh báo (7 moderate, 3 high), frontend 7 moderate. Phụ thuộc production có lỗi chỉ ở backend: 3 high trong chuỗi `prisma` -> `@prisma/config` -> `effect` (ReDoS ở `Schema.TemplateLiteral`), nằm ở CLI/cấu hình Prisma (chạy khi migrate/generate), không nằm trên đường xử lý request; bản "sửa" npm đề xuất là hạ `prisma` xuống 6.12 (major, sai hướng) nên không áp dụng. Phần còn lại là `typescript-eslint`/`minimatch` (devDependency, chỉ lint) mà bản vá cần `minimatch` 10 -> 11 (major) nên không nâng. Theo dõi khi có bản Prisma mới. Frontend `--omit=dev`: 0 cảnh báo.
+     - (h) Các GET công khai không có `Cache-Control` riêng nên trung gian có thể cache theo heuristic; chấp nhận vì là dữ liệu công khai. Lỗi (4xx/5xx) của các GET này cũng không có `no-store`.
+     - (i) Logout khi không còn cookie refresh (đã mất) không thu hồi phiên phía server; chỉ phiên có cookie mới bị thu hồi.
+- **Kết quả kiểm tra bổ sung:** gitleaks 8.30.0 (lệnh trong `testing.md`) quét 11 commit: không có phát hiện. `git ls-files` không chứa `.env` hay khóa riêng (chỉ `.env.example` và `.env.production.example`).
+- **Hệ quả/rủi ro:**
+  - Mỗi request đã xác thực thêm một điều kiện (subselect có index `familyId`) vào truy vấn user hiện có, không thêm round-trip.
+  - Admin khóa/đổi role user nay trả 401 (không còn 403 khi đổi role) cho access token cũ của user đó; FE xử lý như hết phiên.
+  - Endpoint GET công khai mới phải được thêm vào `PUBLIC_CACHEABLE` (`backend/src/app.ts`) nếu muốn cho phép cache; mặc định là `no-store` (an toàn).
+  - Môi trường production đang đặt `COOKIE_SECURE=false` sẽ không khởi động được (chủ ý).
+- **Docs bị ảnh hưởng:** `architecture.md` §4, §8 (0.8), `api-contract.md` §1, §5 (0.11), `deployment.md` (bảng env, sự cố thường gặp), `testing.md` (rate limit, test bảo mật), `.env.example`, `.env.production.example`.
+
+## D-046 Gợi ý sản phẩm liên quan và mua cùng
+
+- **Ngày:** 2026-11-20 · **Người chốt:** Tech Lead theo ủy quyền chủ dự án
+- **Trạng thái:** Áp dụng.
+- **Bối cảnh:** `related` ở trang sản phẩm chỉ lấy cùng danh mục theo `soldCount`, nên ít giá trị bán chéo. Cửa hàng bán dụng cụ, phụ kiện và hạt cà phê: người mua phin thường cần cà phê, người mua hạt cần dụng cụ pha. Trong các hướng có thể làm thêm ở lượt này, chọn gợi ý sản phẩm vì dùng dữ liệu đã có (sản phẩm, đơn hàng), không cần dịch vụ ngoài và tác động trực tiếp tới giá trị đơn. Không chọn đăng nhập Google (cần OAuth client thật của chủ dự án, chưa có) và blog (cần CMS và quy trình biên tập nội dung, không phải việc kỹ thuật thuần).
+- **Quyết định:**
+  1. **`related` theo điểm nội dung** (không đổi shape, tối đa 8). Ứng viên: sản phẩm hiển thị, khác chính nó, cùng danh mục/danh mục cha/brand hoặc có tag chung, lấy tối đa 100 theo `soldCount` rồi chấm trong bộ nhớ (một truy vấn, không N+1). Điểm: cùng danh mục +4; cùng danh mục cha (khác danh mục) +2; cùng brand +2; mỗi tag trùng +1 (tối đa +3, không phân biệt hoa thường); nếu cả hai là cà phê: cùng mức rang, cùng xuất xứ, cùng cách sơ chế, có chung cách pha, mỗi cái +1; giá trong ±30% +1. Bỏ điểm 0; sắp còn hàng trước, điểm giảm dần, `soldCount` giảm dần, `id` tăng dần. Hàm thuần `backend/src/lib/related.ts` có unit test.
+  2. **`GET /products/:slug/bought-together`** (công khai, `limit` 1–8, mặc định 4) dựa trên đơn thật: đếm số khách khác nhau (user theo `userId`, guest theo `lower(contactEmail)`) có đơn chứa cả hai sản phẩm, trừ đơn `CANCELLED`/`PENDING_PAYMENT`, trong 365 ngày. Truy vấn tổng hợp bằng `$queryRaw` dạng tagged template (tham số hóa), rồi lấy chi tiết bằng `findMany` + `toListItem`. Index `OrderItem(productId)` và `OrderItem(orderId)` đã có nên không cần migration.
+  3. **Ngưỡng riêng tư >= 2 khách** (hằng `BOUGHT_TOGETHER_MIN_CUSTOMERS`): một đơn lẻ không được lộ thành "có người mua X cùng Y". Một khách mua nhiều đơn vẫn chỉ là một khách.
+  4. **Không lấp chỗ trống:** không đủ dữ liệu thì trả ít hơn hoặc rỗng, không chèn sản phẩm phổ biến (đã có "Sản phẩm liên quan" ngay bên dưới). FE không render section khi rỗng hoặc lỗi.
+  5. Chỉ trả sản phẩm hiển thị và còn hàng. Endpoint thêm vào `PUBLIC_CACHEABLE` (D-045) vì là dữ liệu công khai đã qua ngưỡng; chỉ áp limiter chung.
+  6. FE: section "Thường được mua cùng" (h2) đặt trước "Sản phẩm liên quan", lấy dữ liệu phía server cùng cơ chế revalidate 60 giây như dữ liệu sản phẩm; kiến trúc render trang sản phẩm không đổi (bảng route `npm run build` trước và sau giống hệt).
+  7. **Cách ly cổng E2E:** `playwright.config.ts` nhận `E2E_API_PORT` (mặc định 4000) và `E2E_WEB_PORT` (mặc định 3000) để chạy E2E song song với backend/frontend dev đang chiếm cổng mặc định (xem `testing.md`). Mặc định không đổi hành vi, kể cả CI.
+- **Hệ quả/rủi ro:**
+  - Trên dữ liệu demo, section "Thường được mua cùng" **trống** cho tới khi có đơn thật từ ít nhất 2 khách khác nhau; seed không tạo đơn giả (chủ ý).
+  - Truy vấn tổng hợp chạy mỗi request (join `OrderItem` hai lần), không cache phía server; chấp nhận ở quy mô hiện tại, và FE gọi qua revalidate 60 giây nên tải thực tế thấp. Cần theo dõi nếu số đơn lớn (có thể thêm bảng đồng xuất hiện hoặc cache).
+  - Cửa sổ 365 ngày và ngưỡng 2 là hằng cố định, chưa cấu hình được qua settings.
+  - Khách đăng nhập mua thêm với tư cách khách vãng lai (email khác) có thể bị đếm là hai khách; chấp nhận vì chỉ làm nới nhẹ ngưỡng.
+  - Điểm `related` là heuristic cố định, chưa đo hiệu quả (chưa có phân tích click).
+- **Docs bị ảnh hưởng:** `api-contract.md` §4.4, §4.6 (0.12), `architecture.md`, `testing.md` (E2E, test mới), `README.md`.
+
+## D-047 So sánh sản phẩm
+
+- **Ngày:** 2026-11-20 · **Người chốt:** Tech Lead theo ủy quyền chủ dự án
+- **Trạng thái:** Áp dụng.
+- **Bối cảnh:** Khách mua cà phê hạt thường phân vân giữa vài loại (xuất xứ, sơ chế, mức rang, hương vị, cách pha) và giữa các dụng cụ cùng nhóm (giá, biến thể, khối lượng). Hiện phải mở từng trang sản phẩm để đối chiếu. Dữ liệu đã có sẵn trong `Product`, `ProductVariant`, `CoffeeProfile`, nên chỉ cần thêm một endpoint đọc và giao diện.
+- **Quyết định:**
+  1. **Lưu danh sách ở localStorage trình duyệt** (khóa `bb_compare_v1`), không cần đăng nhập và không có bảng DB mới. Mỗi phần tử `{ slug, name, imageUrl, categoryName }` chỉ để vẽ thanh so sánh; parse an toàn (dữ liệu hỏng -> rỗng, bỏ phần tử sai, bỏ trùng), đồng bộ giữa tab bằng sự kiện `storage`.
+  2. **Tối đa 4 sản phẩm** (tối thiểu 2 để xem bảng). Thêm món thứ 5 bị từ chối kèm thông báo "Chỉ so sánh tối đa 4 sản phẩm". Giới hạn 4 giữ bảng đọc được trên màn hình nhỏ.
+  3. **Cho phép so sánh khác danh mục**, hiện ghi chú "Các sản phẩm thuộc danh mục khác nhau, một số thông số có thể không tương đương." thay vì chặn (người dùng có thể muốn so máy pha với hạt về giá). Nhóm "Thông tin cà phê" chỉ hiện khi có ít nhất một sản phẩm là cà phê; thiếu dữ liệu hiện "—".
+  4. **URL chia sẻ được:** trang `/so-sanh?sp=slug1,slug2,...`. Không có `sp` thì lấy từ localStorage rồi `router.replace` sang URL tương ứng. Trang là `noindex`, nằm trong `PRIVATE_PATHS` của robots và không có trong sitemap (nội dung phụ thuộc tham số, không phải trang để lập chỉ mục).
+  5. **Endpoint gộp `GET /products/compare?slugs=` thay vì gọi N lần chi tiết:** một request, một `findMany`, không N+1, không trả `description` (nặng, không cần cho bảng), không trả `stock` chính xác và không lộ `salePrice` của đợt sale chưa bắt đầu (cùng quy tắc §4 "Làm rõ M1"). Slug không hiển thị vào `missing` thay vì 404 cả request để trang so sánh vẫn hiển thị phần còn lại, và FE tự bỏ các slug đó khỏi danh sách đã chọn. Route công khai nên thêm vào `PUBLIC_CACHEABLE` (D-045; regex hiện có đã khớp), chỉ áp limiter chung.
+  6. **Slug dành riêng `compare`:** route `/products/compare` khai báo trước `/products/:slug` nên sản phẩm có slug `compare` sẽ không bao giờ truy cập được. Admin tạo/đổi slug sản phẩm thành `compare` bị từ chối (400 `VALIDATION_ERROR`, field `slug`); seed không dùng slug này. Danh sách dành riêng là hằng `RESERVED_PRODUCT_SLUGS` ở `admin/products/products.service.ts`.
+  7. **Giao diện:** nút "So sánh" (toggle, `aria-pressed`) trên thẻ sản phẩm và trang chi tiết; thanh cố định ở đáy (`<aside aria-label="So sánh sản phẩm">`) ẩn ở `/so-sanh`, `/thanh-toan*`, `/admin*` và chừa khoảng đệm cuối trang để không che footer; bảng `<table>` có `<caption>`, `th scope`, cột tiêu đề hàng dính trái, cuộn ngang trong vùng focus được; công tắc "Chỉ hiện điểm khác nhau".
+- **Hệ quả/rủi ro:**
+  - Danh sách so sánh không đồng bộ giữa thiết bị/trình duyệt và mất khi xóa dữ liệu trình duyệt (chủ ý, đổi lấy việc không cần đăng nhập).
+  - Dữ liệu trong store (tên, ảnh) có thể cũ; trang `/so-sanh` luôn lấy dữ liệu mới từ API nên bảng luôn đúng, chỉ thanh so sánh có thể hiện tên/ảnh cũ cho tới khi vào trang so sánh. Tên sản phẩm bị đổi slug sẽ rơi vào `missing` (không tra slug cũ) và bị gỡ khỏi danh sách.
+  - Trang so sánh gọi API phía client nên không có nội dung khi tắt JavaScript và không được SSR (chấp nhận vì `noindex`).
+  - Mỗi lần xem là một request tới DB (không cache phía server); chỉ một `findMany` tối đa 4 sản phẩm nên tải thấp.
+  - Một sản phẩm tên `compare` đã tồn tại sẵn trước khi triển khai sẽ bị che (không có trong seed; chưa có migration kiểm tra dữ liệu thật).
+- **Docs bị ảnh hưởng:** `api-contract.md` §1, §4.7, §12.4 (0.13), `architecture.md`, `testing.md` (E2E `compare.spec.ts`), `README.md`.

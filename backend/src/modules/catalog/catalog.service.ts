@@ -2,12 +2,19 @@ import { Prisma } from '../../generated/prisma/client.js';
 import { AppError } from '../../lib/errors.js';
 import { effectivePrice, isOnSale, summarizePrices } from '../../lib/pricing.js';
 import { prisma } from '../../lib/prisma.js';
+import { rankRelated, type RelatedProfile } from '../../lib/related.js';
 import { resolveSlugRedirect } from '../../lib/slugRedirect.js';
 import { escapeLike, normalizeSearch, tokenize } from '../../lib/text.js';
-import type { ProductListQuery, SuggestQuery } from './catalog.schema.js';
+import type { BoughtTogetherQuery, ProductListQuery, SuggestQuery } from './catalog.schema.js';
 
 const MAX_VARIANT_QUANTITY = 20;
 const RELATED_LIMIT = 8;
+/** Số ứng viên tối đa lấy về (theo soldCount) để chấm điểm `related` trong bộ nhớ. */
+const RELATED_CANDIDATE_LIMIT = 100;
+/** Ngưỡng riêng tư (D-046): chỉ gợi ý "mua cùng" khi có ít nhất chừng này khách khác nhau. */
+export const BOUGHT_TOGETHER_MIN_CUSTOMERS = 2;
+/** Chỉ tính đơn trong chừng này ngày gần nhất. */
+export const BOUGHT_TOGETHER_WINDOW_DAYS = 365;
 const LIVE_PRODUCT = { status: 'ACTIVE', deletedAt: null } satisfies Prisma.ProductWhereInput;
 const LIVE_VARIANT = { isActive: true, deletedAt: null } satisfies Prisma.ProductVariantWhereInput;
 
@@ -281,7 +288,13 @@ const detailSelect = {
   categoryId: true,
   brand: { select: { id: true, name: true, slug: true } },
   category: {
-    select: { id: true, name: true, slug: true, parent: { select: { name: true, slug: true } } },
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+      parentId: true,
+      parent: { select: { name: true, slug: true } },
+    },
   },
   images: {
     orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }],
@@ -348,6 +361,73 @@ export function toVariant(v: VariantRow, now: Date) {
   };
 }
 
+const relatedSelect = {
+  ...listItemSelect,
+  categoryId: true,
+  tags: true,
+  soldCount: true,
+  category: { select: { id: true, name: true, slug: true, parentId: true } },
+  coffee: {
+    select: { originCountry: true, roastLevel: true, process: true, brewMethods: true },
+  },
+} satisfies Prisma.ProductSelect;
+
+type RelatedRow = Prisma.ProductGetPayload<{ select: typeof relatedSelect }>;
+type DetailRow = Prisma.ProductGetPayload<{ select: typeof detailSelect }>;
+
+/** Bỏ các trường chỉ dùng nội bộ (parentId, brewMethods...) để giữ nguyên shape ProductListItem. */
+function toRelatedListItem(row: RelatedRow, now: Date) {
+  const { id, name, slug } = row.category;
+  const coffee = row.coffee
+    ? {
+        originCountry: row.coffee.originCountry,
+        roastLevel: row.coffee.roastLevel,
+        process: row.coffee.process,
+      }
+    : null;
+  return toListItem({ ...row, category: { id, name, slug }, coffee }, now);
+}
+
+/** `related` (§4.4): ứng viên cùng danh mục/danh mục cha/brand/tag, chấm điểm trong bộ nhớ (D-046). */
+async function findRelated(p: DetailRow, now: Date) {
+  const or: Prisma.ProductWhereInput[] = [{ categoryId: p.categoryId }];
+  if (p.category.parentId) or.push({ category: { is: { parentId: p.category.parentId } } });
+  if (p.brand) or.push({ brandId: p.brand.id });
+  if (p.tags.length > 0) or.push({ tags: { hasSome: p.tags } });
+
+  const rows = await prisma.product.findMany({
+    where: { ...LIVE_PRODUCT, id: { not: p.id }, OR: or },
+    orderBy: [{ soldCount: 'desc' }, { id: 'asc' }],
+    take: RELATED_CANDIDATE_LIMIT,
+    select: relatedSelect,
+  });
+
+  const base: RelatedProfile = {
+    id: p.id,
+    categoryId: p.categoryId,
+    parentCategoryId: p.category.parentId,
+    brandId: p.brand?.id ?? null,
+    tags: p.tags,
+    inStock: true,
+    soldCount: 0,
+    minPrice: summarizePrices(p.variants, now).minPrice,
+    coffee: p.coffee,
+  };
+  const profiles = rows.map((row) => ({
+    row,
+    id: row.id,
+    categoryId: row.categoryId,
+    parentCategoryId: row.category.parentId,
+    brandId: row.brand?.id ?? null,
+    tags: row.tags,
+    inStock: row.inStock,
+    soldCount: row.soldCount,
+    minPrice: summarizePrices(row.variants, now).minPrice,
+    coffee: row.coffee,
+  }));
+  return rankRelated(base, profiles, RELATED_LIMIT).map((x) => toRelatedListItem(x.row, now));
+}
+
 export async function getProductBySlug(slug: string, now: Date = new Date()) {
   const p = await prisma.product.findFirst({
     where: { slug, ...LIVE_PRODUCT },
@@ -359,12 +439,7 @@ export async function getProductBySlug(slug: string, now: Date = new Date()) {
     throw new AppError(404, 'NOT_FOUND', 'Không tìm thấy sản phẩm');
   }
 
-  const relatedRows = await prisma.product.findMany({
-    where: { ...LIVE_PRODUCT, categoryId: p.categoryId, id: { not: p.id } },
-    orderBy: [{ soldCount: 'desc' }, { createdAt: 'desc' }, { id: 'asc' }],
-    take: RELATED_LIMIT,
-    select: listItemSelect,
-  });
+  const related = await findRelated(p, now);
 
   const breadcrumbs = [
     ...(p.category.parent ? [{ name: p.category.parent.name, slug: p.category.parent.slug }] : []),
@@ -388,7 +463,7 @@ export async function getProductBySlug(slug: string, now: Date = new Date()) {
     ratingAvg: round1(p.ratingAvg),
     ratingCount: p.ratingCount,
     seo: { title: p.seoTitle ?? p.name, description: p.seoDesc ?? p.shortDesc },
-    related: relatedRows.map((r) => toListItem(r, now)),
+    related,
     createdAt: p.createdAt.toISOString(),
   };
 }
@@ -464,4 +539,128 @@ export async function suggest(query: SuggestQuery, now: Date = new Date()) {
     })),
     categories,
   };
+}
+
+// ───────────── Bought together ─────────────
+
+/**
+ * `GET /products/:slug/bought-together` (§4.6, D-046): sản phẩm LIVE còn hàng xuất hiện cùng đơn với
+ * sản phẩm gốc, đếm theo số KHÁCH khác nhau (user: userId; guest: lower(contactEmail)), chỉ khi đạt
+ * ngưỡng riêng tư. Slug không tồn tại/không LIVE -> 404.
+ */
+export async function getBoughtTogether(
+  slug: string,
+  query: BoughtTogetherQuery,
+  now: Date = new Date(),
+) {
+  const base = await prisma.product.findFirst({
+    where: { slug, ...LIVE_PRODUCT },
+    select: { id: true },
+  });
+  if (!base) throw new AppError(404, 'NOT_FOUND', 'Không tìm thấy sản phẩm');
+
+  const since = new Date(now.getTime() - BOUGHT_TOGETHER_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+  // Mọi giá trị đi qua tham số của tagged template (không nối chuỗi).
+  const ranked = await prisma.$queryRaw<{ productId: string }[]>`
+    SELECT oi2."productId" AS "productId"
+    FROM "OrderItem" oi1
+    JOIN "Order" o ON o."id" = oi1."orderId"
+    JOIN "OrderItem" oi2 ON oi2."orderId" = o."id" AND oi2."productId" <> oi1."productId"
+    JOIN "Product" p ON p."id" = oi2."productId"
+    WHERE oi1."productId" = ${base.id}
+      AND o."status" NOT IN ('CANCELLED', 'PENDING_PAYMENT')
+      AND o."createdAt" >= ${since}
+      AND p."status" = 'ACTIVE' AND p."deletedAt" IS NULL AND p."inStock" = true
+    GROUP BY oi2."productId", p."soldCount"
+    HAVING COUNT(DISTINCT COALESCE('u:' || o."userId", 'g:' || lower(o."contactEmail")))
+      >= ${BOUGHT_TOGETHER_MIN_CUSTOMERS}::int
+    ORDER BY COUNT(DISTINCT COALESCE('u:' || o."userId", 'g:' || lower(o."contactEmail"))) DESC,
+      p."soldCount" DESC, oi2."productId" ASC
+    LIMIT ${query.limit}::int`;
+  if (ranked.length === 0) return [];
+
+  const ids = ranked.map((r) => r.productId);
+  const rows = await prisma.product.findMany({
+    where: { ...LIVE_PRODUCT, id: { in: ids } },
+    select: listItemSelect,
+  });
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  return ids.flatMap((id) => {
+    const row = byId.get(id);
+    return row ? [toListItem(row, now)] : [];
+  });
+}
+
+// ───────────── Compare ─────────────
+
+const compareSelect = {
+  ...listItemSelect,
+  tags: true,
+  variants: {
+    where: LIVE_VARIANT,
+    orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+    select: {
+      name: true,
+      attributes: true,
+      price: true,
+      salePrice: true,
+      saleStart: true,
+      saleEnd: true,
+      stock: true,
+      lowStockThreshold: true,
+      weightGram: true,
+    },
+  },
+  coffee: {
+    select: {
+      originCountry: true,
+      originRegion: true,
+      variety: true,
+      process: true,
+      roastLevel: true,
+      altitude: true,
+      tastingNotes: true,
+      brewMethods: true,
+    },
+  },
+} satisfies Prisma.ProductSelect;
+
+/**
+ * `GET /products/compare` (§4.7): một `findMany` cho tất cả slug. `items` theo thứ tự yêu cầu, chỉ
+ * sản phẩm LIVE; slug không tồn tại/không LIVE vào `missing`. Không trả `description`, `stock`.
+ */
+export async function compareProducts(slugs: string[], now: Date = new Date()) {
+  const rows = await prisma.product.findMany({
+    where: { ...LIVE_PRODUCT, slug: { in: slugs } },
+    select: compareSelect,
+  });
+  const bySlug = new Map(rows.map((r) => [r.slug, r]));
+  const items = [];
+  const missing: string[] = [];
+  for (const slug of slugs) {
+    const row = bySlug.get(slug);
+    if (!row) {
+      missing.push(slug);
+      continue;
+    }
+    const prices = row.variants.map((v) => effectivePrice(v, now));
+    items.push({
+      ...toListItem(row, now),
+      tags: row.tags,
+      priceRange: {
+        min: prices.length > 0 ? Math.min(...prices) : 0,
+        max: prices.length > 0 ? Math.max(...prices) : 0,
+      },
+      variants: row.variants.map((v) => ({
+        name: v.name,
+        attributes: v.attributes,
+        price: v.price,
+        effectivePrice: effectivePrice(v, now),
+        isOnSale: isOnSale(v, now),
+        stockStatus: stockStatusOf(v.stock, v.lowStockThreshold),
+        weightGram: v.weightGram,
+      })),
+    });
+  }
+  return { items, missing };
 }

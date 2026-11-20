@@ -1,6 +1,9 @@
 # BeanBox – API Contract
 
-> Phiên bản 0.9 · 2026-11-19 · **Nguồn sự thật cho FE và BE.** Đổi contract phải sửa file này trước và nêu trong báo cáo.
+> Phiên bản 0.13 · 2026-11-20 · **Nguồn sự thật cho FE và BE.** Đổi contract phải sửa file này trước và nêu trong báo cáo.
+> Thay đổi 0.13 (D-047, so sánh sản phẩm): thêm `GET /products/compare?slugs=a,b,c` (§4.7, công khai, 2–4 slug, trả `items` + `missing`); slug sản phẩm `compare` được dành riêng (admin tạo/đổi slug bị từ chối 400, §12.4); `/products/compare` thuộc nhóm GET công khai không bị ép `no-store` (§1). Không đổi shape response hiện có, không cần migration.
+> Thay đổi 0.12 (D-046, gợi ý sản phẩm): `related` ở §4.4 chấm điểm theo nội dung (cùng danh mục, danh mục cha, brand, tag, thuộc tính cà phê, khoảng giá), không đổi shape; thêm `GET /products/:slug/bought-together` (§4.6, công khai, có ngưỡng riêng tư >= 2 khách). Không cần migration.
+> Thay đổi 0.11 (D-045, rà soát bảo mật): mọi response `/api/v1` mặc định có `Cache-Control: no-store`, trừ GET công khai (§1 "Cache"); access token mất hiệu lực ngay khi phiên bị thu hồi (§1, §5.4, §5.6, đổi mật khẩu); biến `AUTH_RATE_LIMIT_PER_MIN` cho nhóm nhạy cảm (§1). Không đổi shape response.
 > Thay đổi 0.10 (M8): §14.12 đổi từ CSP report-only sang CSP thực thi (storefront không nonce; admin nonce + strict-dynamic), bỏ header `Content-Security-Policy-Report-Only`.
 > Thay đổi 0.9 (M7, D-025..D-034): thêm `GET /health/live` (liveness) và ghi rõ `GET /health` là readiness (§3, §15 mục 12); captcha tùy chọn cho form liên hệ: `contactCaptcha` ở `GET /settings/public` (§14.9), trường `captchaToken` và mã lỗi `400 CAPTCHA_FAILED` (§2, §14.11; `503 SERVICE_UNAVAILABLE` khi gọi Turnstile lỗi); job tự xóa tin liên hệ `RESOLVED`/`SPAM` theo `CONTACT_RETENTION_DAYS` (§14.11, §15 mục 15, D-029); CSP thêm header thực thi tập con và Turnstile ở report-only (§14.12, D-032). Rate limit ở edge (Caddy, D-026) không đổi shape API; lỗi do edge sinh ra ở `/api/v1/*` (429, 413, 502-504) trả JSON theo format lỗi §1 (xem phần Rate limit ở §1). Không cần migration.
 > Thay đổi 0.8: chi tiết hóa M6b (D-021..D-024): thay "14.9 Hoãn sau M6" bằng 14.9 Cài đặt cửa hàng (`GET/PUT /admin/settings`, `GET /settings/public`), 14.10 Quản lý người dùng (`/admin/users`), 14.11 Liên hệ (`POST /contact`, `/admin/contact-messages`), 14.12 CSP report-only (`POST /csp-report`); newsletter còn hoãn (14.13). Thêm mã lỗi `CANNOT_MODIFY_SELF`, `LAST_ADMIN` (§2); thêm action audit `settings.update`, `user.status`, `user.role`, `contact.update` (§12.0). Chốt thêm: settings chỉ Admin, ràng buộc ghi chặt/đọc nới, `innerCityWardCount` ở `/settings/public`, banner chỉ ảnh `/uploads/` và `href` nội bộ; khóa dòng + kiểm lại người thao tác ở quản lý người dùng; làm rõ liên hệ và `POST /csp-report`; thêm §15 mục 15–16. Cần migration `m6b_contact_message` (`db-schema.md`).
@@ -40,7 +43,7 @@
 
 ## 1. Quy ước chung
 
-**Định dạng.** JSON UTF-8 (`Content-Type: application/json`). Tên trường camelCase. ID là chuỗi cuid. Tiền là **số nguyên VND** (không float, không chuỗi). Thời gian ISO 8601 UTC (`2026-11-10T08:30:00.000Z`); ngày thuần `YYYY-MM-DD`. Trường tùy chọn không có giá trị trả `null` (không bỏ trường), trừ khi ghi chú khác. Mọi response có header `X-Request-Id`.
+**Định dạng.** JSON UTF-8 (`Content-Type: application/json`). Tên trường camelCase. ID là chuỗi cuid. Tiền là **số nguyên VND** (không float, không chuỗi). Thời gian ISO 8601 UTC (`2026-11-10T08:30:00.000Z`); ngày thuần `YYYY-MM-DD`. Trường tùy chọn không có giá trị trả `null` (không bỏ trường), trừ khi ghi chú khác. Mọi response `/api/v1/*` có header `X-Request-Id`.
 
 **Phản hồi thành công**
 
@@ -75,7 +78,7 @@ Phân trang: query `page` (>= 1, mặc định 1), `pageSize` (1–100, mặc đ
 
 **Xác thực**
 
-- `Authorization: Bearer <accessToken>` (JWT HS256, 15 phút; claims `sub`, `role`, `sid` (= `familyId` của phiên refresh), `iat`, `exp`, `iss`, `aud`). Thiếu/hết hạn/sai -> 401 `UNAUTHORIZED` (FE gọi refresh rồi thử lại).
+- `Authorization: Bearer <accessToken>` (JWT HS256, 15 phút; claims `sub`, `role`, `sid` (= `familyId` của phiên refresh), `iat`, `exp`, `iss`, `aud`). Thiếu/hết hạn/sai -> 401 `UNAUTHORIZED` (FE gọi refresh rồi thử lại). Từ 0.11 access token còn gắn với phiên: server kiểm còn ít nhất một refresh token chưa thu hồi, chưa hết hạn thuộc đúng `sid` của user đó; không còn (đã logout, đặt lại/đổi mật khẩu, dùng lại refresh token bị phát hiện, admin đổi role/khóa user thu hồi phiên) -> 401 `UNAUTHORIZED` ngay, không chờ hết 15 phút. User bị khóa vẫn trả 403 `ACCOUNT_DISABLED` (kiểm trước phiên). Refresh thành công (xoay token cùng family) không làm mất hiệu lực access token đang dùng.
 - Với endpoint **Auth/Optional**: nếu CÓ header `Authorization` mà token sai/hết hạn -> 401 `UNAUTHORIZED` (không âm thầm coi là guest).
 - User không còn tồn tại -> 401 `UNAUTHORIZED`; user `DISABLED` -> 403 `ACCOUNT_DISABLED`. `role` luôn đọc lại từ DB mỗi request đã xác thực (không tin claim).
 - Refresh token ở cookie `bb_rt` (httpOnly, SameSite=Strict, Path=/api/v1/auth), FE không đọc được.
@@ -85,7 +88,9 @@ Phân trang: query `page` (>= 1, mặc định 1), `pageSize` (1–100, mặc đ
 
 **Idempotency.** `POST /orders` bắt buộc `Idempotency-Key: <UUID v4>` (chỉ chấp nhận UUID v4, so khớp không phân biệt hoa thường, lưu lowercase). Thiếu/sai định dạng -> 400 `VALIDATION_ERROR` (`details[0].field = "Idempotency-Key"`). Quy tắc `requestFingerprint` và replay: xem §9.2.
 
-**Rate limit.** Chung 100 req/phút/IP (mặc định; chỉnh được bằng env `GENERAL_RATE_LIMIT_PER_MIN`, số nguyên dương; E2E/CI đặt 1000, production giữ mặc định). Nhóm nhạy cảm 5 req/phút/IP: `POST /auth/login`, `/auth/register`, `/auth/forgot-password`, `/auth/reset-password`, `/auth/change-password`, `POST /orders/:code/cancel` (guest), `GET /orders/track` (10/phút). Ba limiter riêng cho mã giảm giá và đặt đơn (D-011): `POST /cart/apply-coupon` 10/phút, `POST /checkout/quote` 30/phút, `POST /orders` 10/phút (từ 0.6 cấu hình được qua env `COUPON_RATE_LIMIT_PER_MIN`, `QUOTE_RATE_LIMIT_PER_MIN`, `ORDER_RATE_LIMIT_PER_MIN`, mặc định giữ nguyên, D-016); endpoint thanh toán có limiter riêng (§13); mỗi limiter có store riêng, theo IP, kể cả request có Bearer (và không miễn `X-Internal-Secret`), đặt trước bước xác thực. Vượt -> 429 `RATE_LIMITED` + header `Retry-After` (giây) và `error.details: { "retryAfterSec": <int> }` (cùng giá trị với header). Response có `RateLimit-Limit/Remaining/Reset`. IP client xác định theo `TRUST_PROXY` (D-009); request SSR nội bộ có `X-Internal-Secret` hợp lệ được miễn rate limit chung, không miễn nhóm nhạy cảm (xem `architecture.md` §3).
+**Rate limit.** Chung 100 req/phút/IP (mặc định; chỉnh được bằng env `GENERAL_RATE_LIMIT_PER_MIN`, số nguyên dương; E2E/CI đặt 1000, production giữ mặc định). Nhóm nhạy cảm 5 req/phút/IP (chỉnh được bằng env `AUTH_RATE_LIMIT_PER_MIN`, số nguyên dương, mặc định 5; E2E/CI đặt 30, production giữ 5): `POST /auth/login`, `/auth/register`, `/auth/forgot-password`, `/auth/reset-password`, `/auth/change-password`, `POST /orders/:code/cancel` (guest), `GET /orders/track` (10/phút). Ba limiter riêng cho mã giảm giá và đặt đơn (D-011): `POST /cart/apply-coupon` 10/phút, `POST /checkout/quote` 30/phút, `POST /orders` 10/phút (từ 0.6 cấu hình được qua env `COUPON_RATE_LIMIT_PER_MIN`, `QUOTE_RATE_LIMIT_PER_MIN`, `ORDER_RATE_LIMIT_PER_MIN`, mặc định giữ nguyên, D-016); endpoint thanh toán có limiter riêng (§13); mỗi limiter có store riêng, theo IP, kể cả request có Bearer (và không miễn `X-Internal-Secret`), đặt trước bước xác thực. Vượt -> 429 `RATE_LIMITED` + header `Retry-After` (giây) và `error.details: { "retryAfterSec": <int> }` (cùng giá trị với header). Response có `RateLimit-Limit/Remaining/Reset`. IP client xác định theo `TRUST_PROXY` (D-009); request SSR nội bộ có `X-Internal-Secret` hợp lệ được miễn rate limit chung, không miễn nhóm nhạy cảm (xem `architecture.md` §3).
+
+**Cache.** Mọi response dưới `/api/v1` mặc định có `Cache-Control: no-store` (kể cả lỗi 4xx/5xx), để dữ liệu riêng tư (`/auth/*`, `/me*`, `/cart*`, `/checkout/*`, `/orders*`, `/payments/*`, `/contact`, `/admin/*`, `GET /products/:slug/reviews/me`, wishlist...) không bị cache trung gian/trình duyệt. Ngoại lệ: các GET/HEAD công khai không phụ thuộc người dùng không bị ép header: `/categories`, `/categories/:slug`, `/brands`, `/products`, `/products/:slug`, `GET /products/compare`, `GET /products/:slug/reviews` (danh sách công khai), `/search/suggest`, `/locations/*`, `/settings/public`, `/health*`; các route này tự quyết `Cache-Control` (ví dụ `public, max-age=300` ở `/settings/public`), và Next.js ISR của storefront dựa vào đó. `/uploads` (ảnh tĩnh) không thuộc nhóm này (`max-age` 1 giờ).
 
 Ở production có thêm rate limit ở edge (Caddy, D-026) theo IP, độc lập với các limiter trên (mặc định `POST /auth/*` 30/phút, `/api/v1/*` 300/phút). Lỗi do chính edge sinh ra ở `/api/v1/*` cũng theo format lỗi ở trên: 429 `RATE_LIMITED` (giữ `Retry-After`), 413 `PAYLOAD_TOO_LARGE` ở `/api/v1/admin/uploads*` và `VALIDATION_ERROR` ở các path khác khi thân request quá lớn, 502/503/504 `SERVICE_UNAVAILABLE` khi backend không phản hồi. Chi tiết: `deployment.md`.
 
@@ -351,7 +356,7 @@ Ví dụ: `GET /products?category=ca-phe-hat&roast=LIGHT,MEDIUM&origin=Ethiopia&
     "ratingCount": 18,
     "seo": { "title": "...", "description": "..." },
     "related": [
-      { "...": "ProductListItem (tối đa 8, cùng danh mục, loại trừ chính nó)" }
+      { "...": "ProductListItem (tối đa 8, chấm điểm theo nội dung, loại trừ chính nó)" }
     ],
     "createdAt": "2026-10-01T00:00:00.000Z"
   }
@@ -359,6 +364,19 @@ Ví dụ: `GET /products?category=ca-phe-hat&roast=LIGHT,MEDIUM&origin=Ethiopia&
 ```
 
 Chỉ trả variant `isActive` và chưa xóa, sắp theo `sortOrder`. Lỗi: 404 `NOT_FOUND` (slug không tồn tại, DRAFT/ARCHIVED, đã xóa mềm). Từ 0.7: nếu slug là slug cũ của một sản phẩm đang hiển thị (đã đổi slug) thì 404 `NOT_FOUND` kèm `details: { "movedTo": "<slug hiện tại>" }` để FE chuyển hướng (§14.5).
+
+**Quy tắc `related` (từ 0.12, D-046).** Ứng viên là sản phẩm hiển thị (ACTIVE, chưa xóa mềm), khác chính nó, thỏa ít nhất một: cùng danh mục, cùng danh mục cha, cùng brand, có tag chung; lấy tối đa 100 theo `soldCount` giảm dần rồi chấm điểm:
+
+| Tiêu chí | Điểm |
+|---|---|
+| Cùng danh mục | +4 |
+| Khác danh mục nhưng cùng danh mục cha (cha khác null) | +2 |
+| Cùng brand (khác null) | +2 |
+| Mỗi tag trùng (không phân biệt hoa thường), tối đa | +1 mỗi tag, tối đa +3 |
+| Cả hai là cà phê: cùng `roastLevel` / cùng `originCountry` (không phân biệt hoa thường) / cùng `process` / có ít nhất một `brewMethods` chung | +1 mỗi tiêu chí |
+| `minPrice` ứng viên trong ±30% `minPrice` gốc (gốc > 0) | +1 |
+
+Bỏ điểm 0. Sắp: còn hàng (`inStock`) trước, rồi điểm giảm dần, rồi `soldCount` giảm dần, rồi `id` tăng dần (xác định). Tối đa 8. Có thể ít hơn 8 hoặc rỗng; shape vẫn `ProductListItem[]`.
 
 ### 4.5 `GET /search/suggest?q=`
 
@@ -379,6 +397,98 @@ Chỉ trả variant `isActive` và chưa xóa, sắp theo `sortOrder`. Lỗi: 40
   }
 }
 ```
+
+### 4.6 `GET /products/:slug/bought-together`
+
+Công khai (từ 0.12, D-046). Sản phẩm thường xuất hiện cùng đơn với sản phẩm gốc.
+
+Query: `limit` int 1–8, mặc định 4 (sai -> 400 `VALIDATION_ERROR`).
+
+200:
+
+```json
+{
+  "data": [
+    { "...": "ProductListItem" }
+  ]
+}
+```
+
+Quy tắc:
+
+- Đếm số **khách khác nhau** đã mua cả sản phẩm gốc lẫn sản phẩm đó trong cùng một đơn: khách đăng nhập tính theo `userId`, khách vãng lai theo `lower(contactEmail)`. Một khách mua nhiều đơn vẫn là một khách.
+- Chỉ tính đơn có `status` KHÔNG thuộc `CANCELLED`, `PENDING_PAYMENT` và `createdAt` trong 365 ngày gần nhất.
+- **Ngưỡng riêng tư:** chỉ trả sản phẩm có từ **2 khách trở lên** (không để một đơn lẻ lộ ra "ai đó đã mua X cùng Y").
+- Chỉ trả sản phẩm hiển thị (ACTIVE, chưa xóa mềm) và còn hàng (`inStock`).
+- Sắp: số khách giảm dần, `soldCount` giảm dần, `id` tăng dần. Không đủ thì trả ít hơn, kể cả `[]`; KHÔNG lấp bằng sản phẩm phổ biến.
+- Lỗi: 404 `NOT_FOUND` khi slug sai định dạng, không tồn tại hoặc sản phẩm không hiển thị (không có `movedTo`).
+- Cache: GET công khai, không bị ép `no-store` (có trong `PUBLIC_CACHEABLE`); chỉ áp limiter chung. Kết quả tính trực tiếp từ DB mỗi request (không cache phía server); FE gọi ở server với revalidate 60 giây như dữ liệu sản phẩm.
+
+### 4.7 `GET /products/compare?slugs=a,b,c`
+
+Công khai (từ 0.13, D-047). Dữ liệu cho bảng so sánh 2–4 sản phẩm, gộp trong một request (không phải gọi N lần chi tiết).
+
+Query: `slugs` bắt buộc, danh sách phân tách dấu phẩy; mỗi slug theo định dạng `^[a-z0-9]+(?:-[a-z0-9]+)*$` (<= 200 ký tự). Tham số lặp (`slugs=a&slugs=b`) được gộp như `a,b`. Slug trùng bị bỏ (giữ thứ tự lần xuất hiện đầu); **sau khi bỏ trùng phải còn 2–4 slug**. Vi phạm (thiếu, rỗng, 1 slug, 5 slug trở lên, slug sai định dạng) -> 400 `VALIDATION_ERROR` với `details: [{ "field": "slugs", "message": "..." }]`.
+
+200:
+
+```json
+{
+  "data": {
+    "items": [
+      {
+        "id": "ckp3",
+        "slug": "kenya-aa",
+        "name": "Kenya AA",
+        "shortDesc": "Chua sáng như nho đen, hậu vị ngọt đường nâu.",
+        "brand": { "id": "ckb1", "name": "BeanBox Roastery", "slug": "beanbox-roastery" },
+        "category": { "id": "ckc2", "name": "Specialty", "slug": "specialty" },
+        "primaryImage": { "url": "/uploads/seed/ca-phe-hat.svg", "alt": "Túi cà phê hạt Kenya AA" },
+        "minPrice": 240000,
+        "compareAtPrice": null,
+        "inStock": true,
+        "isFeatured": false,
+        "ratingAvg": 4.7,
+        "ratingCount": 9,
+        "tags": ["specialty", "kenya", "chua sáng", "trái cây"],
+        "priceRange": { "min": 240000, "max": 455000 },
+        "variants": [
+          {
+            "name": "250 g - Nguyên hạt",
+            "attributes": { "grind": "Nguyên hạt", "weight": "250g" },
+            "price": 240000,
+            "effectivePrice": 240000,
+            "isOnSale": false,
+            "stockStatus": "LOW_STOCK",
+            "weightGram": 250
+          }
+        ],
+        "coffee": {
+          "originCountry": "Kenya",
+          "originRegion": "Nyeri",
+          "variety": "Arabica",
+          "process": "WASHED",
+          "roastLevel": "MEDIUM",
+          "altitude": null,
+          "tastingNotes": ["Nho đen", "Cà chua chín", "Đường nâu"],
+          "brewMethods": ["POUR_OVER", "ESPRESSO"]
+        }
+      }
+    ],
+    "missing": ["khong-co-sp"]
+  }
+}
+```
+
+Quy tắc:
+
+- `items` theo ĐÚNG thứ tự `slugs` đã yêu cầu, chỉ gồm sản phẩm hiển thị (ACTIVE, chưa xóa mềm). Slug không tồn tại, không hiển thị (DRAFT, ARCHIVED, đã xóa mềm) hoặc là slug cũ đã đổi đều nằm trong `missing` (cùng thứ tự yêu cầu); KHÔNG trả 404 cho cả request và KHÔNG tra redirect slug cũ. Mọi slug đều thiếu thì vẫn 200 với `items: []`.
+- `CompareItem` = các trường của `ProductListItem` (§4) + `tags`, `priceRange`, `variants`, và `coffee` đầy đủ như §4.4 (hoặc `null`). `coffee` ở đây có đủ 8 trường của `CoffeeProfile`, nhiều hơn 3 trường ở `ProductListItem`. KHÔNG có `description`.
+- `priceRange = { min, max }`: giá hiệu lực (§10.1) thấp nhất và cao nhất của các biến thể đang bán, tính lại lúc đọc. `minPrice`/`compareAtPrice` giữ nghĩa như ở `ProductListItem`.
+- `variants`: chỉ biến thể đang bán (`isActive`, chưa xóa mềm), sắp `sortOrder`. Quy tắc §4 "Làm rõ M1" giữ nguyên: KHÔNG trả `stock` chính xác (chỉ `stockStatus`), và KHÔNG trả `salePrice` (chỉ `price`, `effectivePrice`, `isOnSale`), nên đợt sale chưa bắt đầu hoặc đã hết không lộ giá.
+- Truy vấn: một `findMany` cho cả danh sách slug (không N+1).
+- Cache: GET công khai, không bị ép `no-store` (có trong `PUBLIC_CACHEABLE`, §1); chỉ áp limiter chung.
+- **Slug dành riêng.** Vì route này khai báo trước `/products/:slug`, `GET /products/compare` không bao giờ trả chi tiết sản phẩm có slug `compare`. Do đó admin không được đặt slug `compare` (§12.4).
 
 ## 5. Auth
 
@@ -426,7 +536,7 @@ Lỗi: 403 `INVALID_ORIGIN`; 401 `INVALID_REFRESH_TOKEN` (thiếu/sai/hết hạ
 
 ### 5.4 `POST /auth/logout` – Cookie (kiểm tra Origin)
 
-Không body. Thu hồi token hiện tại (cả family), xóa cookie. Idempotent: luôn 204 (kể cả không có cookie), trừ 403 `INVALID_ORIGIN`.
+Không body. Thu hồi token hiện tại (cả family), xóa cookie; access token cùng phiên bị 401 ngay từ đó. Idempotent: luôn 204 (kể cả không có cookie), trừ 403 `INVALID_ORIGIN`.
 
 ### 5.5 `POST /auth/forgot-password` – Public (5/phút/IP)
 
@@ -444,7 +554,7 @@ Token hết hạn 30 phút, dùng 1 lần; link trỏ `/dat-lai-mat-khau?token=.
 
 ### 5.6 `POST /auth/reset-password` – Public (5/phút/IP)
 
-Body: `{ "token": "...", "newPassword": "Matkhau456" }`. 200 `{ "data": { "message": "Đã đặt lại mật khẩu." } }`; đánh dấu token đã dùng và vô hiệu mọi token reset khác của user; thu hồi mọi refresh token của user, reset `failedLoginCount/lockedUntil`. Lỗi: 400 `VALIDATION_ERROR`, 400 `TOKEN_INVALID`.
+Body: `{ "token": "...", "newPassword": "Matkhau456" }`. 200 `{ "data": { "message": "Đã đặt lại mật khẩu." } }`; đánh dấu token đã dùng và vô hiệu mọi token reset khác của user; thu hồi mọi refresh token của user (mọi access token đang sống của user bị 401 ngay), reset `failedLoginCount/lockedUntil`. Lỗi: 400 `VALIDATION_ERROR`, 400 `TOKEN_INVALID`.
 
 ### 5.7 `POST /auth/verify-email` – Public
 
@@ -453,7 +563,7 @@ Bổ sung: `POST /auth/resend-verification` – Auth, không body, 204; 409 `CON
 
 ### 5.8 `POST /auth/change-password` – Auth
 
-Body: `{ "currentPassword": "...", "newPassword": "..." }` (khác mật khẩu cũ). 204; thu hồi mọi refresh token **trừ family hiện tại** (xác định bằng claim `sid` của access token). `newPassword` trùng `currentPassword` -> 400 `VALIDATION_ERROR` (field `newPassword`). Rate limit 5/phút/IP. Lỗi: 400 `VALIDATION_ERROR`, 400 `INVALID_PASSWORD`, 401, 429.
+Body: `{ "currentPassword": "...", "newPassword": "..." }` (khác mật khẩu cũ). 204; thu hồi mọi refresh token **trừ family hiện tại** (xác định bằng claim `sid` của access token); access token của các phiên khác bị 401 ngay, phiên hiện tại vẫn dùng được. `newPassword` trùng `currentPassword` -> 400 `VALIDATION_ERROR` (field `newPassword`). Rate limit 5/phút/IP. Lỗi: 400 `VALIDATION_ERROR`, 400 `INVALID_PASSWORD`, 401, 429.
 
 ## 6. Me (hồ sơ & địa chỉ)
 
@@ -1251,9 +1361,9 @@ Staff làm được mọi thao tác dưới đây, trừ `DELETE /admin/products
 
 - `GET /admin/products/:id` (Staff) – `AdminProduct`: `{ id, slug, name, shortDesc, description, status, isFeatured, tags, seoTitle, seoDesc, categoryId, brandId, coffee, images, variants, minPrice, inStock, soldCount, ratingAvg, ratingCount, deletedAt, createdAt, updatedAt }`, trong đó `coffee` = `CoffeeProfile` đủ trường hoặc `null`; `images` = `[{ id, url, alt, sortOrder, isPrimary }]` sắp `sortOrder`; `variants` = `AdminVariant[]` chưa xóa mềm, sắp `sortOrder`. Trả cả sản phẩm đã xóa mềm (để xem).
 - `AdminVariant`: `{ id, sku, name, attributes, price, salePrice, saleStart, saleEnd, effectivePrice, isOnSale, stock, lowStockThreshold, stockStatus, weightGram, roastDate, sortOrder, isActive, createdAt, updatedAt }`.
-- `POST /admin/products` (Staff) – `name` 2–200; `slug` (như §12.3); `categoryId` (phải tồn tại, không thì 400 field `categoryId`); `brandId` hoặc `null`; `shortDesc` <= 300; `description` <= 20000 (Markdown; storefront render không cho HTML thô); `status` (mặc định `DRAFT`); `isFeatured`; `tags` (<= 20 phần tử, mỗi tag 1–30 ký tự, trim, lowercase, bỏ trùng); `seoTitle` <= 120 hoặc `null`; `seoDesc` <= 300 hoặc `null`; `coffee` hoặc `null`: `{ originCountry? (<= 60), originRegion? (<= 60), variety? (<= 60), process?, roastLevel?, altitude? (0–3000), tastingNotes (<= 10 phần tử, mỗi 1–40), brewMethods (BrewMethod[]) }`. 201 `AdminProduct`. Cập nhật denormalize `searchText`, `minPrice`, `inStock`.
+- `POST /admin/products` (Staff) – `name` 2–200; `slug` (như §12.3; từ 0.13 không được là slug dành riêng `compare`, kể cả khi sinh từ tên, vi phạm -> 400 `VALIDATION_ERROR` field `slug` "Slug này được hệ thống dành riêng, vui lòng chọn slug khác", vì `GET /products/compare` che `GET /products/:slug`, §4.7); `categoryId` (phải tồn tại, không thì 400 field `categoryId`); `brandId` hoặc `null`; `shortDesc` <= 300; `description` <= 20000 (Markdown; storefront render không cho HTML thô); `status` (mặc định `DRAFT`); `isFeatured`; `tags` (<= 20 phần tử, mỗi tag 1–30 ký tự, trim, lowercase, bỏ trùng); `seoTitle` <= 120 hoặc `null`; `seoDesc` <= 300 hoặc `null`; `coffee` hoặc `null`: `{ originCountry? (<= 60), originRegion? (<= 60), variety? (<= 60), process?, roastLevel?, altitude? (0–3000), tastingNotes (<= 10 phần tử, mỗi 1–40), brewMethods (BrewMethod[]) }`. 201 `AdminProduct`. Cập nhật denormalize `searchText`, `minPrice`, `inStock`.
 - **Quy tắc hiển thị.** `status = ACTIVE` yêu cầu có >= 1 biến thể `isActive` chưa xóa; vi phạm -> 400 field `status` "Cần ít nhất 1 biến thể đang bán để hiển thị sản phẩm". Vì vậy tạo mới nên luôn là `DRAFT`/`ARCHIVED` (tạo mới với `ACTIVE` luôn vi phạm vì chưa có biến thể).
-- `PATCH /admin/products/:id` (Staff) – mọi trường của POST đều tùy chọn (>= 1 trường); `coffee: null` xóa hồ sơ cà phê. Sản phẩm đã xóa mềm -> 404. Ghi AuditLog với diff. 200 `AdminProduct`.
+- `PATCH /admin/products/:id` (Staff) – mọi trường của POST đều tùy chọn (>= 1 trường); đổi `slug` sang `compare` bị từ chối như POST; `coffee: null` xóa hồ sơ cà phê. Sản phẩm đã xóa mềm -> 404. Ghi AuditLog với diff. 200 `AdminProduct`.
 - `DELETE /admin/products/:id` (**Admin**) – xóa mềm: `deletedAt = now`, `status = ARCHIVED`; slug vẫn bị giữ; giỏ chứa biến thể của nó sẽ hiện `UNAVAILABLE`. Đã xóa -> 404. 204. M4 không có khôi phục.
 
 #### Biến thể

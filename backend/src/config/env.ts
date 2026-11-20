@@ -121,6 +121,8 @@ const schema = z
       .optional(),
     STRIPE_WEBHOOK_SECRET: z.string().optional(),
     GENERAL_RATE_LIMIT_PER_MIN: z.coerce.number().int().positive().default(100),
+    // Limiter nhóm auth (register/login/forgot/reset/change-password). Production giữ 5; E2E đặt cao hơn.
+    AUTH_RATE_LIMIT_PER_MIN: z.coerce.number().int().positive().default(5),
     ORDER_RATE_LIMIT_PER_MIN: z.coerce.number().int().positive().default(10),
     COUPON_RATE_LIMIT_PER_MIN: z.coerce.number().int().positive().default(10),
     QUOTE_RATE_LIMIT_PER_MIN: z.coerce.number().int().positive().default(30),
@@ -156,6 +158,14 @@ const schema = z
         path: ['INTERNAL_API_SECRET'],
         message:
           'INTERNAL_API_SECRET là bắt buộc ở production (thiếu thì mọi request SSR dùng chung một IP và dính 429)',
+      });
+    }
+    if (v.COOKIE_SECURE === 'false') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['COOKIE_SECURE'],
+        message:
+          'COOKIE_SECURE=false không được phép ở production (cookie refresh token phải có cờ Secure); bỏ biến này hoặc đặt true',
       });
     }
     for (const key of ['JWT_ACCESS_SECRET', 'INTERNAL_API_SECRET'] as const) {

@@ -8,12 +8,14 @@ import { Breadcrumbs, type Crumb } from "@/features/catalog/components/Breadcrum
 import { CoffeeProfileTable } from "@/features/catalog/components/CoffeeProfileTable";
 import { ProductDescription } from "@/features/catalog/components/ProductDescription";
 import { ProductGallery } from "@/features/catalog/components/ProductGallery";
+import { BoughtTogether } from "@/features/catalog/components/BoughtTogether";
 import { ProductGrid } from "@/features/catalog/components/ProductGrid";
 import { RatingStars } from "@/features/catalog/components/ProductCard";
 import { JsonLd } from "@/components/seo/JsonLd";
 import { buildBreadcrumbJsonLd, buildProductJsonLd } from "@/features/catalog/jsonld";
 import { absoluteUrl } from "@/lib/site";
 import { redirectIfMoved } from "@/lib/slugRedirect";
+import { CompareButton } from "@/features/compare/components/CompareButton";
 import { WishlistButton } from "@/features/wishlist/components/WishlistButton";
 import { ReviewsSection } from "@/features/reviews/components/ReviewsSection";
 import type { ProductDetail } from "@/types/catalog";
@@ -109,7 +111,18 @@ export default async function ProductPage({ params }: Props) {
           <h1 className="font-serif text-3xl font-bold text-coffee-900">{product.name}</h1>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <RatingStars avg={product.ratingAvg} count={product.ratingCount} />
-            <WishlistButton productId={product.id} variant="labeled" />
+            <div className="flex flex-wrap items-center gap-2">
+              <CompareButton
+                variant="labeled"
+                product={{
+                  slug: product.slug,
+                  name: product.name,
+                  imageUrl: product.images[0]?.url ?? null,
+                  categoryName: product.category.name,
+                }}
+              />
+              <WishlistButton productId={product.id} variant="labeled" />
+            </div>
           </div>
           {product.shortDesc ? <p className="text-coffee-800">{product.shortDesc}</p> : null}
           <AddToCartPanel key={product.id} variants={product.variants} />
@@ -140,6 +153,8 @@ export default async function ProductPage({ params }: Props) {
       ) : null}
 
       <ReviewsSection slug={product.slug} productName={product.name} />
+
+      <BoughtTogether slug={product.slug} />
 
       {product.related.length > 0 ? (
         <section aria-labelledby="related-heading">

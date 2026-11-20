@@ -27,6 +27,24 @@ async function mk(key: string, role: R, status: 'ACTIVE' | 'DISABLED' = 'ACTIVE'
     data: { email: `${PREFIX}${key}@example.test`, passwordHash: 'x', fullName: key, role, status },
   });
   ids[key] = u.id;
+  // User DISABLED cố ý KHÔNG có phiên: chứng minh 403 ACCOUNT_DISABLED được báo trước 401 phiên.
+  if (status === 'ACTIVE') await mkSession(u.id, 'sess1');
+}
+
+async function mkSession(
+  userId: string,
+  familyId: string,
+  over: { revokedAt?: Date | null; expiresAt?: Date } = {},
+) {
+  await prisma.refreshToken.create({
+    data: {
+      userId,
+      familyId,
+      tokenHash: `${PREFIX}${userId}-${familyId}-${Math.random()}`,
+      expiresAt: over.expiresAt ?? new Date(Date.now() + 3_600_000),
+      revokedAt: over.revokedAt ?? null,
+    },
+  });
 }
 
 beforeAll(async () => {
@@ -78,6 +96,30 @@ describe('requireAuth', () => {
       .set(bearer(await tok('off', 'CUSTOMER')));
     expect(r.status).toBe(403);
     expect(r.body.error.code).toBe('ACCOUNT_DISABLED');
+  });
+  it('sid không có refresh token nào -> 401', async () => {
+    const t = await signAccessToken({ sub: ids.cust!, role: 'CUSTOMER', sid: 'khong-ton-tai' });
+    const r = await request(app).get('/me').set(bearer(t));
+    expect(r.status).toBe(401);
+    expect(r.body.error.code).toBe('UNAUTHORIZED');
+  });
+  it('phiên đã thu hồi hoặc hết hạn -> 401; còn một token sống trong family -> 200', async () => {
+    const id = ids.cust!;
+    await mkSession(id, 'revoked', { revokedAt: new Date() });
+    await mkSession(id, 'expired', { expiresAt: new Date(Date.now() - 1000) });
+    await mkSession(id, 'rotated', { revokedAt: new Date() }); // token cũ đã xoay
+    await mkSession(id, 'rotated'); // token mới còn sống
+    const get = async (sid: string) =>
+      request(app)
+        .get('/me')
+        .set(bearer(await signAccessToken({ sub: id, role: 'CUSTOMER', sid })));
+    expect((await get('revoked')).status).toBe(401);
+    expect((await get('expired')).status).toBe(401);
+    expect((await get('rotated')).status).toBe(200);
+  });
+  it('sid của user khác -> 401 (phiên phải thuộc đúng user)', async () => {
+    const t = await signAccessToken({ sub: ids.staff!, role: 'STAFF', sid: 'revoked' });
+    expect((await request(app).get('/me').set(bearer(t))).status).toBe(401);
   });
   it('user đã xóa -> 401', async () => {
     const t = await tok('gone', 'CUSTOMER');

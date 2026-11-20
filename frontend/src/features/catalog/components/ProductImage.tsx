@@ -45,6 +45,7 @@ export function ProductImage({
           fill
           sizes={sizes}
           priority={priority}
+          fetchPriority={priority ? "high" : undefined}
           unoptimized={/\.svg(\?|$)/i.test(src)}
           onError={() => setFailedSrc(src)}
           className="object-cover"

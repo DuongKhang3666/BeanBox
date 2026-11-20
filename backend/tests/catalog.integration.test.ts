@@ -798,9 +798,14 @@ describe('GET /products/:slug', () => {
     expect(expired.stockStatus).toBe('IN_STOCK');
   });
 
-  it('related: cùng danh mục, ACTIVE, loại chính nó', async () => {
+  it('related: chấm điểm (D-046), chỉ ACTIVE, loại chính nó', async () => {
     const d = (await request(app).get(`${API}/products/t2-p1`)).body.data;
-    expect(d.related.map((r: { slug: string }) => r.slug)).toEqual(['t2-p2']); // p5/p6/p7 không active, p3 khác danh mục
+    const slugs = d.related.map((r: { slug: string }) => r.slug);
+    // p2 cùng danh mục (điểm cao nhất, còn hàng) đứng đầu; p10 hết hàng đứng cuối.
+    expect(slugs[0]).toBe('t2-p2');
+    expect(slugs.at(-1)).toBe('t2-p10');
+    // p3/p9/p10: cùng danh mục cha; p4: cùng brand. p5/p6/p7 không hiển thị, p8 không liên quan.
+    expect([...slugs].sort()).toEqual(['t2-p10', 't2-p2', 't2-p3', 't2-p4', 't2-p9']);
     expect(d.related[0]).toHaveProperty('minPrice', 120000);
     expect(JSON.stringify(d.related)).not.toMatch(/"stock"\s*:/);
   });

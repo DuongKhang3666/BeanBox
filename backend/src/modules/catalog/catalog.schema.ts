@@ -117,4 +117,43 @@ export const suggestQuerySchema = z.object({
 
 export type SuggestQuery = z.output<typeof suggestQuerySchema>;
 
+export const boughtTogetherQuerySchema = z.object({
+  limit: intParam(1, 8, 'limit').default(4),
+});
+
+export type BoughtTogetherQuery = z.output<typeof boughtTogetherQuerySchema>;
+
 export const slugSchema = z.string().max(200).regex(SLUG_REGEX);
+
+export const COMPARE_MIN = 2;
+export const COMPARE_MAX = 4;
+
+/** `slugs=a,b,c`: bỏ trùng giữ thứ tự, sau đó phải còn 2–4 slug hợp lệ. */
+export const compareQuerySchema = z.object({
+  slugs: z.preprocess(
+    joinRepeated,
+    z
+      .string({ error: 'Thiếu tham số slugs' })
+      .transform((s) =>
+        s
+          .split(',')
+          .map((x) => x.trim())
+          .filter((x) => x.length > 0),
+      )
+      .superRefine((arr, ctx) => {
+        const bad = arr.find((x) => !slugSchema.safeParse(x).success);
+        if (bad !== undefined) {
+          ctx.addIssue({
+            code: 'custom',
+            message: 'Slug sản phẩm không hợp lệ (chỉ gồm chữ thường, số và dấu gạch ngang)',
+          });
+        }
+      })
+      .transform((arr) => [...new Set(arr)])
+      .refine((arr) => arr.length >= COMPARE_MIN && arr.length <= COMPARE_MAX, {
+        message: `Cần chọn từ ${COMPARE_MIN} đến ${COMPARE_MAX} sản phẩm khác nhau`,
+      }),
+  ),
+});
+
+export type CompareQuery = z.output<typeof compareQuerySchema>;

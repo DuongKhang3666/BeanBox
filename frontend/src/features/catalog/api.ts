@@ -54,6 +54,24 @@ export async function getProduct(slug: string): Promise<ProductDetail | null> {
   }
 }
 
+export const BOUGHT_TOGETHER_LIMIT = 4;
+
+/**
+ * GET /products/:slug/bought-together (§4.6). Gợi ý chỉ là phần phụ của trang: mọi lỗi (mạng, 404,
+ * 5xx) đều trả [] để trang sản phẩm không bị hỏng. Cùng cơ chế revalidate với dữ liệu sản phẩm.
+ */
+export async function getBoughtTogether(slug: string): Promise<ProductListItem[]> {
+  try {
+    const res = await serverGet<ProductListItem[]>(
+      `/products/${encodeURIComponent(slug)}/bought-together`,
+      { query: { limit: BOUGHT_TOGETHER_LIMIT }, revalidate: PRODUCT_REVALIDATE },
+    );
+    return Array.isArray(res.data) ? res.data.slice(0, BOUGHT_TOGETHER_LIMIT) : [];
+  } catch {
+    return [];
+  }
+}
+
 /** Như getProduct nhưng phân biệt slug cũ (404 + details.movedTo, D-018) với 404 thường. */
 export async function lookupProduct(slug: string): Promise<SlugLookup<ProductDetail>> {
   try {

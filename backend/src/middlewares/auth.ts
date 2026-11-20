@@ -18,13 +18,29 @@ async function authenticate(req: Request): Promise<void> {
   }
 
   // Luôn đọc DB: khóa tài khoản / đổi quyền có hiệu lực ngay, không tin claim role.
+  // Cùng truy vấn kiểm tra phiên (claim `sid` = familyId): phải còn ít nhất một refresh token
+  // chưa thu hồi và chưa hết hạn, nên logout / đổi-đặt lại mật khẩu / phát hiện dùng lại refresh
+  // token làm access token mất hiệu lực ngay (không chờ hết TTL).
   const user = await prisma.user.findUnique({
     where: { id: claims.sub },
-    select: { id: true, role: true, status: true },
+    select: {
+      id: true,
+      role: true,
+      status: true,
+      refreshTokens: {
+        where: { familyId: claims.sid, revokedAt: null, expiresAt: { gt: new Date() } },
+        select: { id: true },
+        take: 1,
+      },
+    },
   });
   if (!user) throw new AppError(401, 'UNAUTHORIZED', 'Phiên đăng nhập đã hết hạn');
+  // Thứ tự: tài khoản bị khóa (403) được báo trước khi xét phiên (401).
   if (user.status === 'DISABLED') {
     throw new AppError(403, 'ACCOUNT_DISABLED', 'Tài khoản đã bị khóa');
+  }
+  if (user.refreshTokens.length === 0) {
+    throw new AppError(401, 'UNAUTHORIZED', 'Phiên đăng nhập đã hết hạn');
   }
   req.auth = { userId: user.id, role: user.role, sessionId: claims.sid };
 }

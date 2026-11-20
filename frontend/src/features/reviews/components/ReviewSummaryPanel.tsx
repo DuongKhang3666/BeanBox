@@ -32,7 +32,6 @@ export function ReviewSummaryPanel({ summary, activeRating, onSelectRating }: Pr
               <button
                 type="button"
                 aria-pressed={active}
-                aria-label={`${star} sao: ${count} đánh giá. ${active ? "Bấm để bỏ lọc" : "Bấm để lọc"}`}
                 onClick={() => onSelectRating(active ? null : star)}
                 className={cn(
                   "flex min-h-11 w-full items-center gap-3 rounded-lg px-2 text-sm text-coffee-800",
@@ -40,6 +39,10 @@ export function ReviewSummaryPanel({ summary, activeRating, onSelectRating }: Pr
                   active ? "bg-moss-50 ring-1 ring-moss-600" : "hover:bg-coffee-100",
                 )}
               >
+                {/* Tên truy cập lấy từ nội dung (không dùng aria-label để khỏi lệch chữ hiển thị). */}
+                <span className="sr-only">
+                  {`${star} sao: ${count} đánh giá. ${active ? "Bấm để bỏ lọc" : "Bấm để lọc"}`}
+                </span>
                 <span aria-hidden="true" className="w-8 shrink-0 text-left font-medium">
                   {star} ★
                 </span>

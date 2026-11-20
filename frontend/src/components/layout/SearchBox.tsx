@@ -205,6 +205,10 @@ export function SearchBox({ className }: { className?: string }) {
         e.preventDefault();
         submit();
       }}
+      onBlur={(e) => {
+        // Tab ra khỏi ô tìm kiếm thì đóng gợi ý.
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOpen(false);
+      }}
       className={`relative ${className ?? ""}`}
     >
       <label htmlFor={`${baseId}-input`} className="sr-only">

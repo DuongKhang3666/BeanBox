@@ -142,3 +142,27 @@ export interface CategoryDetail {
 
 /** GET /me/wishlist: ProductListItem kèm addedAt (§14.2). */
 export type WishlistItem = ProductListItem & { addedAt: string };
+
+/** Một biến thể trong GET /products/compare (§4.7): không có stock chính xác, không có salePrice. */
+export interface CompareVariant {
+  name: string;
+  attributes: Record<string, string>;
+  price: number;
+  effectivePrice: number;
+  isOnSale: boolean;
+  stockStatus: StockStatus;
+  weightGram: number | null;
+}
+
+/** GET /products/compare (§4.7): ProductListItem + tags, priceRange, variants, coffee đầy đủ. */
+export type CompareItem = Omit<ProductListItem, "coffee"> & {
+  tags: string[];
+  priceRange: { min: number; max: number };
+  variants: CompareVariant[];
+  coffee: CoffeeProfile | null;
+};
+
+export interface CompareResult {
+  items: CompareItem[];
+  missing: string[];
+}

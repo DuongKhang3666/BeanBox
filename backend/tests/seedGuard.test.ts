@@ -13,7 +13,11 @@ const GOOD = {
   SEED_CUSTOMER_PASSWORD: fakePw(19),
 };
 // Giá trị mẫu bị cấm, ghép lúc chạy.
-const SAMPLE = { admin: ['Admin', '12345'].join(''), staff: ['Staff', '12345'].join(''), cust: ['Customer', '12345'].join('') };
+const SAMPLE = {
+  admin: ['Admin', '12345'].join(''),
+  staff: ['Staff', '12345'].join(''),
+  cust: ['Customer', '12345'].join(''),
+};
 
 describe('checkSeedAllowed (D-031)', () => {
   it('ngoài production: luôn cho phép, kể cả mật khẩu mẫu', () => {

@@ -52,6 +52,8 @@ export function ProductResults({
         />
       ) : (
         <>
+          {/* Giữ thứ tự tiêu đề h1 -> h2 -> h3 (tên sản phẩm trong thẻ là h3). */}
+          <h2 className="sr-only">Danh sách sản phẩm</h2>
           <ProductGrid products={items} />
           <Pagination pathname={pathname} filters={filters} meta={meta} />
         </>

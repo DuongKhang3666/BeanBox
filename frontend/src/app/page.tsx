@@ -39,7 +39,7 @@ export default async function HomePage() {
               href={`/danh-muc/${ROOT_CATEGORY_SLUGS[0]}`}
               variant="primary"
               size="lg"
-              className="bg-cream-100 !text-coffee-900 hover:!bg-white"
+              className="!bg-cream-100 !text-coffee-900 hover:!bg-white"
             >
               Khám phá cà phê hạt
             </ButtonLink>

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { CompareButton } from "@/features/compare/components/CompareButton";
 import { WishlistButton } from "@/features/wishlist/components/WishlistButton";
 import type { ProductListItem } from "@/types/catalog";
 import { ROAST_LABELS } from "../labels";
@@ -47,6 +48,15 @@ export function ProductCard({
           productId={product.id}
           className="absolute right-2 top-2"
           onToggled={onWishlistToggled}
+        />
+        <CompareButton
+          product={{
+            slug: product.slug,
+            name: product.name,
+            imageUrl: product.primaryImage?.url ?? null,
+            categoryName: product.category.name,
+          }}
+          className="absolute bottom-2 right-2"
         />
         <div className="absolute left-2 top-2 flex flex-col items-start gap-1">
           {!product.inStock ? (

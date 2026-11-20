@@ -45,6 +45,25 @@ export function redactUrlForLog(url: string | undefined): string | undefined {
   return /\/payments\//.test(url.slice(0, q)) ? `${url.slice(0, q)}?[REDACTED]` : url;
 }
 
+/**
+ * GET/HEAD công khai, không phụ thuộc người dùng -> được phép cache (route tự quyết Cache-Control;
+ * Next ISR dựa vào đó cho trang catalog). Path tính theo mount `/api/v1`.
+ * `/products/:slug/reviews/me` cần đăng nhập nên KHÔNG nằm trong danh sách này.
+ */
+const PUBLIC_CACHEABLE =
+  /^\/(?:categories(?:\/[^/]+)?|brands|products(?:\/[^/]+(?:\/(?:reviews|bought-together))?)?|search\/suggest|locations(?:\/.*)?|settings\/public|health(?:\/.*)?)\/?$/i;
+
+export function isPublicCacheable(method: string, path: string): boolean {
+  if (method !== 'GET' && method !== 'HEAD') return false;
+  return PUBLIC_CACHEABLE.test(path);
+}
+
+/** Mặc định `no-store` cho mọi response API; chỉ GET công khai ở trên được bỏ qua. */
+export const apiCacheControl: express.RequestHandler = (req, res, next) => {
+  if (!isPublicCacheable(req.method, req.path)) res.setHeader('Cache-Control', 'no-store');
+  next();
+};
+
 export interface AppOptions {
   /** Số request/phút/IP của rate limit chung (mặc định 100). Chỉ đổi trong test. */
   generalRateLimit?: number;
@@ -104,7 +123,10 @@ export function createApp(options: AppOptions = {}): Express {
 
   // Limiter nhạy cảm: KHÔNG bỏ qua request nội bộ; store riêng mỗi app.
   const limiters = {
-    sensitive: createRateLimiter({ windowMs: 60_000, limit: options.authRateLimit ?? 5 }),
+    sensitive: createRateLimiter({
+      windowMs: 60_000,
+      limit: options.authRateLimit ?? env.AUTH_RATE_LIMIT_PER_MIN,
+    }),
     // Store riêng cho mỗi limiter (không chung với login). Request có Bearer không bị tính.
     guestCancel: createRateLimiter({
       windowMs: 60_000,
@@ -149,6 +171,7 @@ export function createApp(options: AppOptions = {}): Express {
   };
 
   app.use(requestId);
+  app.use(API_PREFIX, apiCacheControl);
   app.use(
     pinoHttp({
       logger,

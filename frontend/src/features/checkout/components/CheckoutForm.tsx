@@ -648,6 +648,7 @@ export function CheckoutForm({
                 maxLength={NOTE_MAX}
                 rows={3}
                 aria-invalid={errors.note ? true : undefined}
+                aria-describedby={errors.note ? "note-error" : undefined}
                 className="w-full rounded-lg border border-coffee-400 bg-white px-3 py-2 text-base text-coffee-900"
                 placeholder="Ví dụ: gọi trước khi giao"
               />

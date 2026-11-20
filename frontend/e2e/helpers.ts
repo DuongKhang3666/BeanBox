@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, type APIRequestContext, type Page } from "@playwright/test";
 
 /** API backend gọi trực tiếp (không qua rewrite của Next). */
-export const API = "http://127.0.0.1:4000/api/v1";
+export const API = `http://127.0.0.1:${process.env.E2E_API_PORT || 4000}/api/v1`;
 
 /** Hậu tố ngẫu nhiên 8 chữ số để SĐT/email test không trùng giữa các lần chạy. */
 export function randomDigits(n = 8): string {

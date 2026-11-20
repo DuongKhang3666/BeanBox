@@ -4,6 +4,7 @@ export const PRIVATE_PATHS = [
   "/api/",
   "/tai-khoan",
   "/gio-hang",
+  "/so-sanh",
   "/thanh-toan",
   "/dat-hang-thanh-cong",
   "/tra-cuu-don-hang",

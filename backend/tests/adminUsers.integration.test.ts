@@ -58,6 +58,11 @@ async function resetCore() {
     where: { id: { in: [adminA.id, adminB.id] } },
     data: { role: 'ADMIN', status: 'ACTIVE', failedLoginCount: 0, lockedUntil: null },
   });
+  // Khóa/hạ quyền thu hồi phiên của đích; access token gắn với phiên nên phải khôi phục phiên.
+  await prisma.refreshToken.updateMany({
+    where: { userId: { in: [adminA.id, adminB.id] } },
+    data: { revokedAt: null },
+  });
   await prisma.user.update({
     where: { id: target.id },
     data: {
@@ -467,7 +472,8 @@ describe('PATCH role', () => {
     expect(await prisma.refreshToken.count({ where: { userId: target.id, revokedAt: null } })).toBe(
       0,
     );
-    expect((await fx.call('get', '/admin/orders', { auth: bearer(access) })).status).toBe(403);
+    // Phiên bị thu hồi cùng lúc đổi role -> access token cũ bị chặn ngay (401, trước đây 403).
+    expect((await fx.call('get', '/admin/orders', { auth: bearer(access) })).status).toBe(401);
     expect((await refreshWith(app, rt)).status).toBe(401);
 
     const log = await prisma.auditLog.findFirstOrThrow({
@@ -519,8 +525,11 @@ describe('đồng thời: luôn còn ít nhất một ADMIN ACTIVE', () => {
         const statuses = [r1.status, r2.status].sort();
         const failed = [r1, r2].find((r) => r.status !== 200)!;
         expect(statuses[0], JSON.stringify([r1.body, r2.body])).toBe(200);
-        expect([403, 409]).toContain(failed.status);
-        expect(['FORBIDDEN', 'LAST_ADMIN', 'ACCOUNT_DISABLED']).toContain(errOf(failed).code);
+        // 401: bên thua có phiên đã bị bên thắng thu hồi trước khi kịp xác thực.
+        expect([401, 403, 409]).toContain(failed.status);
+        expect(['UNAUTHORIZED', 'FORBIDDEN', 'LAST_ADMIN', 'ACCOUNT_DISABLED']).toContain(
+          errOf(failed).code,
+        );
         expect(await activeAdmins()).toBeGreaterThanOrEqual(1);
       }
     } finally {
@@ -540,8 +549,8 @@ describe('đồng thời: luôn còn ít nhất một ADMIN ACTIVE', () => {
         const failed = [r1, r2].filter((r) => r.status !== 200);
         expect([r1, r2].filter((r) => r.status === 200)).toHaveLength(1);
         expect(failed).toHaveLength(1);
-        expect([403, 409]).toContain(failed[0]!.status);
-        expect(['FORBIDDEN', 'LAST_ADMIN']).toContain(errOf(failed[0]!).code);
+        expect([401, 403, 409]).toContain(failed[0]!.status);
+        expect(['UNAUTHORIZED', 'FORBIDDEN', 'LAST_ADMIN']).toContain(errOf(failed[0]!).code);
         expect(await activeAdmins()).toBeGreaterThanOrEqual(1);
       }
     } finally {

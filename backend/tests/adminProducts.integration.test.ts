@@ -252,6 +252,28 @@ describe('sản phẩm', () => {
     expect(bad.status).toBe(400);
   });
 
+  it('slug dành riêng `compare`: từ chối khi tạo (tường minh hoặc sinh từ tên) và khi đổi slug', async () => {
+    const explicit = await post('/admin/products', {
+      name: 'TM4P Reserved',
+      categoryId,
+      slug: 'compare',
+    });
+    expect(explicit.status).toBe(400);
+    expect(errOf(explicit).code).toBe('VALIDATION_ERROR');
+    expect((errOf(explicit).details as Json)[0].field).toBe('slug');
+    expect((errOf(explicit).details as Json)[0].message).toMatch(/dành riêng/);
+
+    const derived = await post('/admin/products', { name: 'Compare', categoryId });
+    expect(derived.status).toBe(400);
+    expect((errOf(derived).details as Json)[0].field).toBe('slug');
+
+    const p = await mkProduct();
+    const renamed = await patch(`/admin/products/${p.id}`, { slug: 'compare' });
+    expect(renamed.status).toBe(400);
+    expect((errOf(renamed).details as Json)[0].field).toBe('slug');
+    expect(await prisma.product.count({ where: { slug: 'compare' } })).toBe(0);
+  });
+
   it('categoryId / brandId không tồn tại -> 400 đúng field', async () => {
     const badCat = await post('/admin/products', {
       name: 'TM4P Danh Muc La',

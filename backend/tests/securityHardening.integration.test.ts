@@ -19,6 +19,7 @@ import { createFixtures, dataOf, errOf, type Who } from './checkoutHelpers.js';
 /** M6 (D-020): kiểm tra cứng hóa: rate limit, header, cookie, CORS, upload, chữ ký, JWT, log, mass assignment. */
 
 const PREFIX = 'tm6x-';
+const SIGNED_SID = 'sid-hardening-test';
 const BIG = 100_000;
 const ALL_BIG = {
   generalRateLimit: BIG,
@@ -62,6 +63,15 @@ beforeAll(async () => {
   staff = await fx.mkUser('staff');
   await prisma.user.update({ where: { id: staff.id }, data: { role: 'STAFF' } });
   customer = await fx.mkUser('cust');
+  // Phiên có thật cho test token tự ký (access token phải gắn với một refresh token còn sống).
+  await prisma.refreshToken.create({
+    data: {
+      userId: customer.id,
+      familyId: SIGNED_SID,
+      tokenHash: `${PREFIX}signed-sid-${customer.id}`,
+      expiresAt: new Date(Date.now() + 3_600_000),
+    },
+  });
 });
 afterAll(async () => {
   await rm(uploadsDir, { recursive: true, force: true });
@@ -324,7 +334,7 @@ describe('JWT và vai trò', () => {
     over: { alg?: string; iss?: string; aud?: string; exp?: string; sid?: string | null } = {},
   ) => {
     const payload: Record<string, unknown> = { role: 'ADMIN' };
-    if (over.sid !== null) payload.sid = over.sid ?? 'sid';
+    if (over.sid !== null) payload.sid = over.sid ?? SIGNED_SID;
     return new SignJWT(payload)
       .setProtectedHeader({ alg: over.alg ?? 'HS256' })
       .setSubject(customer.id)
