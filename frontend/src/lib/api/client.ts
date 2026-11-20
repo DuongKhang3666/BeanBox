@@ -101,6 +101,26 @@ export interface ApiResult<T, M = unknown> {
   meta?: M;
 }
 
+export interface DownloadResult {
+  blob: Blob;
+  filename: string;
+}
+
+export const DEFAULT_DOWNLOAD_NAME = "beanbox-export.csv";
+
+/**
+ * Tên file từ `Content-Disposition: attachment; filename="..."`. Chỉ nhận ký tự an toàn
+ * `[A-Za-z0-9_.-]`; không hợp lệ thì dùng tên mặc định (không bao giờ dùng giá trị thô).
+ */
+export function filenameFromDisposition(
+  header: string | null | undefined,
+  fallback: string = DEFAULT_DOWNLOAD_NAME,
+): string {
+  const m = header ? /filename="([A-Za-z0-9_.-]{1,150})"/.exec(header) : null;
+  const name = m?.[1];
+  return name && !name.startsWith(".") && !name.includes("..") ? name : fallback;
+}
+
 export class ApiClient {
   private readonly baseUrl: string;
   private readonly customFetch?: typeof fetch;
@@ -233,6 +253,32 @@ export class ApiClient {
       }
     }
     return this.parse<T, M>(res);
+  }
+
+  /**
+   * Tải file (GET) với cùng cơ chế xác thực như `request`: Bearer từ memory, tự refresh khi 401
+   * rồi thử lại một lần. Token KHÔNG bao giờ đặt vào URL. Lỗi (JSON theo §1) -> `ApiError`.
+   */
+  async download(path: string, opts: ShortOptions = {}): Promise<DownloadResult> {
+    const o: RequestOptions = {
+      ...opts,
+      method: "GET",
+      headers: { Accept: "text/csv, application/json;q=0.5", ...opts.headers },
+    };
+    let res = await this.send(path, o);
+    if (res.status === 401) {
+      const code = await peekErrorCode(res);
+      if (code === "UNAUTHORIZED") {
+        await this.refresh();
+        res = await this.send(path, o);
+      }
+    }
+    if (!res.ok) {
+      await this.parse<unknown, unknown>(res); // luôn ném ApiError khi !ok
+      throw new ApiError(res.status, "UNKNOWN_ERROR", "Đã có lỗi xảy ra. Vui lòng thử lại.");
+    }
+    const blob = await res.blob();
+    return { blob, filename: filenameFromDisposition(res.headers.get("Content-Disposition")) };
   }
 
   get<T, M = unknown>(path: string, opts: ShortOptions = {}) {

@@ -152,6 +152,8 @@ const ADMIN_ONLY = new Set<string>([
   `GET ${A}/admin/analytics/customers`,
   `GET ${A}/admin/analytics/operations`,
   `GET ${A}/admin/analytics/inventory`,
+  `GET ${A}/admin/analytics/coupons`,
+  `GET ${A}/admin/analytics/export`,
   `GET ${A}/admin/audit-logs`,
   `GET ${A}/admin/settings`,
   `PUT ${A}/admin/settings`,

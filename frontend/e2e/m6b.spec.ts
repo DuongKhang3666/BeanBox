@@ -66,7 +66,7 @@ test("admin xử lý tin nhắn, xem cài đặt và người dùng", async ({ p
   await expect(page.getByRole("heading", { name: "Top khách hàng" })).toBeVisible();
   // Bước 3: mục lục neo, khách hàng, vận hành, tồn kho (cùng phiên admin)
   const toc = page.getByRole("navigation", { name: "Mục lục phân tích" });
-  await expect(toc.getByRole("link")).toHaveCount(6);
+  await expect(toc.getByRole("link")).toHaveCount(7);
   await toc.getByRole("link", { name: "Tồn kho", exact: true }).click();
   await expect(page).toHaveURL(/#an-inventory$/);
   for (const t of ["Khách hàng", "Vận hành", "Tồn kho"]) {
@@ -92,9 +92,30 @@ test("admin xử lý tin nhắn, xem cài đặt và người dùng", async ({ p
     "Không tải được cơ cấu doanh thu",
     "Không tải được top sản phẩm",
     "Không tải được top khách hàng",
+    "Không tải được hiệu quả mã giảm giá",
   ]) {
     await expect(page.getByText(t)).toHaveCount(0);
   }
+  // Bước 4: khối Mã giảm giá và xuất CSV (cùng phiên admin, không đăng nhập thêm)
+  await expect(page.getByRole("heading", { name: "Mã giảm giá", exact: true })).toBeVisible();
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Xuất CSV top sản phẩm" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(
+    /^beanbox-top-products-\d{4}-\d{2}-\d{2}_\d{4}-\d{2}-\d{2}\.csv$/,
+  );
+  const stream = await download.createReadStream();
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+  const bytes = Buffer.concat(chunks);
+  expect([...bytes.subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf]); // BOM UTF-8
+  const text = bytes.toString("utf8");
+  expect(text.split("\r\n")[0]).toBe(
+    "\uFEFFHạng,Sản phẩm,Danh mục,Doanh thu (VND),Số lượng,Số đơn,Ghi chú",
+  );
+  await expect(page.getByRole("alert").filter({ hasText: "Bạn xuất quá nhanh" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Xuất CSV top sản phẩm" })).toBeEnabled();
+
   // Quét a11y trang phân tích: fail khi có vi phạm serious/critical
   await page.waitForLoadState("networkidle");
   const { violations } = await new AxeBuilder({ page })

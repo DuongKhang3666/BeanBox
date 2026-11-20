@@ -98,6 +98,8 @@ const LAST_SOLD = Prisma.sql`(
 export async function getInventory(
   query: InventoryQuery,
   now: Date = new Date(),
+  /** Số dòng tối đa mỗi danh sách: 20 cho response JSON; xuất CSV truyền lớn hơn (D-053). */
+  listLimit: number = INVENTORY_LIST_LIMIT,
 ): Promise<InventoryDto> {
   const slowDays = query.slowDays ?? SLOW_DAYS_DEFAULT;
   const since = new Date(now.getTime() - slowDays * DAY_MS);
@@ -118,14 +120,14 @@ export async function getInventory(
       JOIN "Product" p ON p."id" = v."productId"
       WHERE ${SCOPE} AND v."stock" <= 0
       ORDER BY p."name" ASC, v."name" ASC, v."sku" ASC
-      LIMIT ${INVENTORY_LIST_LIMIT}`,
+      LIMIT ${listLimit}`,
     prisma.$queryRaw<ItemRow[]>`
       SELECT ${COLS}, ${LAST_SOLD} AS last_sold
       FROM "ProductVariant" v
       JOIN "Product" p ON p."id" = v."productId"
       WHERE ${SCOPE} AND v."stock" > 0 AND v."stock" <= v."lowStockThreshold"
       ORDER BY v."stock" ASC, p."name" ASC, v."sku" ASC
-      LIMIT ${INVENTORY_LIST_LIMIT}`,
+      LIMIT ${listLimit}`,
     // Bán chậm: còn hàng, không bán trong `slowDays` ngày gần nhất, loại biến thể tạo trong khoảng đó.
     prisma.$queryRaw<SlowRow[]>`
       WITH slow AS (
@@ -141,7 +143,7 @@ export async function getInventory(
         (SUM(f.stock_value) OVER ())::bigint AS slow_value
       FROM filtered f
       ORDER BY f.stock_value DESC, f.product_name ASC, f.sku ASC
-      LIMIT ${INVENTORY_LIST_LIMIT}`,
+      LIMIT ${listLimit}`,
   ]);
 
   const s = summaryRows[0];

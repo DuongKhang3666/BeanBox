@@ -28,6 +28,7 @@ import {
   TH,
   TH_NUM,
 } from "./AnalyticsBreakdown";
+import { ExportCsvButton } from "./ExportCsvButton";
 import { Kpi } from "./AnalyticsKpi";
 
 const linkClass =
@@ -336,9 +337,12 @@ export function OperationsBlock({
 
   return (
     <section aria-labelledby="an-operations" className={cn(card, "space-y-3")}>
-      <h2 id="an-operations" className={h2}>
-        Vận hành
-      </h2>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <h2 id="an-operations" className={h2}>
+          Vận hành
+        </h2>
+        <ExportCsvButton params={{ report: "operations", from, to }} context="số liệu vận hành" />
+      </div>
       {body}
     </section>
   );

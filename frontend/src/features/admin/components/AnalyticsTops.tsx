@@ -27,6 +27,7 @@ import {
   TH,
   TH_NUM,
 } from "./AnalyticsBreakdown";
+import { ExportCsvButton } from "./ExportCsvButton";
 
 const linkClass =
   "font-medium text-moss-800 underline underline-offset-2 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-moss-600";
@@ -130,9 +131,15 @@ export function TopProductsBlock({ from, to, refresh }: Range) {
 
   return (
     <section aria-labelledby="an-top-products" className={cn(card, "space-y-3")}>
-      <h2 id="an-top-products" className={h2}>
-        Top sản phẩm
-      </h2>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <h2 id="an-top-products" className={h2}>
+          Top sản phẩm
+        </h2>
+        <ExportCsvButton
+          params={{ report: "top-products", from, to, sort }}
+          context="top sản phẩm"
+        />
+      </div>
       <div role="group" aria-label="Sắp xếp top sản phẩm" className="flex flex-wrap gap-2">
         {(
           [
@@ -246,9 +253,15 @@ export function TopCustomersBlock({ from, to, refresh }: Range) {
 
   return (
     <section aria-labelledby="an-top-customers" className={cn(card, "space-y-3")}>
-      <h2 id="an-top-customers" className={h2}>
-        Top khách hàng
-      </h2>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <h2 id="an-top-customers" className={h2}>
+          Top khách hàng
+        </h2>
+        <ExportCsvButton
+          params={{ report: "top-customers", from, to, sort }}
+          context="top khách hàng"
+        />
+      </div>
       <div role="group" aria-label="Sắp xếp top khách hàng" className="flex flex-wrap gap-2">
         {(
           [

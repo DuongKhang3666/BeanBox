@@ -126,6 +126,8 @@ const schema = z
     ORDER_RATE_LIMIT_PER_MIN: z.coerce.number().int().positive().default(10),
     COUPON_RATE_LIMIT_PER_MIN: z.coerce.number().int().positive().default(10),
     QUOTE_RATE_LIMIT_PER_MIN: z.coerce.number().int().positive().default(30),
+    // D-053: xuất CSV phân tích (GET /admin/analytics/export), theo IP.
+    EXPORT_RATE_LIMIT_PER_MIN: z.coerce.number().int().positive().default(10),
     // D-028: captcha bật khi có ĐỦ cả hai; chỉ một trong hai là lỗi cấu hình.
     TURNSTILE_SITE_KEY: z.string().optional(),
     TURNSTILE_SECRET_KEY: z.string().optional(),

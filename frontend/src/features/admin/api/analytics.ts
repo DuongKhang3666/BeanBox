@@ -1,6 +1,8 @@
-import { api } from "@/lib/api/client";
+import { api, type DownloadResult } from "@/lib/api/client";
 import type {
   AnalyticsBreakdown,
+  AnalyticsCoupons,
+  AnalyticsExportReport,
   AnalyticsCustomers,
   AnalyticsGranularity,
   AnalyticsInventory,
@@ -9,6 +11,7 @@ import type {
   AnalyticsTopCustomers,
   AnalyticsTopProducts,
   BreakdownDimension,
+  CouponsSort,
   TopCustomersSort,
   TopProductsSort,
 } from "@/types/admin";
@@ -101,4 +104,29 @@ export async function getAnalyticsInventory(
     signal,
   });
   return data;
+}
+
+/** GET /admin/analytics/coupons (§16.4). Chỉ Admin. */
+export async function getAnalyticsCoupons(
+  q: { from: string; to: string; sort: CouponsSort; limit?: number },
+  signal?: AbortSignal,
+): Promise<AnalyticsCoupons> {
+  const { data } = await api.get<AnalyticsCoupons>("/admin/analytics/coupons", {
+    query: { from: q.from, to: q.to, sort: q.sort, limit: q.limit ?? 10 },
+    signal,
+  });
+  return data;
+}
+
+/** Tham số xuất CSV; chỉ gửi các khóa có giá trị (server từ chối tham số không áp dụng, §16.4). */
+export type ExportParams = { report: AnalyticsExportReport } & Partial<
+  Record<
+    "from" | "to" | "granularity" | "dimension" | "sort" | "limit" | "list" | "slowDays",
+    string | number
+  >
+>;
+
+/** GET /admin/analytics/export (§16.4): tải CSV bằng Bearer (không đặt token trong URL). */
+export function exportAnalyticsCsv(q: ExportParams, signal?: AbortSignal): Promise<DownloadResult> {
+  return api.download("/admin/analytics/export", { query: { ...q }, signal });
 }

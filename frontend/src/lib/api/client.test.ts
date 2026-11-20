@@ -1,6 +1,8 @@
 import {
   ApiClient,
   ApiError,
+  DEFAULT_DOWNLOAD_NAME,
+  filenameFromDisposition,
   SESSION_FLAG_KEY,
   clearSession,
   setSession,
@@ -263,5 +265,142 @@ describe("ApiClient", () => {
     const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
     expect(init.body).toBe('{"a":1}');
     expect((init.headers as Record<string, string>)["Content-Type"]).toBe("application/json");
+  });
+});
+
+const BODY = ["\uFEFFHạng,Sản phẩm", ""].join("\r\n");
+const csvRes = (
+  disposition:
+    string | null = 'attachment; filename="beanbox-top-products-2026-10-22_2026-11-20.csv"',
+) =>
+  new Response(BODY, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/csv; charset=utf-8",
+      ...(disposition ? { "Content-Disposition": disposition } : {}),
+    },
+  });
+
+describe("ApiClient.download", () => {
+  it("gắn Bearer ở header (không ở URL), query đúng, trả blob và tên file", async () => {
+    tokenStore.set("tok-secret");
+    const fetchImpl = vi.fn(async () => csvRes());
+    const client = new ApiClient({
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      getCartToken: () => null,
+    });
+    const r = await client.download("/admin/analytics/export", {
+      query: { report: "top-products", from: "2026-10-22", to: "2026-11-20", sort: undefined },
+    });
+    expect(r.filename).toBe("beanbox-top-products-2026-10-22_2026-11-20.csv");
+    expect(r.blob).toBeInstanceOf(Blob);
+    expect(await r.blob.text()).toContain("Hạng,Sản phẩm");
+    const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe(
+      "/api/v1/admin/analytics/export?report=top-products&from=2026-10-22&to=2026-11-20",
+    );
+    expect(url).not.toContain("tok-secret");
+    expect(url.toLowerCase()).not.toContain("token");
+    expect(init.method).toBe("GET");
+    const headers = init.headers as Record<string, string>;
+    expect(headers.Authorization).toBe("Bearer tok-secret");
+    expect(headers.Accept).toContain("text/csv");
+  });
+
+  it("401 UNAUTHORIZED: refresh rồi thử lại một lần với token mới", async () => {
+    tokenStore.set("old");
+    let exportCalls = 0;
+    const fetchImpl = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith("/auth/refresh")) return json(200, { data: { accessToken: "new" } });
+      exportCalls++;
+      const auth = (init?.headers as Record<string, string>).Authorization;
+      return auth === "Bearer new" ? csvRes() : unauthorized();
+    });
+    const client = new ApiClient({
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      getCartToken: () => null,
+    });
+    const r = await client.download("/admin/analytics/export", { query: { report: "overview" } });
+    expect(r.filename).toMatch(/\.csv$/);
+    expect(exportCalls).toBe(2);
+    expect(tokenStore.get()).toBe("new");
+    for (const call of fetchImpl.mock.calls as unknown as Array<[string]>) {
+      expect(call[0]).not.toContain("new");
+      expect(call[0]).not.toContain("old");
+    }
+  });
+
+  it("vẫn 401 sau refresh thì ném ApiError (không lặp vô hạn)", async () => {
+    tokenStore.set("old");
+    const fetchImpl = vi.fn(async (url: string) =>
+      url.endsWith("/auth/refresh") ? json(200, { data: { accessToken: "new" } }) : unauthorized(),
+    );
+    const client = new ApiClient({
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      getCartToken: () => null,
+    });
+    await expect(client.download("/admin/analytics/export")).rejects.toMatchObject({
+      status: 401,
+      code: "UNAUTHORIZED",
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+  });
+
+  it("lỗi JSON (429) thành ApiError có details", async () => {
+    const fetchImpl = vi.fn(async () =>
+      json(429, {
+        error: { code: "RATE_LIMITED", message: "Chậm lại", details: { retryAfterSec: 42 } },
+      }),
+    );
+    const client = new ApiClient({
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      getCartToken: () => null,
+    });
+    const err = await client.download("/admin/analytics/export").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err).toMatchObject({
+      status: 429,
+      code: "RATE_LIMITED",
+      details: { retryAfterSec: 42 },
+    });
+  });
+
+  it("lỗi mạng thành NETWORK_ERROR", async () => {
+    const client = new ApiClient({
+      fetchImpl: (async () => {
+        throw new TypeError("failed");
+      }) as unknown as typeof fetch,
+      getCartToken: () => null,
+    });
+    await expect(client.download("/x")).rejects.toMatchObject({ code: "NETWORK_ERROR" });
+  });
+
+  it("thiếu Content-Disposition: dùng tên mặc định", async () => {
+    const client = new ApiClient({
+      fetchImpl: (async () => csvRes(null)) as unknown as typeof fetch,
+      getCartToken: () => null,
+    });
+    expect((await client.download("/x")).filename).toBe(DEFAULT_DOWNLOAD_NAME);
+  });
+});
+
+describe("filenameFromDisposition", () => {
+  it("chỉ nhận ký tự an toàn", () => {
+    expect(filenameFromDisposition('attachment; filename="a-b_c.1.csv"')).toBe("a-b_c.1.csv");
+    for (const bad of [
+      'attachment; filename="../../etc/passwd"',
+      'attachment; filename="a b.csv"',
+      'attachment; filename="a/b.csv"',
+      'attachment; filename="a\b.csv"',
+      'attachment; filename=""',
+      'attachment; filename="..csv"',
+      'attachment; filename=".htaccess"',
+      "attachment; filename=unquoted.csv",
+      "inline",
+    ]) {
+      expect(filenameFromDisposition(bad), bad).toBe(DEFAULT_DOWNLOAD_NAME);
+    }
+    expect(filenameFromDisposition(null)).toBe(DEFAULT_DOWNLOAD_NAME);
+    expect(filenameFromDisposition(undefined, "x.csv")).toBe("x.csv");
   });
 });

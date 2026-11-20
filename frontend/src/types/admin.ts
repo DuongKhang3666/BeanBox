@@ -775,3 +775,51 @@ export interface AnalyticsInventory {
   slowDays: number;
   generatedAt: string;
 }
+
+/** Theo docs/api-contract.md §16.4 (Bước 4: mã giảm giá, xuất CSV). */
+
+export type CouponsSort = "revenue" | "uses" | "discount";
+
+export interface AnalyticsCouponItem {
+  /** null = mã đã bị xóa (chỉ còn snapshot mã trên đơn). */
+  couponId: string | null;
+  code: string;
+  type: "PERCENT" | "FIXED" | "FREESHIP" | null;
+  isActive: boolean | null;
+  deleted: boolean;
+  uses: number;
+  discount: number;
+  revenue: number;
+  aov: number;
+  previousUses: number;
+  previousRevenue: number;
+  changePct: number | null;
+}
+
+export interface AnalyticsCoupons {
+  range: AnalyticsRangeInfo;
+  previousRange: { from: string; to: string };
+  sort: CouponsSort;
+  limit: number;
+  summary: {
+    ordersWithCoupon: AnalyticsCompared;
+    ordersWithoutCoupon: AnalyticsCompared;
+    couponRate: AnalyticsComparedRate;
+    aovWithCoupon: AnalyticsCompared;
+    aovWithoutCoupon: AnalyticsCompared;
+    totalDiscount: AnalyticsCompared;
+  };
+  items: AnalyticsCouponItem[];
+  generatedAt: string;
+}
+
+export type AnalyticsExportReport =
+  | "overview"
+  | "series"
+  | "breakdown"
+  | "top-products"
+  | "top-customers"
+  | "coupons"
+  | "customers"
+  | "operations"
+  | "inventory";

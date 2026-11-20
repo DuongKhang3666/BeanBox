@@ -35,6 +35,7 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   "review.show": "Hiện đánh giá",
   "review.reply": "Trả lời đánh giá",
   "review.reply_delete": "Xóa trả lời đánh giá",
+  "analytics.export": "Xuất CSV phân tích",
 };
 
 export const auditActionLabel = (action: string) => AUDIT_ACTION_LABEL[action] ?? action;
@@ -49,6 +50,7 @@ export const AUDIT_ENTITY_LABEL: Record<string, string> = {
   Coupon: "Mã giảm giá",
   Review: "Đánh giá",
   Payment: "Thanh toán",
+  analytics: "Phân tích kinh doanh",
 };
 
 export const auditEntityLabel = (entity: string) => AUDIT_ENTITY_LABEL[entity] ?? entity;

@@ -22,12 +22,18 @@ import {
   TH,
   TH_NUM,
 } from "./AnalyticsBreakdown";
+import { ExportCsvButton } from "./ExportCsvButton";
 
 const linkClass =
   "font-medium text-moss-800 underline underline-offset-2 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-moss-600";
 
 export const SLOW_DAYS_OPTIONS: ReadonlyArray<SlowDays> = [30, 60, 90];
 type Tab = "outOfStock" | "lowStock" | "slowMovers";
+const TAB_LABEL: Record<Tab, string> = {
+  outOfStock: "Hết hàng",
+  lowStock: "Sắp hết",
+  slowMovers: "Bán chậm",
+};
 
 /** key = `slowDays|refresh`. */
 function load(key: string): Promise<AnalyticsInventory> {
@@ -233,11 +239,21 @@ export function InventoryBlock({ refresh }: { refresh: number }) {
 
   return (
     <section aria-labelledby="an-inventory" className={cn(card, "space-y-3")}>
-      <div>
-        <h2 id="an-inventory" className={h2}>
-          Tồn kho
-        </h2>
-        <p className="text-sm text-coffee-800">Số liệu hiện tại, không theo khoảng ngày.</p>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h2 id="an-inventory" className={h2}>
+            Tồn kho
+          </h2>
+          <p className="text-sm text-coffee-800">Số liệu hiện tại, không theo khoảng ngày.</p>
+        </div>
+        <ExportCsvButton
+          params={{
+            report: "inventory",
+            list: tab,
+            ...(tab === "slowMovers" ? { slowDays } : {}),
+          }}
+          context={`tồn kho: ${TAB_LABEL[tab].toLowerCase()}`}
+        />
       </div>
       {body}
     </section>

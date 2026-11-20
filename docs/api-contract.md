@@ -1,6 +1,7 @@
 # BeanBox – API Contract
 
-> Phiên bản 0.16 · 2026-11-20 · **Nguồn sự thật cho FE và BE.** Đổi contract phải sửa file này trước và nêu trong báo cáo.
+> Phiên bản 0.17 · 2026-11-20 · **Nguồn sự thật cho FE và BE.** Đổi contract phải sửa file này trước và nêu trong báo cáo.
+> Thay đổi 0.17 (D-053, phân tích kinh doanh Bước 4): §16.4 thành đặc tả đầy đủ cho `GET /admin/analytics/coupons?from&to&sort&limit` (hiệu quả mã giảm giá, chỉ ADMIN) và `GET /admin/analytics/export?report=...` (xuất CSV UTF-8 có BOM, chống CSV injection, chỉ ADMIN); thêm action audit `analytics.export` (§12.0, §14.4); limiter riêng cho xuất CSV 10/phút/IP, env `EXPORT_RATE_LIMIT_PER_MIN` (§1); `Content-Disposition` được expose qua CORS. Không đổi §14.3, §16.1-16.3 hay shape hiện có; không cần migration. Ghi chú: tham số của `export` được kiểm chặt (tham số không áp dụng cho báo cáo -> 400), khác quy ước bỏ qua tham số lạ của các endpoint JSON.
 > Thay đổi 0.16 (D-052, phân tích kinh doanh Bước 3): §16.3 thành đặc tả đầy đủ cho `GET /admin/analytics/customers?from&to`, `GET /admin/analytics/operations?from&to`, `GET /admin/analytics/inventory?slowDays` (chỉ ADMIN, no-store; hai endpoint đầu dùng cùng khoảng ngày và kỳ trước với §16.1, endpoint tồn kho là ảnh chụp hiện tại); phần "dự kiến" Bước 4 dời sang §16.4. Không đổi §14.3, §16.1, §16.2 hay shape hiện có; không cần migration (đã kiểm `EXPLAIN`, chưa thêm index).
 > Thay đổi 0.15 (D-051, phân tích kinh doanh Bước 2): §16.2 thành đặc tả đầy đủ cho `GET /admin/analytics/breakdown?dimension&from&to`, `GET /admin/analytics/top-products?from&to&sort&limit`, `GET /admin/analytics/top-customers?from&to&sort&limit` (chỉ ADMIN, no-store, cùng khoảng ngày và kỳ trước với §16.1); §16.3 ghi dự kiến Bước 3-4. Không đổi §14.3, §16.1 hay shape hiện có; không cần migration.
 > Thay đổi 0.14 (D-049, D-050, phân tích kinh doanh): thêm §16 "Phân tích kinh doanh (Admin)": `GET /admin/analytics/overview?from&to&granularity` (§16.1, chỉ ADMIN, KPI so với kỳ trước + chuỗi theo ngày/tuần/tháng); §16.2 ghi dự kiến các endpoint Bước 2-4 (Bước 2 đã triển khai ở 0.15). Không đổi §14.3 hay shape hiện có; cần migration index (`Order(paidAt)`, `Payment(refundedAt)`, không đổi cột).
@@ -44,7 +45,7 @@
     - 14.9 Cài đặt cửa hàng · 14.10 Quản lý người dùng · 14.11 Liên hệ · 14.12 CSP · 14.13 Còn hoãn
 15. [Câu hỏi mở / Giả định](#15-câu-hỏi-mở--giả-định)
 16. [Phân tích kinh doanh (Admin)](#16-phân-tích-kinh-doanh-admin)
-    - 16.1 Tổng quan · 16.2 Cơ cấu doanh thu, top sản phẩm, top khách hàng · 16.3 Khách hàng, vận hành, tồn kho · 16.4 Dự kiến
+    - 16.1 Tổng quan · 16.2 Cơ cấu doanh thu, top sản phẩm, top khách hàng · 16.3 Khách hàng, vận hành, tồn kho · 16.4 Mã giảm giá và xuất CSV
 
 ## 1. Quy ước chung
 
@@ -93,7 +94,7 @@ Phân trang: query `page` (>= 1, mặc định 1), `pageSize` (1–100, mặc đ
 
 **Idempotency.** `POST /orders` bắt buộc `Idempotency-Key: <UUID v4>` (chỉ chấp nhận UUID v4, so khớp không phân biệt hoa thường, lưu lowercase). Thiếu/sai định dạng -> 400 `VALIDATION_ERROR` (`details[0].field = "Idempotency-Key"`). Quy tắc `requestFingerprint` và replay: xem §9.2.
 
-**Rate limit.** Chung 100 req/phút/IP (mặc định; chỉnh được bằng env `GENERAL_RATE_LIMIT_PER_MIN`, số nguyên dương; E2E/CI đặt 1000, production giữ mặc định). Nhóm nhạy cảm 5 req/phút/IP (chỉnh được bằng env `AUTH_RATE_LIMIT_PER_MIN`, số nguyên dương, mặc định 5; E2E/CI đặt 30, production giữ 5): `POST /auth/login`, `/auth/register`, `/auth/forgot-password`, `/auth/reset-password`, `/auth/change-password`, `POST /orders/:code/cancel` (guest), `GET /orders/track` (10/phút). Ba limiter riêng cho mã giảm giá và đặt đơn (D-011): `POST /cart/apply-coupon` 10/phút, `POST /checkout/quote` 30/phút, `POST /orders` 10/phút (từ 0.6 cấu hình được qua env `COUPON_RATE_LIMIT_PER_MIN`, `QUOTE_RATE_LIMIT_PER_MIN`, `ORDER_RATE_LIMIT_PER_MIN`, mặc định giữ nguyên, D-016); endpoint thanh toán có limiter riêng (§13); mỗi limiter có store riêng, theo IP, kể cả request có Bearer (và không miễn `X-Internal-Secret`), đặt trước bước xác thực. Vượt -> 429 `RATE_LIMITED` + header `Retry-After` (giây) và `error.details: { "retryAfterSec": <int> }` (cùng giá trị với header). Response có `RateLimit-Limit/Remaining/Reset`. IP client xác định theo `TRUST_PROXY` (D-009); request SSR nội bộ có `X-Internal-Secret` hợp lệ được miễn rate limit chung, không miễn nhóm nhạy cảm (xem `architecture.md` §3).
+**Rate limit.** Chung 100 req/phút/IP (mặc định; chỉnh được bằng env `GENERAL_RATE_LIMIT_PER_MIN`, số nguyên dương; E2E/CI đặt 1000, production giữ mặc định). Nhóm nhạy cảm 5 req/phút/IP (chỉnh được bằng env `AUTH_RATE_LIMIT_PER_MIN`, số nguyên dương, mặc định 5; E2E/CI đặt 30, production giữ 5): `POST /auth/login`, `/auth/register`, `/auth/forgot-password`, `/auth/reset-password`, `/auth/change-password`, `POST /orders/:code/cancel` (guest), `GET /orders/track` (10/phút). Ba limiter riêng cho mã giảm giá và đặt đơn (D-011): `POST /cart/apply-coupon` 10/phút, `POST /checkout/quote` 30/phút, `POST /orders` 10/phút (từ 0.6 cấu hình được qua env `COUPON_RATE_LIMIT_PER_MIN`, `QUOTE_RATE_LIMIT_PER_MIN`, `ORDER_RATE_LIMIT_PER_MIN`, mặc định giữ nguyên, D-016); endpoint thanh toán có limiter riêng (§13); `GET /admin/analytics/export` có limiter riêng 10/phút/IP (env `EXPORT_RATE_LIMIT_PER_MIN`, đặt sau bước xác thực admin, §16.4); mỗi limiter có store riêng, theo IP, kể cả request có Bearer (và không miễn `X-Internal-Secret`), đặt trước bước xác thực. Vượt -> 429 `RATE_LIMITED` + header `Retry-After` (giây) và `error.details: { "retryAfterSec": <int> }` (cùng giá trị với header). Response có `RateLimit-Limit/Remaining/Reset`. IP client xác định theo `TRUST_PROXY` (D-009); request SSR nội bộ có `X-Internal-Secret` hợp lệ được miễn rate limit chung, không miễn nhóm nhạy cảm (xem `architecture.md` §3).
 
 **Cache.** Mọi response dưới `/api/v1` mặc định có `Cache-Control: no-store` (kể cả lỗi 4xx/5xx), để dữ liệu riêng tư (`/auth/*`, `/me*`, `/cart*`, `/checkout/*`, `/orders*`, `/payments/*`, `/contact`, `/admin/*`, `GET /products/:slug/reviews/me`, wishlist...) không bị cache trung gian/trình duyệt. Ngoại lệ: các GET/HEAD công khai không phụ thuộc người dùng không bị ép header: `/categories`, `/categories/:slug`, `/brands`, `/products`, `/products/:slug`, `GET /products/compare`, `GET /products/:slug/reviews` (danh sách công khai), `/search/suggest`, `/locations/*`, `/settings/public`, `/health*`; các route này tự quyết `Cache-Control` (ví dụ `public, max-age=300` ở `/settings/public`), và Next.js ISR của storefront dựa vào đó. `/uploads` (ảnh tĩnh) không thuộc nhóm này (`max-age` 1 giờ).
 
@@ -1130,8 +1131,8 @@ Quyền: S = Staff+ (STAFF hoặc ADMIN), AD = Admin. Quyết định nền: D-0
 
 - **Chặn quyền ở cấp router.** Mọi `/admin/*` mount dưới một router dùng `requireAuth` + `requireStaff`; role luôn đọc lại từ DB mỗi request (§1). Thiếu/sai token -> 401 `UNAUTHORIZED`; CUSTOMER -> 403 `FORBIDDEN`; user DISABLED -> 403 `ACCOUNT_DISABLED`. Endpoint ghi chú **Admin** thêm `requireAdmin` (STAFF -> 403 `FORBIDDEN`).
 - Admin xem được `stock` chính xác và `id` nội bộ. Phân trang theo §1. Tài nguyên không tồn tại -> 404 `NOT_FOUND`. ID trong path phải là chuỗi 1–50 ký tự `[a-z0-9]` (cuid), sai định dạng -> 404.
-- **Audit log (FR-ADM-11).** MỌI thao tác ghi của admin ghi 1 dòng `AuditLog` trong CÙNG transaction với thay đổi: `actorId`, `action`, `entity`, `entityId`, `diff`, `ip` (`req.ip`). `diff` chỉ chứa trường thay đổi, dạng `{ "field": [old, new] }`; tạo mới: `{ "field": [null, new] }` cho các trường chính. Không chứa mật khẩu/token; với đơn hàng không ghi địa chỉ/SĐT. Danh sách `action`: `order.status`, `inventory.adjust`, `product.create|update|delete`, `variant.create|update|delete`, `image.create|update|delete|reorder`, `category.create|update|delete`, `brand.create|update|delete`, `upload.create`; từ 0.6 thêm `coupon.create|update|delete`, `payment.refund` (§13) và `payment.late` (actorId null, hệ thống ghi, §13.5); từ 0.7 thêm `review.hide|show|reply|reply_delete` (§14.1) và `product.restore` (§14.6); từ 0.8 thêm `settings.update` (§14.9), `user.status|role` (§14.10) và `contact.update` (§14.11).
-- **Rate limit.** Chung 100/phút/IP (§1); `POST /admin/uploads` thêm 30/phút/IP (store riêng).
+- **Audit log (FR-ADM-11).** MỌI thao tác ghi của admin ghi 1 dòng `AuditLog` trong CÙNG transaction với thay đổi: `actorId`, `action`, `entity`, `entityId`, `diff`, `ip` (`req.ip`). `diff` chỉ chứa trường thay đổi, dạng `{ "field": [old, new] }`; tạo mới: `{ "field": [null, new] }` cho các trường chính. Không chứa mật khẩu/token; với đơn hàng không ghi địa chỉ/SĐT. Danh sách `action`: `order.status`, `inventory.adjust`, `product.create|update|delete`, `variant.create|update|delete`, `image.create|update|delete|reorder`, `category.create|update|delete`, `brand.create|update|delete`, `upload.create`; từ 0.6 thêm `coupon.create|update|delete`, `payment.refund` (§13) và `payment.late` (actorId null, hệ thống ghi, §13.5); từ 0.7 thêm `review.hide|show|reply|reply_delete` (§14.1) và `product.restore` (§14.6); từ 0.8 thêm `settings.update` (§14.9), `user.status|role` (§14.10) và `contact.update` (§14.11); từ 0.17 thêm `analytics.export` (entity `analytics`, §16.4).
+- **Rate limit.** Chung 100/phút/IP (§1); `POST /admin/uploads` thêm 30/phút/IP (store riêng); từ 0.17 `GET /admin/analytics/export` thêm 10/phút/IP (store riêng, §16.4).
 - **Không cache.** Mọi response admin có `Cache-Control: no-store`.
 - Ngày lọc `from`, `to` dạng `YYYY-MM-DD`, tính theo giờ Việt Nam (UTC+7), bao gồm cả hai đầu, yêu cầu `from <= to`, sai -> 400 `VALIDATION_ERROR`.
 
@@ -1794,6 +1795,8 @@ Mục 14.1–14.8 thuộc M6; 14.9–14.12 thuộc M6b (D-021..D-024); chỉ new
 }
 ```
 
+Từ 0.17 có thêm action `analytics.export` (xuất CSV phân tích, §16.4): `entity = analytics`, `entityId` = tên báo cáo, `diff` = `{ "<tham số>": [null, <giá trị>] }` gồm `report`, `from`, `to`, `sort`, `limit`, `dimension`, `list`, `slowDays`, `rows` (số dòng); không chứa tên/email khách. Bộ lọc nhóm action `analytics.` có ở trang Nhật ký.
+
 `actor` là `null` khi hệ thống ghi (`actorId` null) hoặc tài khoản đã bị xóa. Chỉ Admin xem (D-019); `diff` đã không chứa bí mật/PII theo §12.0, API trả nguyên.
 
 ### 14.5 Redirect khi đổi slug (D-018)
@@ -2293,8 +2296,78 @@ Từ 0.16 (D-052). Ba endpoint chỉ ADMIN, `no-store`, lỗi 400 theo §1 (`det
 - Item: `stockValue` = `stock x price` khi `stock > 0`, ngược lại 0; `lastSoldAt` = `createdAt` của đơn bán gần nhất của biến thể (mọi thời điểm), `null` nếu chưa từng bán.
 - `slowDays` tính từ thời điểm gọi (không theo ngày lịch VN).
 
-### 16.4 Dự kiến (chưa triển khai; Bước 4 chờ duyệt)
+### 16.4 Mã giảm giá và xuất CSV (Bước 4, đã triển khai)
 
-Chỉ để định hướng, chưa phải contract: đặc tả đầy đủ sẽ thêm khi triển khai.
+Từ 0.17 (D-053). Hai endpoint chỉ ADMIN (`requireAdmin` ở cấp router: chưa đăng nhập 401 `UNAUTHORIZED`, STAFF/CUSTOMER 403 `FORBIDDEN`), `no-store`, lỗi 400 theo §1 (`details: [{ field, message }]`). Dùng **cùng `from`/`to`, mặc định, giới hạn và kỳ trước** với §16.1 (D-050) và **cùng tập đơn nguồn** (D-019: `paymentStatus = PAID`, `status` không thuộc {`CANCELLED`, `RETURNED`}, theo `paidAt` ngày VN). Không đổi §16.1-16.3 hay `db-schema.md` (không có migration).
 
-- Bước 4: hiệu quả mã giảm giá và `GET /admin/analytics/export?report=overview|breakdown|top-products|top-customers|coupons&from&to` (CSV UTF-8 có BOM, chống CSV injection, ghi audit `analytics.export`, rate limit riêng).
+#### `GET /admin/analytics/coupons?from&to&sort=revenue|uses|discount&limit=1..50`
+
+`sort` mặc định `revenue`, `limit` mặc định 10 (chuỗi chữ số 1..50; `0`, `51`, `abc`, tham số lặp -> 400, `field: "limit"`/`"sort"`). Tham số lạ bị bỏ qua như các endpoint §16.2.
+
+```json
+{
+  "data": {
+    "range": { "from": "2026-10-22", "to": "2026-11-20", "days": 30, "timezone": "Asia/Ho_Chi_Minh" },
+    "previousRange": { "from": "2026-09-22", "to": "2026-10-21" },
+    "sort": "revenue",
+    "limit": 10,
+    "summary": {
+      "ordersWithCoupon": { "current": 4, "previous": 2, "changePct": 100 },
+      "ordersWithoutCoupon": { "current": 2, "previous": 1, "changePct": 100 },
+      "couponRate": { "current": 0.6667, "previous": 0.6667, "changePts": 0 },
+      "aovWithCoupon": { "current": 187500, "previous": 90000, "changePct": 108.3 },
+      "aovWithoutCoupon": { "current": 200000, "previous": 50000, "changePct": 300 },
+      "totalDiscount": { "current": 95000, "previous": 18000, "changePct": 427.8 }
+    },
+    "items": [
+      {
+        "couponId": "cm...", "code": "KHAITRUONG10", "type": "PERCENT", "isActive": true, "deleted": false,
+        "uses": 2, "discount": 50000, "revenue": 500000, "aov": 250000,
+        "previousUses": 1, "previousRevenue": 100000, "changePct": 400
+      },
+      {
+        "couponId": null, "code": "GIAMNHE", "type": null, "isActive": null, "deleted": true,
+        "uses": 1, "discount": 15000, "revenue": 150000, "aov": 150000,
+        "previousUses": 0, "previousRevenue": 0, "changePct": null
+      }
+    ],
+    "generatedAt": "2026-11-20T05:00:00.000Z"
+  }
+}
+```
+
+- **Đơn có mã** = đơn có `couponId` hoặc `couponCode`. `summary` tính trên toàn bộ tập đơn của kỳ (không bị cắt bởi `limit`): `ordersWithCoupon + ordersWithoutCoupon` = `kpis.paidOrders` của §16.1 cùng khoảng ngày; `couponRate` = `ordersWithCoupon / (ordersWithCoupon + ordersWithoutCoupon)` (0..1, 4 chữ số; 0 khi không có đơn; `changePts` `null` khi kỳ trước không có đơn); `aovWithCoupon`/`aovWithoutCoupon` = `round(Σ grandTotal / số đơn)` của hai nhóm (0 khi không có đơn); `totalDiscount` = Σ "giảm" của mọi đơn có mã (định nghĩa ở dưới).
+- **`items` gộp theo mã**: theo `couponId`; đơn có `couponId` null nhưng `couponCode` khác null (mã đã bị xóa, `onDelete: SetNull`) gộp theo `couponCode` snapshot với `couponId: null`, `deleted: true`, `type: null`, `isActive: null`. `code` = `Coupon.code` hiện tại, thiếu thì `couponCode` trên đơn. Chỉ liệt kê mã có ít nhất một đơn **trong kỳ này** (mã chỉ có ở kỳ trước không hiện). Sắp theo `sort` giảm dần, rồi lần lượt `uses`/`revenue`/khóa gộp để ổn định.
+- `uses` = số đơn; `revenue` = Σ `grandTotal` của các đơn dùng mã (đã trừ giảm giá, gồm phí ship); `aov` = `round(revenue / uses)`; `previousUses`, `previousRevenue` cho kỳ trước; `changePct` so `revenue` với `previousRevenue` (`null` khi kỳ trước = 0).
+- **"Giảm" của mã** (`discount`, `totalDiscount`) = `Order.discountTotal`; với mã loại `FREESHIP` cộng thêm `Order.shippingDiscount`. Đánh đổi: `shippingDiscount` có thể gồm cả miễn phí ship theo ngưỡng của cửa hàng (không phải do mã) khi đơn dùng mã `FREESHIP`; với mã đã xóa không biết loại nên chỉ tính `discountTotal` (mã FREESHIP đã xóa hiện giảm 0).
+- Truy vấn: 2 câu SQL `$queryRaw` tham số hóa chạy song song (tổng hợp và theo mã); `sort` chọn mảnh `ORDER BY` cố định trong code (không nối chuỗi từ input), không N+1.
+
+#### `GET /admin/analytics/export?report=...` (CSV)
+
+Trả file CSV thay vì JSON. `report` bắt buộc, một trong `overview | series | breakdown | top-products | top-customers | coupons | customers | operations | inventory`. **Mỗi báo cáo chỉ nhận đúng tham số của nó; tham số khác hoặc lặp -> 400 `VALIDATION_ERROR`** (chặt hơn các endpoint JSON, vì tham số được ghi vào audit):
+
+| report | tham số |
+| --- | --- |
+| `overview`, `series` | `from`, `to`, `granularity` (như §16.1; chỉ `series` dùng) |
+| `breakdown` | `dimension` (bắt buộc: `category\|brand\|paymentMethod\|shippingMethod\|province`), `from`, `to` |
+| `top-products` | `from`, `to`, `sort=revenue\|quantity` (mặc định `revenue`), `limit` 1..200 (mặc định 100) |
+| `top-customers` | `from`, `to`, `sort=revenue\|orders` (mặc định `revenue`), `limit` 1..200 (mặc định 100) |
+| `coupons` | `from`, `to`, `sort=revenue\|uses\|discount` (mặc định `revenue`), `limit` 1..200 (mặc định 100) |
+| `customers`, `operations` | `from`, `to` |
+| `inventory` | `list=outOfStock\|lowStock\|slowMovers` (bắt buộc), `slowDays` 7..365 (mặc định 30; chỉ ý nghĩa với `slowMovers`); không nhận `from`/`to`; tối đa 1000 dòng |
+
+- **Nguồn dữ liệu**: CHÍNH các hàm service của response JSON tương ứng (không có truy vấn thứ hai); chỉ khác `limit` (xuất tới 200 dòng, tồn kho tới 1000 dòng; response JSON hiện có không đổi). Số liệu CSV khớp JSON cùng tham số.
+- **Định dạng**: UTF-8 **có BOM** (`﻿`), phân tách dấu phẩy, xuống dòng CRLF (kể cả dòng cuối), RFC 4180 (trường chứa `,` `"` CR LF được bọc `"`, `"` nhân đôi). Tiền (VND) và số đếm là **số nguyên không định dạng** (ví dụ `1480000`); tỷ lệ là **phần trăm số thập phân dấu chấm** (ví dụ `16.7`, 2 chữ số thập phân tối đa); giờ 1 chữ số thập phân; giá trị `null` -> ô trống; ngày `YYYY-MM-DD`, thời điểm ISO 8601 UTC. Excel có locale thập phân dấu phẩy có thể cần Data > From Text/CSV để đọc số thập phân; số nguyên không bị ảnh hưởng.
+- **Chống CSV injection**: ô **số** do server sinh từ `number` hữu hạn ghi thẳng (số âm như `-12.5` vẫn là số; không hữu hạn -> ô trống); ô **chuỗi** (tên sản phẩm, tên/email khách, mã giảm giá, nhãn...) nếu **ký tự đầu** là `=`, `+`, `-`, `@`, tab hoặc CR thì thêm tiền tố `'`, rồi mới áp quy tắc bọc ngoặc. Không trim dữ liệu: chỉ xét ký tự đầu của chuỗi gốc (chuỗi bắt đầu bằng khoảng trắng rồi tới ký tự nguy hiểm không bị đổi).
+- **Header**: `Content-Type: text/csv; charset=utf-8`; `Content-Disposition: attachment; filename="beanbox-<report>[-<dimension|list>]-<from>_<to>.csv"` (dimension/list dạng kebab-case, ví dụ `beanbox-breakdown-payment-method-2026-10-22_2026-11-20.csv`; `inventory` dùng ngày hôm nay VN thay cho khoảng: `beanbox-inventory-out-of-stock-2026-11-20.csv`). Tên file chỉ dựng từ giá trị đã validate (enum + ngày) và kiểm khớp `[a-z0-9_.-]`, không bao giờ từ input thô. `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`. `Content-Disposition` được expose qua CORS.
+- **Lỗi**: 400/401/403/429 trả JSON theo §1 (không phải CSV).
+- **Audit**: mỗi lần xuất **thành công** ghi đúng 1 dòng `AuditLog`: `action = analytics.export`, `entity = analytics`, `entityId` = tên `report`, `actorId` = admin, `ip` = `req.ip`, `diff` = `{ "<tham số>": [null, <giá trị>] }` cho `report`, `from`/`to` (đã chuẩn hóa), `granularity` (series), `dimension`, `list`, `sort`, `limit`, `slowDays` (khi áp dụng) và `rows` (số dòng dữ liệu, không kể dòng tiêu đề). Không ghi tên/email khách. Audit được ghi **trước** khi gửi body và là fail-closed: ghi audit lỗi -> 500, không trả file. Không có dòng audit khi 400/401/403/429.
+- **Rate limit riêng**: 10 lần/phút/IP (env `EXPORT_RATE_LIMIT_PER_MIN`, số nguyên dương, mặc định 10), store riêng, chỉ áp cho `/admin/analytics/export`, đặt **sau** `requireAdmin` (request chưa xác thực hoặc không đủ quyền không tiêu hạn mức xuất; request 400 vẫn tính). Vượt -> 429 `RATE_LIMITED` + `Retry-After` và `details.retryAfterSec` như §1.
+- **Cột từng báo cáo** (tiêu đề tiếng Việt):
+  - `overview`, `customers`, `operations`: bảng chỉ số, cột `Chỉ số, Kỳ này, Kỳ trước, Thay đổi (%), Thay đổi (điểm %)` (mỗi dòng chỉ một trong hai cột thay đổi có giá trị; tỷ lệ ghi theo %, đổi theo điểm %). `overview`: Doanh thu (VND), Đơn đã thanh toán, Giá trị đơn trung bình (VND), Đơn đã đặt, Đơn hủy, Tỷ lệ hủy (%), Giảm giá (VND), Hoàn tiền (VND), Khách mới. `customers`: Khách mua hàng, Khách mua lần đầu, Khách quay lại, Tỷ lệ mua lại (%), Doanh thu khách mới (VND), Doanh thu khách quay lại (VND). `operations`: Đơn hủy (tổng), bốn dòng `Đơn hủy: <nhãn loại>`, Đơn đã giao, Đơn bị trả hàng, Tỷ lệ trả hàng (%), Số lần hoàn tiền, Số tiền hoàn (VND), và theo từng chặng (đặt đến xác nhận, xác nhận đến giao) ba dòng: trung bình (giờ, có kỳ trước), trung vị (giờ, chỉ kỳ này), số đơn (chỉ kỳ này). Không xuất khối "đơn cần xử lý" (ảnh chụp hiện tại, chứa mã đơn).
+  - `series`: `Bắt đầu, Kết thúc, Doanh thu (VND), Đơn đã thanh toán, Đơn đã đặt, Kỳ trước: bắt đầu, Kỳ trước: kết thúc, Kỳ trước: doanh thu (VND), Kỳ trước: đơn đã thanh toán, Kỳ trước: đơn đã đặt`; một dòng mỗi bucket, kỳ trước căn theo chỉ số bucket (ô trống nếu kỳ trước ngắn hơn).
+  - `breakdown`: `<Danh mục|Thương hiệu|Phương thức thanh toán|Phương thức vận chuyển|Tỉnh/thành>, Doanh thu (VND), Số đơn, Số lượng (trống ở chiều cấp đơn), Tỷ trọng (%), Doanh thu kỳ trước (VND), Thay đổi doanh thu (%)`, dòng cuối `Tổng`.
+  - `top-products`: `Hạng, Sản phẩm, Danh mục, Doanh thu (VND), Số lượng, Số đơn, Ghi chú` (`Đã xóa` cho sản phẩm xóa mềm).
+  - `top-customers`: `Hạng, Loại khách (Thành viên|Khách vãng lai), Tên, Email, Số đơn, Doanh thu (VND), Giá trị đơn trung bình (VND), Thanh toán gần nhất`. **Không có userId, SĐT, địa chỉ.** Email là dữ liệu cá nhân, vì vậy việc xuất được ghi audit.
+  - `coupons`: `Mã giảm giá, Loại (Giảm theo phần trăm|Giảm số tiền cố định|Miễn phí vận chuyển|trống nếu mã đã xóa), Trạng thái (Đang bật|Đã tắt|Đã xóa), Lượt dùng, Tiền giảm (VND), Doanh thu (VND), Giá trị đơn trung bình (VND), Lượt dùng kỳ trước, Doanh thu kỳ trước (VND), Thay đổi doanh thu (%)`. Phần `summary` không có trong CSV.
+  - `inventory`: `Sản phẩm, Biến thể, SKU, Tồn kho, Ngưỡng sắp hết, Giá niêm yết (VND), Giá trị tồn (VND), Bán gần nhất`.

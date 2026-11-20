@@ -1,5 +1,7 @@
 import { jsonRes } from "@/features/account/testing";
 import type {
+  AnalyticsCouponItem,
+  AnalyticsCoupons,
   AnalyticsCustomers,
   AnalyticsInventory,
   AnalyticsInventoryItem,
@@ -129,10 +131,53 @@ export function makeInventory(over: Partial<AnalyticsInventory> = {}): Analytics
   };
 }
 
-/** Phản hồi mẫu cho 3 endpoint Bước 3; null nếu URL không phải của Bước 3. */
+export const couponItem = (
+  key: string,
+  over: Partial<AnalyticsCouponItem> = {},
+): AnalyticsCouponItem => ({
+  couponId: `c-${key}`,
+  code: `MA${key.toUpperCase()}`,
+  type: "PERCENT",
+  isActive: true,
+  deleted: false,
+  uses: 2,
+  discount: 50000,
+  revenue: 500000,
+  aov: 250000,
+  previousUses: 1,
+  previousRevenue: 100000,
+  changePct: 400,
+  ...over,
+});
+
+export function makeCoupons(over: Partial<AnalyticsCoupons> = {}): AnalyticsCoupons {
+  return {
+    range: T_RANGE,
+    previousRange: PREV,
+    sort: "revenue",
+    limit: 10,
+    summary: {
+      ordersWithCoupon: c(4, 2, 100),
+      ordersWithoutCoupon: c(6, 6, 0),
+      couponRate: { current: 0.4, previous: 0.25, changePts: 15 },
+      aovWithCoupon: c(187500, 90000, 108.3),
+      aovWithoutCoupon: c(200000, 50000, 300),
+      totalDiscount: c(95000, 18000, 427.8),
+    },
+    items: [
+      couponItem("sale"),
+      couponItem("gone", { couponId: null, type: null, isActive: null, deleted: true, uses: 1 }),
+    ],
+    generatedAt: "2026-11-20T05:00:00.000Z",
+    ...over,
+  };
+}
+
+/** Phản hồi mẫu cho các endpoint Bước 3-4; null nếu URL không phải của hai bước đó. */
 export function step3Response(url: string): Response | null {
   if (url.includes("/analytics/customers")) return jsonRes(200, { data: makeCustomers() });
   if (url.includes("/analytics/operations")) return jsonRes(200, { data: makeOperations() });
   if (url.includes("/analytics/inventory")) return jsonRes(200, { data: makeInventory() });
+  if (url.includes("/analytics/coupons")) return jsonRes(200, { data: makeCoupons() });
   return null;
 }

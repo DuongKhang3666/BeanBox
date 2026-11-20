@@ -16,6 +16,7 @@ import {
   type Delta,
 } from "../analyticsRange";
 import { adminErrorMessage } from "../errors";
+import { ExportCsvButton } from "./ExportCsvButton";
 
 export const card = "rounded-2xl border border-coffee-200 bg-white p-4";
 export const h2 = "scroll-mt-20 font-serif text-lg font-bold text-coffee-900";
@@ -62,7 +63,7 @@ export function TableScroll({ label, children }: { label: string; children: Reac
   );
 }
 
-function DeltaCell({ delta }: { delta: Delta }) {
+export function DeltaCell({ delta }: { delta: Delta }) {
   if (delta.direction === "none") {
     return <span className="text-coffee-700">{delta.visual}</span>;
   }
@@ -246,9 +247,15 @@ export function BreakdownBlock({
 
   return (
     <section aria-labelledby="an-breakdown" className={cn(card, "space-y-3")}>
-      <h2 id="an-breakdown" className={h2}>
-        Cơ cấu doanh thu
-      </h2>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <h2 id="an-breakdown" className={h2}>
+          Cơ cấu doanh thu
+        </h2>
+        <ExportCsvButton
+          params={{ report: "breakdown", dimension: dim, from, to }}
+          context={`cơ cấu doanh thu theo ${dimLabel.toLowerCase()}`}
+        />
+      </div>
       <div role="group" aria-label="Chiều phân tích" className="flex flex-wrap gap-2">
         {BREAKDOWN_DIMS.map((o) => (
           <button

@@ -1,6 +1,6 @@
 # BeanBox – Kế hoạch khu "Phân tích kinh doanh" (chỉ Admin)
 
-> Ngày: 2026-11-20 · Người chốt: Tech Lead theo ủy quyền chủ dự án · Quyết định liên quan: [D-049, D-050, D-051, D-052](decisions.md) · Contract: [api-contract.md §16](api-contract.md).
+> Ngày: 2026-11-20 · Người chốt: Tech Lead theo ủy quyền chủ dự án · Quyết định liên quan: [D-049, D-050, D-051, D-052, D-053](decisions.md) · Contract: [api-contract.md §16](api-contract.md).
 
 ## 1. Mục tiêu
 
@@ -73,10 +73,11 @@ Cho chủ cửa hàng (Admin) một khu riêng để đọc số liệu kinh doa
 
 - **Mục tiêu:** theo mã: lượt dùng, tổng giảm, doanh thu đơn có mã, AOV có/không mã, tỷ lệ đơn dùng mã. Xuất CSV phía server: UTF-8 có BOM (Excel), chống CSV injection (ô bắt đầu bằng `=`, `+`, `-`, `@`, tab, CR thì thêm `'`), tên file có khoảng ngày, ghi audit log `analytics.export` (có dữ liệu cá nhân), rate limit riêng nhẹ.
 - **File ảnh hưởng:** module analytics, `lib/audit` (action mới), rate limiter, FE nút xuất.
-- **API (dự kiến):** `GET /admin/analytics/coupons`, `GET /admin/analytics/export?report=overview|breakdown|top-products|top-customers|coupons&from&to`.
+- **API:** `GET /admin/analytics/coupons?from&to&sort&limit`, `GET /admin/analytics/export?report=overview|series|breakdown|top-products|top-customers|coupons|customers|operations|inventory&...` (api-contract §16.4, D-053).
 - **Test:** chống CSV injection, BOM, audit log, rate limit, quyền.
 - **Tiêu chí xong:** mở được trong Excel đúng tiếng Việt; mỗi lần xuất có một dòng audit.
-- **Trạng thái:** Chờ duyệt.
+- **Trạng thái:** Đã làm (2026-11-20). Chờ duyệt kết quả.
+- **Thực tế đã làm (D-053):** backend thêm `analytics.coupons.ts` (2 truy vấn song song, mã đã xóa gộp theo snapshot `couponCode`), `analytics.export.ts` (hàm thuần ánh xạ DTO sang hàng CSV cho 9 báo cáo, dùng lại các hàm service JSON), `lib/csv.ts` (BOM, CRLF, RFC 4180, chống CSV injection theo kiểu ô, tên file an toàn), schema zod chặt cho `export` (`discriminatedUnion` + `strictObject`), limiter `export` 10/phút/IP (`EXPORT_RATE_LIMIT_PER_MIN`, đặt sau `requireAdmin`), audit `analytics.export` ghi trước khi gửi body (fail-closed); `getInventory` nhận thêm `listLimit` để xuất tới 1000 dòng (JSON không đổi). FE: khối "Mã giảm giá", nút "Xuất CSV" ở 9 khối, `ApiClient.download` (Bearer + refresh 401, không token trong URL), nhãn/nhóm lọc audit cho `analytics.export`. Không cần migration.
 
 ### Bước 5 — Hoàn thiện
 

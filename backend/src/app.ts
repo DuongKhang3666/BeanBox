@@ -81,6 +81,8 @@ export interface AppOptions {
   orderRateLimit?: number;
   /** Số request/phút/IP của POST /admin/uploads (mặc định 30). Chỉ đổi trong test. */
   uploadRateLimit?: number;
+  /** Số request/phút/IP của GET /admin/analytics/export (mặc định env EXPORT_RATE_LIMIT_PER_MIN = 10). Chỉ đổi trong test. */
+  exportRateLimit?: number;
   /** Cấu hình thanh toán online (mặc định đọc từ env). Test tiêm cấu hình giả. */
   paymentConfig?: PaymentConfig;
   /** Số request/phút/IP của POST /payments/vnpay/create (mặc định 10). Chỉ đổi trong test. */
@@ -168,6 +170,10 @@ export function createApp(options: AppOptions = {}): Express {
     cspReport: createRateLimiter({ windowMs: 60_000, limit: options.cspReportRateLimit ?? 20 }),
     // Chỉ áp cho /admin/uploads (store riêng), đứng sau requireAuth/requireStaff.
     upload: createRateLimiter({ windowMs: 60_000, limit: options.uploadRateLimit ?? 30 }),
+    export: createRateLimiter({
+      windowMs: 60_000,
+      limit: options.exportRateLimit ?? env.EXPORT_RATE_LIMIT_PER_MIN,
+    }),
   };
 
   app.use(requestId);
@@ -193,7 +199,7 @@ export function createApp(options: AppOptions = {}): Express {
     cors({
       origin: env.FRONTEND_ORIGINS,
       credentials: true,
-      exposedHeaders: ['X-Request-Id', 'Retry-After', 'X-Cart-Token'],
+      exposedHeaders: ['X-Request-Id', 'Retry-After', 'X-Cart-Token', 'Content-Disposition'],
     }),
   );
   // Ảnh tĩnh đặt TRƯỚC rate limit: một trang danh sách tải hàng chục ảnh, nếu tính vào hạn mức
@@ -257,7 +263,14 @@ export function createApp(options: AppOptions = {}): Express {
       syncLimiter: limiters.paymentSync,
     }),
   );
-  app.use(`${API_PREFIX}/admin`, createAdminRouter({ uploadLimiter: limiters.upload, uploadsDir }));
+  app.use(
+    `${API_PREFIX}/admin`,
+    createAdminRouter({
+      uploadLimiter: limiters.upload,
+      exportLimiter: limiters.export,
+      uploadsDir,
+    }),
+  );
 
   app.use(notFound);
   app.use(errorHandler);

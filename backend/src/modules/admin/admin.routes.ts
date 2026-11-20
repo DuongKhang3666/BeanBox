@@ -1,7 +1,7 @@
 import { Router, type RequestHandler } from 'express';
 import { UPLOADS_DIR } from '../../config/paths.js';
 import { requireAuth, requireStaff } from '../../middlewares/auth.js';
-import { adminAnalyticsRouter } from './analytics/analytics.routes.js';
+import { createAdminAnalyticsRouter } from './analytics/analytics.routes.js';
 import { adminAuditRouter } from './audit/audit.routes.js';
 import { adminCatalogRouter } from './catalog/catalog.routes.js';
 import { adminContactRouter } from './contact/contact.routes.js';
@@ -18,6 +18,8 @@ import { createUploadsRouter } from './uploads/uploads.routes.js';
 export interface AdminRouterOptions {
   /** 30/phút/IP, chỉ áp cho `/uploads` (store riêng). */
   uploadLimiter: RequestHandler;
+  /** 10/phút/IP (env EXPORT_RATE_LIMIT_PER_MIN), chỉ áp cho `/analytics/export` (store riêng). */
+  exportLimiter: RequestHandler;
   /** Thư mục lưu ảnh upload (mặc định backend/uploads). */
   uploadsDir?: string;
 }
@@ -28,7 +30,11 @@ const noStore: RequestHandler = (_req, res, next) => {
 };
 
 /** Mount tại `/api/v1/admin`. Chặn quyền ở cấp router (api-contract §12.0). */
-export function createAdminRouter({ uploadLimiter, uploadsDir }: AdminRouterOptions): Router {
+export function createAdminRouter({
+  uploadLimiter,
+  exportLimiter,
+  uploadsDir,
+}: AdminRouterOptions): Router {
   const router = Router();
   router.use(noStore); // đặt trước auth để cả 401/403 cũng không bị cache
   router.use(requireAuth, requireStaff);
@@ -37,7 +43,7 @@ export function createAdminRouter({ uploadLimiter, uploadsDir }: AdminRouterOpti
   router.use('/coupons', adminCouponsRouter);
   router.use('/reviews', adminReviewsRouter);
   router.use('/dashboard', adminDashboardRouter);
-  router.use('/analytics', adminAnalyticsRouter);
+  router.use('/analytics', createAdminAnalyticsRouter({ exportLimiter }));
   router.use('/audit-logs', adminAuditRouter);
   router.use('/settings', adminSettingsRouter);
   router.use('/users', adminUsersRouter);

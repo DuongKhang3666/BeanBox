@@ -68,6 +68,7 @@ services:
       ORDER_RATE_LIMIT_PER_MIN: ${ORDER_RATE_LIMIT_PER_MIN:-10}
       COUPON_RATE_LIMIT_PER_MIN: ${COUPON_RATE_LIMIT_PER_MIN:-10}
       QUOTE_RATE_LIMIT_PER_MIN: ${QUOTE_RATE_LIMIT_PER_MIN:-30}
+      EXPORT_RATE_LIMIT_PER_MIN: ${EXPORT_RATE_LIMIT_PER_MIN:-10}
     volumes:
       - uploads:/app/uploads
     logging: *default-logging

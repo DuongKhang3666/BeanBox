@@ -14,6 +14,7 @@ export const AUDIT_GROUPS: { prefix: string; label: string }[] = [
   { prefix: "coupon.", label: "Mã giảm giá" },
   { prefix: "payment.", label: "Thanh toán" },
   { prefix: "review.", label: "Đánh giá" },
+  { prefix: "analytics.", label: "Phân tích kinh doanh" },
 ];
 
 /** Gợi ý cho ô lọc đối tượng (tên entity do server ghi; vẫn cho nhập tự do). */
@@ -27,6 +28,7 @@ export const AUDIT_ENTITY_SUGGESTIONS = [
   "Coupon",
   "Review",
   "Payment",
+  "analytics",
 ];
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;

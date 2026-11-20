@@ -5,6 +5,7 @@ import { errRes, jsonRes, makeUser } from "@/features/account/testing";
 import { tokenStore } from "@/lib/api/client";
 import {
   invItem,
+  makeCoupons,
   makeCustomers,
   makeInventory,
   makeOperations,
@@ -55,6 +56,7 @@ function stub(h: Handlers = {}) {
         },
       });
     }
+    if (url.includes("/analytics/coupons")) return jsonRes(200, { data: makeCoupons() });
     if (url.includes("/analytics/top-")) return jsonRes(200, { data: { items: [] } });
     return jsonRes(200, {
       data: {
@@ -96,7 +98,7 @@ afterEach(() => {
 const user = () => userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
 
 describe("mục lục neo", () => {
-  it("có nav với 6 liên kết neo trỏ tới heading có id", async () => {
+  it("có nav với 7 liên kết neo trỏ tới heading có id", async () => {
     stub();
     render(<AdminAnalytics />);
     const nav = screen.getByRole("navigation", { name: "Mục lục phân tích" });
@@ -105,6 +107,7 @@ describe("mục lục neo", () => {
       "Tổng quan",
       "Cơ cấu doanh thu",
       "Top",
+      "Mã giảm giá",
       "Khách hàng",
       "Vận hành",
       "Tồn kho",

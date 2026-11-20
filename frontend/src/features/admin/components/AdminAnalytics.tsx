@@ -40,11 +40,13 @@ import { adminErrorMessage } from "../errors";
 import { formatVnDateTime } from "../format";
 import { AnalyticsChart, AnalyticsTable } from "./AnalyticsChart";
 import { BreakdownBlock } from "./AnalyticsBreakdown";
+import { CouponsBlock } from "./AnalyticsCoupons";
 import { CustomersBlock } from "./AnalyticsCustomers";
 import { InventoryBlock } from "./AnalyticsInventory";
 import { Kpi } from "./AnalyticsKpi";
 import { OperationsBlock } from "./AnalyticsOperations";
 import { TopCustomersBlock, TopProductsBlock } from "./AnalyticsTops";
+import { ExportCsvButton } from "./ExportCsvButton";
 
 const card = "rounded-2xl border border-coffee-200 bg-white p-4";
 const h2 = "font-serif text-lg font-bold text-coffee-900";
@@ -54,6 +56,7 @@ const SECTIONS: ReadonlyArray<{ id: string; label: string }> = [
   { id: "an-overview", label: "Tổng quan" },
   { id: "an-breakdown", label: "Cơ cấu doanh thu" },
   { id: "an-top-products", label: "Top" },
+  { id: "an-coupons", label: "Mã giảm giá" },
   { id: "an-customers", label: "Khách hàng" },
   { id: "an-operations", label: "Vận hành" },
   { id: "an-inventory", label: "Tồn kho" },
@@ -301,9 +304,20 @@ export function AdminAnalytics() {
         ) : null}
         <KpiGrid kpis={k} prevLabel={prevLabel} />
         <section aria-labelledby="an-chart" className={card}>
-          <h2 id="an-chart" className={`${h2} mb-3`}>
-            Doanh thu theo {noun}
-          </h2>
+          <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+            <h2 id="an-chart" className={h2}>
+              Doanh thu theo {noun}
+            </h2>
+            <ExportCsvButton
+              params={{
+                report: "series",
+                from: sel.from,
+                to: sel.to,
+                granularity: d.range.granularity,
+              }}
+              context={`doanh thu theo ${noun}`}
+            />
+          </div>
           <AnalyticsChart
             series={d.series}
             previousSeries={d.previousSeries}
@@ -407,14 +421,21 @@ export function AdminAnalytics() {
         ))}
       </nav>
 
-      <h2 id="an-overview" className={cn(h2, "scroll-mt-20")}>
-        Tổng quan
-      </h2>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <h2 id="an-overview" className={cn(h2, "scroll-mt-20")}>
+          Tổng quan
+        </h2>
+        <ExportCsvButton
+          params={{ report: "overview", from: sel.from, to: sel.to }}
+          context="chỉ số tổng quan"
+        />
+      </div>
       {body}
 
       <BreakdownBlock from={sel.from} to={sel.to} dim={dim} onDim={goDim} refresh={refresh} />
       <TopProductsBlock from={sel.from} to={sel.to} refresh={refresh} />
       <TopCustomersBlock from={sel.from} to={sel.to} refresh={refresh} />
+      <CouponsBlock from={sel.from} to={sel.to} refresh={refresh} />
       <CustomersBlock from={sel.from} to={sel.to} refresh={refresh} />
       <OperationsBlock from={sel.from} to={sel.to} refresh={refresh} />
       <InventoryBlock refresh={refresh} />
