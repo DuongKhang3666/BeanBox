@@ -66,11 +66,30 @@ function makeOverview(over: Partial<AnalyticsOverview> = {}): AnalyticsOverview 
   };
 }
 
+/** Các khối Bước 2 (cơ cấu, top) trả dữ liệu rỗng; chúng có test riêng ở AnalyticsBreakdown.test.tsx. */
 function stub(handler: (url: string) => Response | Promise<Response>) {
-  const fn = vi.fn(async (input: RequestInfo | URL) => handler(String(input)));
+  const fn = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes("/analytics/breakdown")) {
+      return jsonRes(200, {
+        data: {
+          range: { from: "2026-10-22", to: "2026-11-20", days: 30, timezone: "Asia/Ho_Chi_Minh" },
+          previousRange: { from: "2026-09-22", to: "2026-10-21" },
+          groups: [],
+          total: { revenue: 0, orders: 0, quantity: null },
+          basis: "order",
+        },
+      });
+    }
+    if (url.includes("/analytics/top-")) return jsonRes(200, { data: { items: [] } });
+    return handler(url);
+  });
   vi.stubGlobal("fetch", fn);
   return fn;
 }
+
+const overviewCalls = (fn: ReturnType<typeof stub>) =>
+  fn.mock.calls.filter((c) => String(c[0]).includes("/analytics/overview"));
 
 beforeEach(() => {
   tokenStore.clear();
@@ -131,7 +150,7 @@ describe("AdminAnalytics - trạng thái", () => {
     expect(within(revenue).getByText(/▲ 12,5%/)).toBeInTheDocument();
     expect(within(revenue).getByText("Tăng 12,5%")).toBeInTheDocument(); // cho trình đọc màn hình
     expect(within(revenue).getByText(/so với kỳ trước \(22\/09–21\/10\)/)).toBeInTheDocument();
-    expect(fetchFn.mock.calls[0]![0]).toContain(
+    expect(overviewCalls(fetchFn)[0]![0]).toContain(
       "/admin/analytics/overview?from=2026-10-22&to=2026-11-20&granularity=day",
     );
 
@@ -194,7 +213,7 @@ describe("AdminAnalytics - trạng thái", () => {
       .setup({ advanceTimers: vi.advanceTimersByTime })
       .click(screen.getByRole("button", { name: /thử lại/i }));
     expect(await screen.findByRole("region", { name: "Doanh thu" })).toBeInTheDocument();
-    expect(fetchFn).toHaveBeenCalledTimes(2);
+    expect(overviewCalls(fetchFn)).toHaveLength(2);
   });
 
   it("kỳ không có dữ liệu: vẫn hiện 0 và ghi chú", async () => {
@@ -332,7 +351,9 @@ describe("AdminAnalytics - bộ lọc và URL", () => {
     const fetchFn = stub(() => jsonRes(200, { data: makeOverview() }));
     const { unmount } = render(<AdminAnalytics />);
     await screen.findByRole("region", { name: "Doanh thu" });
-    expect(fetchFn.mock.calls[0]![0]).toContain("from=2026-01-01&to=2026-06-30&granularity=month");
+    expect(overviewCalls(fetchFn)[0]![0]).toContain(
+      "from=2026-01-01&to=2026-06-30&granularity=month",
+    );
     expect(screen.getByRole("button", { name: "Tháng" })).toHaveAttribute("aria-pressed", "true");
     unmount();
 
@@ -340,7 +361,7 @@ describe("AdminAnalytics - bộ lọc và URL", () => {
     const fetch2 = stub(() => jsonRes(200, { data: makeOverview() }));
     render(<AdminAnalytics />);
     await screen.findByRole("region", { name: "Doanh thu" });
-    expect(fetch2.mock.calls[0]![0]).toContain("from=2026-10-22&to=2026-11-20&granularity=day");
+    expect(overviewCalls(fetch2)[0]![0]).toContain("from=2026-10-22&to=2026-11-20&granularity=day");
   });
 
   it("khoảng tùy chọn: báo lỗi tiếng Việt cho ngày tương lai / đảo ngược / quá 366 ngày, không đổi URL", async () => {

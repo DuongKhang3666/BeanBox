@@ -1,4 +1,9 @@
-import type { AnalyticsGranularity, AnalyticsCompared, AnalyticsComparedRate } from "@/types/admin";
+import type {
+  AnalyticsGranularity,
+  AnalyticsCompared,
+  AnalyticsComparedRate,
+  BreakdownDimension,
+} from "@/types/admin";
 
 /**
  * Khoảng ngày cho trang Phân tích kinh doanh (api-contract §16.1, D-050). Mọi ngày là ngày lịch
@@ -121,9 +126,34 @@ export function parseAnalyticsParams(params: URLSearchParams, today: string): An
   };
 }
 
-export function analyticsHref(range: DateRange, g?: AnalyticsGranularity): string {
+/** Chiều cơ cấu doanh thu (`?dim=`); mặc định `category`. */
+export const BREAKDOWN_DIMS: ReadonlyArray<{ id: BreakdownDimension; label: string }> = [
+  { id: "category", label: "Danh mục" },
+  { id: "brand", label: "Thương hiệu" },
+  { id: "paymentMethod", label: "Thanh toán" },
+  { id: "shippingMethod", label: "Giao hàng" },
+  { id: "province", label: "Tỉnh/thành" },
+];
+export const DEFAULT_DIM: BreakdownDimension = "category";
+
+/** Đọc `?dim=`; thiếu/sai -> mặc định (không ném lỗi). */
+export function parseDim(params: URLSearchParams): {
+  dim: BreakdownDimension;
+  explicitDim: boolean;
+} {
+  const v = params.get("dim");
+  const found = BREAKDOWN_DIMS.find((d) => d.id === v);
+  return found ? { dim: found.id, explicitDim: true } : { dim: DEFAULT_DIM, explicitDim: false };
+}
+
+export function analyticsHref(
+  range: DateRange,
+  g?: AnalyticsGranularity,
+  dim?: BreakdownDimension,
+): string {
   const qs = new URLSearchParams({ from: range.from, to: range.to });
   if (g) qs.set("g", g);
+  if (dim) qs.set("dim", dim);
   return `${ANALYTICS_BASE}?${qs.toString()}`;
 }
 

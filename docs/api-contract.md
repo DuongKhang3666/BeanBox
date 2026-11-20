@@ -1,7 +1,8 @@
 # BeanBox – API Contract
 
-> Phiên bản 0.14 · 2026-11-20 · **Nguồn sự thật cho FE và BE.** Đổi contract phải sửa file này trước và nêu trong báo cáo.
-> Thay đổi 0.14 (D-049, D-050, phân tích kinh doanh): thêm §16 "Phân tích kinh doanh (Admin)": `GET /admin/analytics/overview?from&to&granularity` (§16.1, chỉ ADMIN, KPI so với kỳ trước + chuỗi theo ngày/tuần/tháng); §16.2 ghi dự kiến các endpoint Bước 2-4 (chưa triển khai). Không đổi §14.3 hay shape hiện có; cần migration index (`Order(paidAt)`, `Payment(refundedAt)`, không đổi cột).
+> Phiên bản 0.15 · 2026-11-20 · **Nguồn sự thật cho FE và BE.** Đổi contract phải sửa file này trước và nêu trong báo cáo.
+> Thay đổi 0.15 (D-051, phân tích kinh doanh Bước 2): §16.2 thành đặc tả đầy đủ cho `GET /admin/analytics/breakdown?dimension&from&to`, `GET /admin/analytics/top-products?from&to&sort&limit`, `GET /admin/analytics/top-customers?from&to&sort&limit` (chỉ ADMIN, no-store, cùng khoảng ngày và kỳ trước với §16.1); §16.3 ghi dự kiến Bước 3-4. Không đổi §14.3, §16.1 hay shape hiện có; không cần migration.
+> Thay đổi 0.14 (D-049, D-050, phân tích kinh doanh): thêm §16 "Phân tích kinh doanh (Admin)": `GET /admin/analytics/overview?from&to&granularity` (§16.1, chỉ ADMIN, KPI so với kỳ trước + chuỗi theo ngày/tuần/tháng); §16.2 ghi dự kiến các endpoint Bước 2-4 (Bước 2 đã triển khai ở 0.15). Không đổi §14.3 hay shape hiện có; cần migration index (`Order(paidAt)`, `Payment(refundedAt)`, không đổi cột).
 > Thay đổi 0.13 (D-047, so sánh sản phẩm): thêm `GET /products/compare?slugs=a,b,c` (§4.7, công khai, 2–4 slug, trả `items` + `missing`); slug sản phẩm `compare` được dành riêng (admin tạo/đổi slug bị từ chối 400, §12.4); `/products/compare` thuộc nhóm GET công khai không bị ép `no-store` (§1). Không đổi shape response hiện có, không cần migration.
 > Thay đổi 0.12 (D-046, gợi ý sản phẩm): `related` ở §4.4 chấm điểm theo nội dung (cùng danh mục, danh mục cha, brand, tag, thuộc tính cà phê, khoảng giá), không đổi shape; thêm `GET /products/:slug/bought-together` (§4.6, công khai, có ngưỡng riêng tư >= 2 khách). Không cần migration.
 > Thay đổi 0.11 (D-045, rà soát bảo mật): mọi response `/api/v1` mặc định có `Cache-Control: no-store`, trừ GET công khai (§1 "Cache"); access token mất hiệu lực ngay khi phiên bị thu hồi (§1, §5.4, §5.6, đổi mật khẩu); biến `AUTH_RATE_LIMIT_PER_MIN` cho nhóm nhạy cảm (§1). Không đổi shape response.
@@ -42,6 +43,7 @@
     - 14.9 Cài đặt cửa hàng · 14.10 Quản lý người dùng · 14.11 Liên hệ · 14.12 CSP · 14.13 Còn hoãn
 15. [Câu hỏi mở / Giả định](#15-câu-hỏi-mở--giả-định)
 16. [Phân tích kinh doanh (Admin)](#16-phân-tích-kinh-doanh-admin)
+    - 16.1 Tổng quan · 16.2 Cơ cấu doanh thu, top sản phẩm, top khách hàng · 16.3 Dự kiến
 
 ## 1. Quy ước chung
 
@@ -2062,10 +2064,116 @@ Kiểm tra (400 `VALIDATION_ERROR`, `details: [{ field, message }]`, định d�
 - `series`: liên tục theo `granularity`, điền 0 cho bucket không có dữ liệu, tăng dần theo `start`. `day`: một bucket mỗi ngày; `week`: bắt đầu thứ Hai theo ngày VN; `month`: tháng lịch VN. Bucket đầu và cuối bị cắt theo khoảng (`start >= from`, `end <= to`), tổng `revenue` của `series` luôn bằng `kpis.revenue.current`. `revenue` và `paidOrders` gom theo ngày `paidAt`, `ordersPlaced` theo ngày `createdAt`. `previousSeries` có cấu trúc giống `series` cho `previousRange` với cùng `granularity`; số phần tử có thể khác `series` (FE căn theo chỉ số bucket). Tối đa 366 phần tử mỗi chuỗi.
 - Biên ngày: 23:59:59.999 VN thuộc ngày đó, 00:00:00 VN thuộc ngày kế tiếp.
 
-### 16.2 Dự kiến (chưa triển khai; Bước 2-4 chờ duyệt)
+### 16.2 Cơ cấu doanh thu, top sản phẩm, top khách hàng (Bước 2, đã triển khai)
+
+Từ 0.15 (D-051). Cả ba endpoint chỉ ADMIN, `no-store`, dùng **cùng `from`/`to`, mặc định, giới hạn và kỳ trước** với §16.1 (D-050) và **cùng tập đơn nguồn**: `paymentStatus = PAID`, `status` không thuộc {`CANCELLED`, `RETURNED`}, tính theo `paidAt` (ngày VN). Đơn COD chưa thu, đơn hủy, đơn trả hàng bị loại. Khác với "top sản phẩm" của `GET /admin/dashboard` (§14.3, theo `createdAt`, không đổi). Lỗi 400 theo §1, `details: [{ field, message }]`; tham số lặp (`limit=1&limit=2`) cũng là 400. Phản hồi có `range: { from, to, days, timezone }` (không có `granularity`).
+
+#### 16.2.1 `GET /admin/analytics/breakdown?dimension=...&from=&to=`
+
+- `dimension` **bắt buộc**: `category | brand | paymentMethod | shippingMethod | province` (thiếu/sai -> 400, field `dimension`).
+- Hai loại chiều, báo bằng `basis`:
+  - `basis: "order"` (`paymentMethod`, `shippingMethod`, `province`): `revenue` = Σ `grandTotal`, `orders` = số đơn, `quantity` = `null`. Mỗi đơn thuộc đúng một nhóm nên tổng các nhóm = `kpis.revenue.current` của §16.1 cùng khoảng, và Σ `orders` = `total.orders`.
+  - `basis: "item"` (`category`, `brand`): `revenue` = Σ `OrderItem.lineTotal` ("doanh thu hàng hóa": chưa trừ giảm giá cấp đơn, không gồm phí vận chuyển nên khác doanh thu §16.1), `quantity` = Σ `quantity`, `orders` = số đơn **khác nhau** có dòng hàng thuộc nhóm. Một đơn có thể thuộc nhiều nhóm nên Σ `orders` của các nhóm có thể lớn hơn `total.orders`. Tổng `revenue` các nhóm = `total.revenue` = Σ `lineTotal` của tập đơn nguồn.
+- Phân loại: danh mục/thương hiệu lấy theo `Product` **hiện tại** (không cuộn lên danh mục cha; `OrderItem` không lưu snapshot nên đổi danh mục sản phẩm làm số liệu quá khứ đổi theo, D-049/D-051). Sản phẩm xóa mềm vẫn tính. Tỉnh/thành lấy từ snapshot `shippingAddress` (`provinceCode`, `provinceName`).
+- Nhãn: `label` do backend trả bằng tiếng Việt cho mọi chiều (FE không map): thanh toán `COD` "Thanh toán khi nhận hàng (COD)", `VNPAY` "VNPay (ATM/QR/thẻ)", `STRIPE` "Thẻ quốc tế (Stripe)"; giao hàng `STANDARD` "Tiêu chuẩn", `EXPRESS` "Nhanh"; `key` luôn là mã enum/id.
+
+```json
+{
+  "data": {
+    "range": { "from": "2026-10-22", "to": "2026-11-20", "days": 30, "timezone": "Asia/Ho_Chi_Minh" },
+    "previousRange": { "from": "2026-09-22", "to": "2026-10-21" },
+    "dimension": "category",
+    "basis": "item",
+    "total": { "revenue": 660000, "orders": 5, "quantity": 10 },
+    "previousTotal": { "revenue": 200000, "orders": 2, "quantity": 3 },
+    "groups": [
+      {
+        "key": "cmabc123",
+        "label": "Máy pha cà phê",
+        "revenue": 500000,
+        "orders": 4,
+        "quantity": 5,
+        "share": 0.7576,
+        "previousRevenue": 100000,
+        "changePct": 400
+      }
+    ],
+    "generatedAt": "2026-11-20T05:00:00.000Z"
+  }
+}
+```
+
+- `total`/`previousTotal`: `{ revenue, orders, quantity }`; `quantity` = `null` ở chiều `order`. Ở chiều `item`, `total.orders` là số đơn khác nhau của cả tập (không bằng Σ nhóm).
+- `groups[]`: `key` (`string | null`), `label`, `revenue`, `orders`, `quantity` (`number | null`), `share` = `revenue / total.revenue` (0..1, làm tròn 4 chữ số; 0 khi tổng = 0), `previousRevenue` (doanh thu cùng nhóm ở kỳ trước), `changePct` (§16.1; `null` khi `previousRevenue = 0`).
+- Nhóm đặc biệt: thương hiệu rỗng -> `key: null`, `label: "Không có thương hiệu"`; tỉnh thiếu `provinceCode` -> `key: null`, `label: "Không xác định"`; dòng hàng không join được sản phẩm -> `key: "__unknown__"`, `label: "Không xác định"` (không xảy ra với dữ liệu hiện tại vì `OrderItem.productId` là `Restrict`).
+- Sắp xếp `revenue` giảm dần rồi `label` (so sánh tiếng Việt). Chỉ liệt kê nhóm có đơn trong kỳ hiện tại (nhóm chỉ có ở kỳ trước không liệt kê, nhưng vẫn nằm trong `previousTotal`).
+- Tối đa **50** nhóm: nếu nhiều hơn, 49 nhóm đầu + 1 nhóm cuối `key: "__other__"`, `label: "Khác"` gộp phần còn lại để tổng vẫn khớp. Ở chiều `item`, `orders` của "Khác" là tổng `orders` các nhóm gộp (có thể đếm trùng một đơn).
+- Thực thi: một truy vấn nhóm (kỳ này và kỳ trước cùng truy vấn, `FILTER` theo `paidAt`) + một truy vấn tổng ở chiều `item`; SQL tham số hóa, câu SQL cố định theo từng chiều.
+
+#### 16.2.2 `GET /admin/analytics/top-products?from=&to=&sort=revenue|quantity&limit=`
+
+- `sort` mặc định `revenue`; `limit` số nguyên 1..50, mặc định 10 (`0`, `51`, `abc`, `1.5`, `-1` -> 400, field `limit`). Hòa thì: `revenue` -> `quantity` giảm dần; `quantity` -> `revenue` giảm dần; rồi `productId`.
+- Gộp theo `productId` (mọi biến thể cộng chung) trên tập đơn nguồn.
+
+```json
+{
+  "data": {
+    "range": { "from": "2026-10-22", "to": "2026-11-20", "days": 30, "timezone": "Asia/Ho_Chi_Minh" },
+    "sort": "revenue",
+    "limit": 10,
+    "items": [
+      {
+        "productId": "cmabc123",
+        "name": "Phin nhôm số 1",
+        "slug": "phin-nhom-so-1",
+        "deleted": false,
+        "categoryName": "Phin pha cà phê",
+        "revenue": 300000,
+        "quantity": 3,
+        "orders": 2
+      }
+    ],
+    "generatedAt": "2026-11-20T05:00:00.000Z"
+  }
+}
+```
+
+- `name` là tên hiện tại của sản phẩm (thiếu thì `OrderItem.productName` đã lưu); `slug` `null` nếu không còn sản phẩm; `deleted` = `true` khi sản phẩm xóa mềm (vẫn được tính); `categoryName` là danh mục hiện tại (`null` nếu không có); `revenue` = Σ `lineTotal` (hàng hóa, như `basis: "item"`); `quantity` = Σ `quantity`; `orders` = số đơn khác nhau.
+
+#### 16.2.3 `GET /admin/analytics/top-customers?from=&to=&sort=revenue|orders&limit=`
+
+- `sort` mặc định `revenue`; `limit` như trên (mặc định 10, tối đa 50). Hòa thì: `revenue` -> số đơn giảm dần; `orders` -> doanh thu giảm dần; rồi lần mua gần nhất.
+- Gộp theo `Order.userId` khi có; khách vãng lai (`userId = null`) gộp theo `lower(contactEmail)`. Đánh đổi (D-051): một người vừa có tài khoản vừa từng mua vãng lai bằng cùng email sẽ là **hai dòng** (không đoán danh tính).
+
+```json
+{
+  "data": {
+    "range": { "from": "2026-10-22", "to": "2026-11-20", "days": 30, "timezone": "Asia/Ho_Chi_Minh" },
+    "sort": "revenue",
+    "limit": 10,
+    "items": [
+      {
+        "customerType": "guest",
+        "userId": null,
+        "name": "Trần Thị Bình",
+        "email": "binh@example.com",
+        "orders": 2,
+        "revenue": 370000,
+        "aov": 185000,
+        "lastPaidAt": "2026-11-12T03:00:00.000Z"
+      }
+    ],
+    "generatedAt": "2026-11-20T05:00:00.000Z"
+  }
+}
+```
+
+- `customerType`: `registered` | `guest`. `name`: `User.fullName` (registered) hoặc `fullName` trong `shippingAddress` của đơn mới nhất (guest; thiếu thì dùng email). `email`: `User.email` hoặc `contactEmail` đã `lower`. `revenue` = Σ `grandTotal`, `orders` = số đơn, `aov = round(revenue / orders)`, `lastPaidAt` = `paidAt` mới nhất (ISO UTC).
+- **Không trả SĐT hay địa chỉ** (chỉ tên + email). Dữ liệu cá nhân nên chỉ ADMIN; xuất CSV có audit ở Bước 4 (§16.3).
+
+### 16.3 Dự kiến (chưa triển khai; Bước 3-4 chờ duyệt)
 
 Chỉ để định hướng, chưa phải contract: đặc tả đầy đủ sẽ thêm khi triển khai từng bước.
 
-- Bước 2: `GET /admin/analytics/breakdown?dimension=category|brand|paymentMethod|shippingMethod|province&from&to`, `GET /admin/analytics/top-products?from&to&by=revenue|quantity&limit`, `GET /admin/analytics/top-customers?from&to&limit` (limit <= 50; khách vãng lai gộp theo `lower(contactEmail)`).
 - Bước 3: `GET /admin/analytics/customers`, `GET /admin/analytics/operations`, `GET /admin/analytics/inventory`.
 - Bước 4: hiệu quả mã giảm giá và `GET /admin/analytics/export?report=overview|breakdown|top-products|top-customers|coupons&from&to` (CSV UTF-8 có BOM, chống CSV injection, ghi audit `analytics.export`, rate limit riêng).

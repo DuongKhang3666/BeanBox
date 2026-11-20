@@ -1,6 +1,6 @@
 # BeanBox – Kế hoạch khu "Phân tích kinh doanh" (chỉ Admin)
 
-> Ngày: 2026-11-20 · Người chốt: Tech Lead theo ủy quyền chủ dự án · Quyết định liên quan: [D-049, D-050](decisions.md) · Contract: [api-contract.md §16](api-contract.md).
+> Ngày: 2026-11-20 · Người chốt: Tech Lead theo ủy quyền chủ dự án · Quyết định liên quan: [D-049, D-050, D-051](decisions.md) · Contract: [api-contract.md §16](api-contract.md).
 
 ## 1. Mục tiêu
 
@@ -53,10 +53,11 @@ Cho chủ cửa hàng (Admin) một khu riêng để đọc số liệu kinh doa
 
 - **Mục tiêu:** doanh thu, số đơn, số lượng theo danh mục, thương hiệu, phương thức thanh toán, phương thức giao, tỉnh/thành; top sản phẩm (theo doanh thu và số lượng, có khoảng ngày); top khách (gộp theo `userId`, khách vãng lai gộp theo `lower(contactEmail)`; hiển thị tên + email, chỉ Admin).
 - **File ảnh hưởng:** module analytics (service/schema/routes), FE thêm các khối bảng + biểu đồ thanh ngang.
-- **API (dự kiến):** `GET /admin/analytics/breakdown?dimension=category|brand|paymentMethod|shippingMethod|province&from&to`, `GET /admin/analytics/top-products`, `GET /admin/analytics/top-customers` (limit <= 50).
+- **API:** `GET /admin/analytics/breakdown?dimension=category|brand|paymentMethod|shippingMethod|province&from&to`, `GET /admin/analytics/top-products?from&to&sort&limit`, `GET /admin/analytics/top-customers?from&to&sort&limit` (limit 1..50; api-contract §16.2, D-051).
 - **Test:** tổng các nhóm bằng doanh thu tổng; sản phẩm đổi danh mục; khách vãng lai gộp theo email không phân biệt hoa thường.
 - **Tiêu chí xong:** bảng + biểu đồ thanh ngang, responsive, a11y.
-- **Trạng thái:** Chờ duyệt.
+- **Trạng thái:** Đã làm (2026-11-20). Chờ duyệt kết quả.
+- **Thực tế đã làm (D-051):** backend thêm `analytics.breakdown.ts`, `analytics.top.ts` (SQL `$queryRaw` tham số hóa, kỳ này và kỳ trước cùng truy vấn), schema zod, 3 route (`requireAdmin` kế thừa ở cấp router). Chiều cấp đơn (thanh toán, giao hàng, tỉnh/thành) tổng = doanh thu overview; chiều dòng hàng (danh mục, thương hiệu) là "doanh thu hàng hóa" (Σ `lineTotal`), theo phân loại hiện tại của sản phẩm. Tối đa 50 nhóm + "Khác". Top khách gộp theo `userId` / `lower(contactEmail)`, không trả SĐT/địa chỉ. FE: `AnalyticsBreakdown.tsx` (chọn chiều lưu `?dim=`), `AnalyticsTops.tsx` (top sản phẩm, top khách), mỗi khối tải và báo lỗi độc lập, nút "Làm mới" tải lại cả ba. Test: `backend/tests/adminAnalyticsBreakdown.integration.test.ts`, `AnalyticsBreakdown.test.tsx`, E2E trong `m6b.spec.ts` (kèm axe).
 
 ### Bước 3 — Khách hàng và vận hành
 

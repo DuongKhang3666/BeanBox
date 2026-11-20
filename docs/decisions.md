@@ -54,6 +54,7 @@
 - [D-048 Kiểm tra giao diện /admin trên mobile (390 và 768)](#d-048-kiểm-tra-giao-diện-admin-trên-mobile-390-và-768)
 - [D-049 Khu phân tích kinh doanh chỉ Admin](#d-049-khu-phân-tích-kinh-doanh-chỉ-admin)
 - [D-050 Khoảng ngày, kỳ so sánh và gom nhóm của phân tích kinh doanh](#d-050-khoảng-ngày-kỳ-so-sánh-và-gom-nhóm-của-phân-tích-kinh-doanh)
+- [D-051 Cơ cấu doanh thu, top sản phẩm, top khách hàng (Bước 2)](#d-051-cơ-cấu-doanh-thu-top-sản-phẩm-top-khách-hàng-bước-2)
 
 ---
 
@@ -730,7 +731,7 @@
 ## D-049 Khu phân tích kinh doanh chỉ Admin
 
 - **Ngày:** 2026-11-20 · **Người chốt:** Tech Lead theo ủy quyền chủ dự án
-- **Trạng thái:** Áp dụng (Bước 1 đã triển khai; Bước 2-5 chờ duyệt, xem [`admin-dashboard-plan.md`](admin-dashboard-plan.md)).
+- **Trạng thái:** Áp dụng (Bước 1-2 đã triển khai; Bước 3-5 chờ duyệt, xem [`admin-dashboard-plan.md`](admin-dashboard-plan.md)).
 - **Bối cảnh:** Dashboard `/admin` (§14.3, D-019) dành cho cả STAFF và ADMIN và chỉ trả số liệu vận hành 30 ngày cố định. Chủ cửa hàng cần phân tích theo khoảng ngày tùy chọn, so sánh kỳ trước, cơ cấu doanh thu và dữ liệu khách hàng; dữ liệu này nhạy cảm hơn mức nhân viên cần.
 - **Quyết định:**
   1. **Tách khu mới, không đổi dashboard:** giữ `/admin` và `GET /admin/dashboard` nguyên như cũ cho STAFF + ADMIN. Thêm trang FE `/admin/phan-tich` ("Phân tích kinh doanh") và router BE `/api/v1/admin/analytics/*`.
@@ -765,3 +766,27 @@
   - Ngày "hôm nay" tính theo đồng hồ server; khoảng kết thúc hôm nay là kỳ chưa trọn ngày nên so với kỳ trước đã trọn sẽ thấp hơn (đúng bản chất, không điều chỉnh).
   - Hai chỉ số so sánh theo hai mốc khác nhau (xem D-049) không nên cộng trừ với nhau.
 - **Docs bị ảnh hưởng:** `api-contract.md` §16.1, `db-schema.md`, `admin-dashboard-plan.md`.
+
+## D-051 Cơ cấu doanh thu, top sản phẩm, top khách hàng (Bước 2)
+
+- **Ngày:** 2026-11-20 · **Người chốt:** Tech Lead; chủ dự án đã duyệt Bước 2 và chấp nhận đánh đổi phân loại hiện tại
+- **Trạng thái:** Áp dụng.
+- **Bối cảnh:** Bước 2 của khu phân tích (D-049, D-050) cần cắt doanh thu theo danh mục, thương hiệu, thanh toán, giao hàng, tỉnh/thành, cùng top sản phẩm và top khách. Cần chốt tập đơn, ý nghĩa "doanh thu" của từng chiều và cách gộp khách để số liệu không lệch nhau giữa các màn.
+- **Quyết định:**
+  1. **Tập đơn nguồn** đúng định nghĩa doanh thu D-049/D-019 (`PAID`, không `CANCELLED`/`RETURNED`, theo `paidAt` ngày VN) và dùng chung `resolveRange` của Bước 1 (`from`/`to`, mặc định, giới hạn 366 ngày, kỳ trước). Khác "top sản phẩm" của dashboard §14.3 (theo `createdAt`, giữ nguyên, không đổi).
+  2. **Hai loại chiều**, báo bằng `basis` trong response:
+     - Cấp đơn (`paymentMethod`, `shippingMethod`, `province`): `revenue` = Σ `grandTotal`; tổng các nhóm = `kpis.revenue` của overview cùng khoảng.
+     - Cấp dòng hàng (`category`, `brand`): `revenue` = Σ `OrderItem.lineTotal` ("doanh thu hàng hóa", chưa trừ giảm giá cấp đơn, không gồm phí ship nên khác doanh thu overview), `orders` = số đơn khác nhau (không cộng dồn được giữa các nhóm vì một đơn có thể thuộc nhiều nhóm; ghi chú trong contract và UI); tổng các nhóm = `total.revenue` = Σ `lineTotal`.
+     - Danh mục/thương hiệu theo `Product` **hiện tại** (không cuộn lên danh mục cha). Brand null -> nhóm `key: null` "Không có thương hiệu"; tỉnh thiếu `provinceCode` -> `key: null` "Không xác định"; sản phẩm xóa mềm vẫn tính; LEFT JOIN nên dòng không join được sản phẩm vào nhóm `__unknown__`.
+  3. **Breakdown**: `GET /admin/analytics/breakdown?dimension&from&to`, `dimension` bắt buộc; nhóm sắp theo `revenue` giảm dần rồi nhãn; tối đa 50 nhóm, phần dư gộp vào nhóm cuối `key: "__other__"` "Khác" để tổng vẫn khớp; `share` 0..1 (4 chữ số); `changePct` so với cùng nhóm ở kỳ trước (`null` khi kỳ trước = 0); nhóm chỉ có ở kỳ trước không liệt kê. Nhãn tiếng Việt do **backend** trả cho mọi chiều (FE không map enum).
+  4. **Top sản phẩm**: `GET /admin/analytics/top-products?from&to&sort=revenue|quantity&limit` (mặc định `revenue`, 10; 1..50); gộp theo `productId`; tên hiện tại (thiếu thì `OrderItem.productName`), `deleted` cho sản phẩm xóa mềm, `categoryName` hiện tại.
+  5. **Top khách**: `GET /admin/analytics/top-customers?from&to&sort=revenue|orders&limit`; gộp theo `userId` khi có, khách vãng lai theo `lower(contactEmail)`. Chỉ trả tên + email, không SĐT/địa chỉ. Chỉ ADMIN, `no-store`.
+  6. **Truy vấn**: SQL `$queryRaw` tham số hóa, câu SQL cố định theo nhánh code (không chèn tên cột từ input), kỳ này và kỳ trước cùng một truy vấn (`FILTER` theo `paidAt`), mỗi endpoint 1-2 truy vấn, JOIN qua khóa có index, không N+1. Query validate bằng zod (tham số lặp -> 400, `limit` chỉ nhận chuỗi số nguyên 1..50).
+  7. **Giao diện** (trong `/admin/phan-tich`, dưới phần Bước 1, dùng chung khoảng ngày trên URL): khối "Cơ cấu doanh thu" (chọn chiều bằng nhóm nút `aria-pressed`, lưu `?dim=`, sai -> `category`; bảng có caption, `th scope`, thanh ngang CSS kèm chữ số tỷ trọng, mũi tên + chữ so với kỳ trước), "Top sản phẩm", "Top khách hàng"; mỗi khối có loading/lỗi (thử lại)/rỗng riêng; bảng nằm trong vùng cuộn `relative overflow-x-auto` focus được (D-048).
+- **Hệ quả/rủi ro (đánh đổi đã chấp nhận):**
+  - **Phân loại hiện tại:** đổi danh mục/thương hiệu của sản phẩm làm số liệu quá khứ theo danh mục/thương hiệu đổi theo (UI có ghi chú). Muốn đóng băng cần snapshot trên `OrderItem` (đổi schema, chưa làm).
+  - **Guest/registered tách dòng:** người vừa có tài khoản vừa mua vãng lai cùng email là hai dòng ở top khách; chưa đoán danh tính. Email khác hoa thường được gộp, nhưng hai email khác nhau của cùng một người thì không.
+  - **Giới hạn 50 nhóm:** thực tế không chạm (danh mục, thương hiệu, tỉnh đều ít hơn); nếu chạm, `orders` của "Khác" ở chiều dòng hàng là tổng (có thể đếm trùng).
+  - Tổng doanh thu chiều dòng hàng nhỏ hơn hoặc lớn hơn doanh thu overview tùy giảm giá và phí ship; UI ghi rõ cơ sở tính.
+  - Mỗi lần xem chạy thêm 3 truy vấn nhóm/tổng trên Postgres thật (không cache); đo `EXPLAIN` ở Bước 5.
+- **Docs bị ảnh hưởng:** `api-contract.md` §16.2 (0.15), `admin-dashboard-plan.md`, `testing.md`.

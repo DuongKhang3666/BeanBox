@@ -12,7 +12,12 @@ import { useResource } from "@/features/orders/useResource";
 import { ApiError } from "@/lib/api/errors";
 import { cn } from "@/lib/cn";
 import { formatVND } from "@/lib/format";
-import type { AnalyticsGranularity, AnalyticsOverview, AnalyticsKpis } from "@/types/admin";
+import type {
+  AnalyticsGranularity,
+  AnalyticsOverview,
+  AnalyticsKpis,
+  BreakdownDimension,
+} from "@/types/admin";
 import { getAnalyticsOverview } from "../api/analytics";
 import {
   activePreset,
@@ -23,6 +28,7 @@ import {
   formatRate,
   MIN_DATE,
   parseAnalyticsParams,
+  parseDim,
   PRESETS,
   presetRange,
   rangeLabel,
@@ -34,6 +40,8 @@ import {
 import { adminErrorMessage } from "../errors";
 import { formatVnDateTime } from "../format";
 import { AnalyticsChart, AnalyticsTable } from "./AnalyticsChart";
+import { BreakdownBlock } from "./AnalyticsBreakdown";
+import { TopCustomersBlock, TopProductsBlock } from "./AnalyticsTops";
 
 const card = "rounded-2xl border border-coffee-200 bg-white p-4";
 const h2 = "font-serif text-lg font-bold text-coffee-900";
@@ -290,7 +298,10 @@ export function AdminAnalytics() {
     () => parseAnalyticsParams(new URLSearchParams(paramsKey), today),
     [paramsKey, today],
   );
+  const { dim, explicitDim } = useMemo(() => parseDim(new URLSearchParams(paramsKey)), [paramsKey]);
   const preset = activePreset(sel, today);
+  // Tăng khi bấm "Làm mới" để các khối cơ cấu/top tải lại cùng tổng quan.
+  const [refresh, setRefresh] = useState(0);
 
   // Chỉ gọi API khi là ADMIN; STAFF thấy thông báo (backend vẫn chặn 403).
   const res = useResource<AnalyticsOverview>(
@@ -301,8 +312,10 @@ export function AdminAnalytics() {
   if (user && !isAdmin) return <Forbidden />;
 
   const keepG = sel.explicitGranularity ? sel.granularity : undefined;
+  const keepDim = explicitDim ? dim : undefined;
   const go = (range: { from: string; to: string }, g = keepG) =>
-    router.replace(analyticsHref(range, g));
+    router.replace(analyticsHref(range, g, keepDim));
+  const goDim = (d: BreakdownDimension) => router.replace(analyticsHref(sel, keepG, d));
 
   let body: React.ReactNode;
   if (res.status === "loading" || res.status === "idle") body = <AnalyticsSkeleton />;
@@ -382,7 +395,10 @@ export function AdminAnalytics() {
           <Button
             variant="outline"
             size="sm"
-            onClick={res.retry}
+            onClick={() => {
+              res.retry();
+              setRefresh((n) => n + 1);
+            }}
             loading={res.status === "loading"}
           >
             Làm mới
@@ -428,6 +444,10 @@ export function AdminAnalytics() {
       </section>
 
       {body}
+
+      <BreakdownBlock from={sel.from} to={sel.to} dim={dim} onDim={goDim} refresh={refresh} />
+      <TopProductsBlock from={sel.from} to={sel.to} refresh={refresh} />
+      <TopCustomersBlock from={sel.from} to={sel.to} refresh={refresh} />
     </div>
   );
 }

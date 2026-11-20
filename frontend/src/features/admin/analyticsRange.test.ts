@@ -8,6 +8,7 @@ import {
   formatRate,
   isValidYmd,
   parseAnalyticsParams,
+  parseDim,
   presetRange,
   rangeLabel,
   todayVn,
@@ -166,5 +167,24 @@ describe("định dạng so sánh", () => {
     expect(formatInt(0)).toBe("0");
     expect(formatRate(0.1667)).toBe("16,7%");
     expect(formatRate(0)).toBe("0%");
+  });
+});
+
+describe("parseDim / analyticsHref với dim", () => {
+  const d = (qs: string) => parseDim(new URLSearchParams(qs));
+  it("dim hợp lệ được giữ, thiếu/sai về category", () => {
+    expect(d("dim=brand")).toEqual({ dim: "brand", explicitDim: true });
+    expect(d("dim=province")).toEqual({ dim: "province", explicitDim: true });
+    expect(d("")).toEqual({ dim: "category", explicitDim: false });
+    expect(d("dim=drop table")).toEqual({ dim: "category", explicitDim: false });
+  });
+  it("href thêm dim sau g", () => {
+    const r = { from: "2026-11-01", to: "2026-11-20" };
+    expect(analyticsHref(r, undefined, "paymentMethod")).toBe(
+      "/admin/phan-tich?from=2026-11-01&to=2026-11-20&dim=paymentMethod",
+    );
+    expect(analyticsHref(r, "week", "brand")).toBe(
+      "/admin/phan-tich?from=2026-11-01&to=2026-11-20&g=week&dim=brand",
+    );
   });
 });

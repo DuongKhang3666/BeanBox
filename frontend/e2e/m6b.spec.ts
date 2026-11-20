@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 import { login, seedPassword } from "./helpers";
 
@@ -48,6 +49,42 @@ test("admin xử lý tin nhắn, xem cài đặt và người dùng", async ({ p
   );
   await expect(page.getByRole("region", { name: "Doanh thu", exact: true })).toBeVisible();
   await expect(page.getByText("Không tải được số liệu phân tích")).toHaveCount(0);
+
+  // Bước 2: cơ cấu doanh thu, top sản phẩm, top khách hàng (dùng chung phiên admin, không đăng nhập thêm)
+  await expect(page.getByRole("heading", { name: "Cơ cấu doanh thu" })).toBeVisible();
+  await page
+    .getByRole("group", { name: "Chiều phân tích" })
+    .getByRole("button", { name: "Thanh toán", exact: true })
+    .click();
+  await expect(page).toHaveURL(/dim=paymentMethod/);
+  await expect(
+    page
+      .getByRole("group", { name: "Chiều phân tích" })
+      .getByRole("button", { name: "Thanh toán" }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("heading", { name: "Top sản phẩm" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Top khách hàng" })).toBeVisible();
+  // Mỗi khối ra kết quả (bảng hoặc thông báo rỗng), không khối nào lỗi hay còn loading
+  await expect(page.getByRole("status", { name: /^Đang tải/ })).toHaveCount(0);
+  for (const t of [
+    "Không tải được cơ cấu doanh thu",
+    "Không tải được top sản phẩm",
+    "Không tải được top khách hàng",
+  ]) {
+    await expect(page.getByText(t)).toHaveCount(0);
+  }
+  // Quét a11y trang phân tích: fail khi có vi phạm serious/critical
+  await page.waitForLoadState("networkidle");
+  const { violations } = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+    .analyze();
+  const hard = violations
+    .filter((v) => v.impact === "serious" || v.impact === "critical")
+    .map(
+      (v) =>
+        `[${v.impact}] ${v.id}: ${v.help} ${v.nodes.map((n) => n.target.join(" ")).join(" | ")}`,
+    );
+  expect(hard, "Vi phạm a11y nghiêm trọng ở /admin/phan-tich").toEqual([]);
 
   // Cài đặt: chỉ xem, không lưu
   await page.goto("/admin/cai-dat");

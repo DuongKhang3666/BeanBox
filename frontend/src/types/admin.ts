@@ -599,3 +599,88 @@ export interface AnalyticsOverview {
   previousSeries: AnalyticsPoint[];
   generatedAt: string;
 }
+
+/** Theo docs/api-contract.md §16.2 (Bước 2: cơ cấu doanh thu, top sản phẩm, top khách hàng). */
+
+export type BreakdownDimension =
+  "category" | "brand" | "paymentMethod" | "shippingMethod" | "province";
+
+export interface AnalyticsRangeInfo {
+  from: string;
+  to: string;
+  days: number;
+  timezone: string;
+}
+
+export interface BreakdownGroup {
+  /** null = "Không có thương hiệu" / "Không xác định"; "__other__" = "Khác"; "__unknown__" = sản phẩm không xác định. */
+  key: string | null;
+  label: string;
+  revenue: number;
+  orders: number;
+  /** null ở chiều cấp đơn. */
+  quantity: number | null;
+  /** 0..1, 4 chữ số. */
+  share: number;
+  previousRevenue: number;
+  changePct: number | null;
+}
+
+export interface BreakdownTotal {
+  revenue: number;
+  orders: number;
+  quantity: number | null;
+}
+
+export interface AnalyticsBreakdown {
+  range: AnalyticsRangeInfo;
+  previousRange: { from: string; to: string };
+  dimension: BreakdownDimension;
+  /** "order": revenue = Σ grandTotal; "item": revenue = Σ lineTotal (hàng hóa). */
+  basis: "order" | "item";
+  total: BreakdownTotal;
+  previousTotal: BreakdownTotal;
+  groups: BreakdownGroup[];
+  generatedAt: string;
+}
+
+export type TopProductsSort = "revenue" | "quantity";
+export type TopCustomersSort = "revenue" | "orders";
+
+export interface AnalyticsTopProduct {
+  productId: string;
+  name: string;
+  slug: string | null;
+  deleted: boolean;
+  categoryName: string | null;
+  revenue: number;
+  quantity: number;
+  orders: number;
+}
+
+export interface AnalyticsTopProducts {
+  range: AnalyticsRangeInfo;
+  sort: TopProductsSort;
+  limit: number;
+  items: AnalyticsTopProduct[];
+  generatedAt: string;
+}
+
+export interface AnalyticsTopCustomer {
+  customerType: "registered" | "guest";
+  userId: string | null;
+  name: string;
+  email: string;
+  orders: number;
+  revenue: number;
+  aov: number;
+  lastPaidAt: string | null;
+}
+
+export interface AnalyticsTopCustomers {
+  range: AnalyticsRangeInfo;
+  sort: TopCustomersSort;
+  limit: number;
+  items: AnalyticsTopCustomer[];
+  generatedAt: string;
+}
