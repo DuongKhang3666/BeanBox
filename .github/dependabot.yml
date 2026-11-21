@@ -12,6 +12,10 @@ updates:
     groups:
       backend-minor-patch:
         update-types: [minor, patch]
+    # Bản lớn (TypeScript 7, ESLint 10, @types/node 26, Express...) nâng tay có kiểm soát, không để Dependabot mở PR.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: npm
     directory: /frontend
@@ -24,6 +28,9 @@ updates:
     groups:
       frontend-minor-patch:
         update-types: [minor, patch]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: docker
     directory: /backend
