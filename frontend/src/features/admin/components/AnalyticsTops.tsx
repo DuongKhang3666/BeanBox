@@ -57,6 +57,7 @@ export function TopProductsBlock({ from, to, refresh }: Range) {
   } else if (res.status === "error") {
     body = (
       <ErrorState
+        headingLevel={3}
         title="Không tải được top sản phẩm"
         description={adminErrorMessage(res.error)}
         onRetry={res.retry}
@@ -132,7 +133,7 @@ export function TopProductsBlock({ from, to, refresh }: Range) {
   return (
     <section aria-labelledby="an-top-products" className={cn(card, "space-y-3")}>
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <h2 id="an-top-products" className={h2}>
+        <h2 id="an-top-products" tabIndex={-1} className={h2}>
           Top sản phẩm
         </h2>
         <ExportCsvButton
@@ -140,7 +141,11 @@ export function TopProductsBlock({ from, to, refresh }: Range) {
           context="top sản phẩm"
         />
       </div>
-      <div role="group" aria-label="Sắp xếp top sản phẩm" className="flex flex-wrap gap-2">
+      <div
+        role="group"
+        aria-label="Sắp xếp top sản phẩm"
+        className="flex flex-wrap gap-2 print:hidden"
+      >
         {(
           [
             ["revenue", "Theo doanh thu"],
@@ -177,6 +182,7 @@ export function TopCustomersBlock({ from, to, refresh }: Range) {
   } else if (res.status === "error") {
     body = (
       <ErrorState
+        headingLevel={3}
         title="Không tải được top khách hàng"
         description={adminErrorMessage(res.error)}
         onRetry={res.retry}
@@ -254,7 +260,7 @@ export function TopCustomersBlock({ from, to, refresh }: Range) {
   return (
     <section aria-labelledby="an-top-customers" className={cn(card, "space-y-3")}>
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <h2 id="an-top-customers" className={h2}>
+        <h2 id="an-top-customers" tabIndex={-1} className={h2}>
           Top khách hàng
         </h2>
         <ExportCsvButton
@@ -262,7 +268,11 @@ export function TopCustomersBlock({ from, to, refresh }: Range) {
           context="top khách hàng"
         />
       </div>
-      <div role="group" aria-label="Sắp xếp top khách hàng" className="flex flex-wrap gap-2">
+      <div
+        role="group"
+        aria-label="Sắp xếp top khách hàng"
+        className="flex flex-wrap gap-2 print:hidden"
+      >
         {(
           [
             ["revenue", "Theo doanh thu"],

@@ -11,3 +11,5 @@ tests
 uploads/*
 !uploads/seed
 src/generated
+# Script sinh dữ liệu demo (chỉ chạy tay trên DB tạm), không vào image
+scripts

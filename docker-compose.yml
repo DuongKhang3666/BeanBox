@@ -5,6 +5,9 @@ services:
   db:
     image: postgres:17
     restart: unless-stopped
+    # /dev/shm mặc định 64MB: truy vấn phân tích chạy song song (parallel hash join) hết bộ nhớ chia sẻ
+    # với dữ liệu lớn và lỗi "could not resize shared memory segment" (D-054).
+    shm_size: 256mb
     environment:
       POSTGRES_USER: beanbox
       POSTGRES_PASSWORD: beanbox

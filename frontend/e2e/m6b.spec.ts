@@ -116,18 +116,42 @@ test("admin xử lý tin nhắn, xem cài đặt và người dùng", async ({ p
   await expect(page.getByRole("alert").filter({ hasText: "Bạn xuất quá nhanh" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Xuất CSV top sản phẩm" })).toBeEnabled();
 
-  // Quét a11y trang phân tích: fail khi có vi phạm serious/critical
+  // Quét a11y trang phân tích (D-054): fail khi có vi phạm serious/critical, ở desktop và 390px,
+  // cả khi mở bảng thay thế của biểu đồ và ở từng tab tồn kho; không được cuộn ngang trang.
+  // Dùng chung phiên admin ở đây (không thêm lượt đăng nhập; rate limit đăng nhập 5/phút).
   await page.waitForLoadState("networkidle");
-  const { violations } = await new AxeBuilder({ page })
-    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
-    .analyze();
-  const hard = violations
-    .filter((v) => v.impact === "serious" || v.impact === "critical")
-    .map(
-      (v) =>
-        `[${v.impact}] ${v.id}: ${v.help} ${v.nodes.map((n) => n.target.join(" ")).join(" | ")}`,
-    );
-  expect(hard, "Vi phạm a11y nghiêm trọng ở /admin/phan-tich").toEqual([]);
+  const scanA11y = async (label: string) => {
+    const { violations } = await new AxeBuilder({ page })
+      .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+      .analyze();
+    const hard = violations
+      .filter((v) => v.impact === "serious" || v.impact === "critical")
+      .map(
+        (v) =>
+          `[${v.impact}] ${v.id}: ${v.help} ${v.nodes.map((n) => n.target.join(" ")).join(" | ")}`,
+      );
+    expect(hard, `Vi phạm a11y nghiêm trọng ở /admin/phan-tich (${label})`).toEqual([]);
+    const { sw, cw } = await page.evaluate(() => ({
+      sw: document.documentElement.scrollWidth,
+      cw: document.documentElement.clientWidth,
+    }));
+    expect(sw, `Trang cuộn ngang ở ${label}`).toBeLessThanOrEqual(cw);
+  };
+  await scanA11y("desktop");
+  await page.getByText("Xem dạng bảng").click();
+  await scanA11y("desktop, bảng thay thế mở");
+  const invTabs = page.getByRole("group", { name: "Danh sách tồn kho" });
+  for (const tab of [/^Hết hàng/, /^Sắp hết/, /^Bán chậm/]) {
+    await invTabs.getByRole("button", { name: tab }).click();
+    await scanA11y(`desktop, tab tồn kho ${tab.source}`);
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await scanA11y("390px");
+  for (const tab of [/^Hết hàng/, /^Sắp hết/, /^Bán chậm/]) {
+    await invTabs.getByRole("button", { name: tab }).click();
+    await scanA11y(`390px, tab tồn kho ${tab.source}`);
+  }
+  await page.setViewportSize({ width: 1280, height: 720 }); // các bước sau kiểm bảng ở desktop
 
   // Cài đặt: chỉ xem, không lưu
   await page.goto("/admin/cai-dat");

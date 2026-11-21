@@ -35,7 +35,15 @@ const codeSchema = z
   .trim()
   .transform((s) => s.toUpperCase())
   .pipe(
-    z.string().regex(/^[A-Z0-9_-]{3,30}$/, 'Mã gồm 3-30 ký tự: chữ, số, gạch ngang, gạch dưới'),
+    z
+      .string()
+      // Chỉ áp khi TẠO mã (PATCH không nhận `code`): mã cũ bắt đầu bằng "-" vẫn dùng được. Mã như
+      // "-5" dễ bị hiểu nhầm là tùy chọn dòng lệnh/công thức khi xuất bảng tính (D-054).
+      .refine((s) => !s.startsWith('-'), {
+        message: 'Mã không được bắt đầu bằng dấu gạch ngang',
+        abort: true,
+      })
+      .regex(/^[A-Z0-9_-]{3,30}$/, 'Mã gồm 3-30 ký tự: chữ, số, gạch ngang, gạch dưới'),
   );
 
 const dateTimeSchema = z.iso

@@ -245,6 +245,7 @@ export function OperationsBlock({
   } else if (res.status === "error") {
     body = (
       <ErrorState
+        headingLevel={3}
         title="Không tải được số liệu vận hành"
         description={adminErrorMessage(res.error)}
         onRetry={res.retry}
@@ -338,7 +339,7 @@ export function OperationsBlock({
   return (
     <section aria-labelledby="an-operations" className={cn(card, "space-y-3")}>
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <h2 id="an-operations" className={h2}>
+        <h2 id="an-operations" tabIndex={-1} className={h2}>
           Vận hành
         </h2>
         <ExportCsvButton params={{ report: "operations", from, to }} context="số liệu vận hành" />

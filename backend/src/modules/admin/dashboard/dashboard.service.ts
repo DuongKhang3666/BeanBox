@@ -17,7 +17,8 @@ export function vnStartOfDay(d: Date): Date {
 }
 
 /** `YYYY-MM-DD` theo giờ VN của thời điểm `d`. */
-export const vnDateKey = (d: Date) => new Date(d.getTime() + VN_OFFSET_MS).toISOString().slice(0, 10);
+export const vnDateKey = (d: Date) =>
+  new Date(d.getTime() + VN_OFFSET_MS).toISOString().slice(0, 10);
 
 export interface DashboardDto {
   revenue: { today: number; last7Days: number; last30Days: number };

@@ -86,4 +86,6 @@ Cho chủ cửa hàng (Admin) một khu riêng để đọc số liệu kinh doa
 - **API:** không thêm.
 - **Test:** axe không có vi phạm serious/critical trên các trang khu phân tích; E2E không tràn ngang.
 - **Tiêu chí xong:** truy vấn overview dưới ngưỡng đã ghi trong `testing.md` với 50k đơn; tài liệu cập nhật.
-- **Trạng thái:** Chờ duyệt.
+- **Đã làm (phần A, D-054):** công cụ sinh dữ liệu demo (100.000 đơn trong ~44 giây); đo `EXPLAIN`/HTTP trên Postgres 17 (kết quả trước/sau ở `testing.md`): không thêm index, tối ưu 3 truy vấn (tồn kho 453 -> 102 ms, vận hành 327 -> 132 ms, cơ cấu danh mục/thương hiệu 1242 -> 890 ms ở 365 ngày), `shm_size` cho db; axe + không tràn ngang ở 1440/768/390 (cả bảng thay thế và tab tồn kho) với dữ liệu lớn, mở rộng `m6b.spec.ts`; bản in; chặn mã giảm giá bắt đầu bằng `-` khi tạo (contract 0.18); prettier file lệch ở HEAD.
+- **Đã làm (phần B, 2026-11-21):** README (mục Admin có khu Phân tích kinh doanh, quyết định kỹ thuật, ảnh, tài liệu); chụp lại toàn bộ ảnh trên DB tạm có dữ liệu generator (`--orders 1500 --days 90 --seed 42`), thêm `admin-analytics.png` và `admin-analytics-breakdown.png`; `capture.spec.ts` có thêm bước chụp vùng; `docs/screenshots/README.md` cập nhật quy trình.
+- **Trạng thái:** Đã làm (phần A và B); vòng kiểm cuối 2026-11-21 đạt (xem `progress-m10-step5.md`). Chờ chủ dự án duyệt và commit.

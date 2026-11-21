@@ -88,12 +88,18 @@ const SCOPE = Prisma.sql`v."isActive" = true AND v."deletedAt" IS NULL AND p."de
 const COLS = Prisma.sql`v."id" AS variant_id, p."id" AS product_id, p."name" AS product_name,
   v."name" AS variant_name, v."sku" AS sku, v."stock" AS stock, v."lowStockThreshold" AS threshold,
   v."price" AS price`;
-/** "Bán" = có OrderItem thuộc đơn không CANCELLED/PENDING_PAYMENT (cùng quy ước top sản phẩm §14.3). */
-const LAST_SOLD = Prisma.sql`(
-  SELECT MAX(o."createdAt") FROM "OrderItem" oi
+/**
+ * "Bán" = có OrderItem thuộc đơn không CANCELLED/PENDING_PAYMENT (cùng quy ước top sản phẩm §14.3).
+ * Gộp MỘT lần theo biến thể rồi JOIN (subquery tương quan chạy lại quét `Order` cho từng biến thể,
+ * chậm khi có hàng chục nghìn đơn; xem D-054).
+ */
+const LAST_SOLD_JOIN = Prisma.sql`LEFT JOIN (
+  SELECT oi."variantId" AS vid, MAX(o."createdAt") AS last_sold
+  FROM "OrderItem" oi
   JOIN "Order" o ON o."id" = oi."orderId"
-  WHERE oi."variantId" = v."id" AND o."status" NOT IN ('CANCELLED', 'PENDING_PAYMENT')
-)`;
+  WHERE o."status" NOT IN ('CANCELLED', 'PENDING_PAYMENT')
+  GROUP BY oi."variantId"
+) ls ON ls.vid = v."id"`;
 
 export async function getInventory(
   query: InventoryQuery,
@@ -115,26 +121,29 @@ export async function getInventory(
       JOIN "Product" p ON p."id" = v."productId"
       WHERE ${SCOPE}`,
     prisma.$queryRaw<ItemRow[]>`
-      SELECT ${COLS}, ${LAST_SOLD} AS last_sold
+      SELECT ${COLS}, ls.last_sold AS last_sold
       FROM "ProductVariant" v
       JOIN "Product" p ON p."id" = v."productId"
+      ${LAST_SOLD_JOIN}
       WHERE ${SCOPE} AND v."stock" <= 0
       ORDER BY p."name" ASC, v."name" ASC, v."sku" ASC
       LIMIT ${listLimit}`,
     prisma.$queryRaw<ItemRow[]>`
-      SELECT ${COLS}, ${LAST_SOLD} AS last_sold
+      SELECT ${COLS}, ls.last_sold AS last_sold
       FROM "ProductVariant" v
       JOIN "Product" p ON p."id" = v."productId"
+      ${LAST_SOLD_JOIN}
       WHERE ${SCOPE} AND v."stock" > 0 AND v."stock" <= v."lowStockThreshold"
       ORDER BY v."stock" ASC, p."name" ASC, v."sku" ASC
       LIMIT ${listLimit}`,
     // Bán chậm: còn hàng, không bán trong `slowDays` ngày gần nhất, loại biến thể tạo trong khoảng đó.
     prisma.$queryRaw<SlowRow[]>`
       WITH slow AS (
-        SELECT ${COLS}, ${LAST_SOLD} AS last_sold,
+        SELECT ${COLS}, ls.last_sold AS last_sold,
           (v."stock"::bigint * v."price") AS stock_value
         FROM "ProductVariant" v
         JOIN "Product" p ON p."id" = v."productId"
+        ${LAST_SOLD_JOIN}
         WHERE ${SCOPE} AND v."stock" > 0 AND v."createdAt" < ${since}
       ), filtered AS (
         SELECT * FROM slow WHERE last_sold IS NULL OR last_sold < ${since}

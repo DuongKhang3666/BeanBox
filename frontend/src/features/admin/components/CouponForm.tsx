@@ -65,7 +65,7 @@ export function CouponForm({
   async function onSubmit(ev: React.FormEvent) {
     ev.preventDefault();
     if (busyRef.current) return;
-    const found = validateCoupon(form, coupon?.usedCount ?? 0);
+    const found = validateCoupon(form, coupon?.usedCount ?? 0, editing);
     setErrors(found);
     setGeneral(null);
     if (Object.keys(found).length > 0) return;
@@ -136,7 +136,7 @@ export function CouponForm({
           <p id="cf-code-hint" className="mt-1.5 text-sm text-coffee-700">
             {editing
               ? "Không thể đổi mã sau khi tạo."
-              : "3-30 ký tự: chữ in hoa, số, dấu - hoặc _."}
+              : "3-30 ký tự: chữ in hoa, số, dấu - hoặc _; không bắt đầu bằng -."}
           </p>
           <FieldError id="cf-code-err">{err("code")}</FieldError>
         </div>

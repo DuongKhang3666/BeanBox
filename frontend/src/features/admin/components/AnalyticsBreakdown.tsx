@@ -18,7 +18,8 @@ import {
 import { adminErrorMessage } from "../errors";
 import { ExportCsvButton } from "./ExportCsvButton";
 
-export const card = "rounded-2xl border border-coffee-200 bg-white p-4";
+export const card =
+  "rounded-2xl border border-coffee-200 bg-white p-4 print:break-inside-avoid print:rounded-lg print:border-coffee-400";
 export const h2 = "scroll-mt-20 font-serif text-lg font-bold text-coffee-900";
 export const chip = (active: boolean) =>
   cn(
@@ -56,7 +57,7 @@ export function TableScroll({ label, children }: { label: string; children: Reac
       role="region"
       aria-label={label}
       tabIndex={0}
-      className="relative overflow-x-auto rounded-xl border border-coffee-100 focus-visible:outline-3 focus-visible:outline-offset-1 focus-visible:outline-moss-600"
+      className="relative overflow-x-auto rounded-xl border border-coffee-100 focus-visible:outline-3 focus-visible:outline-offset-1 focus-visible:outline-moss-600 print:overflow-visible"
     >
       {children}
     </div>
@@ -115,6 +116,7 @@ export function BreakdownBlock({
   } else if (res.status === "error") {
     body = (
       <ErrorState
+        headingLevel={3}
         title="Không tải được cơ cấu doanh thu"
         description={adminErrorMessage(res.error)}
         onRetry={res.retry}
@@ -248,7 +250,7 @@ export function BreakdownBlock({
   return (
     <section aria-labelledby="an-breakdown" className={cn(card, "space-y-3")}>
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <h2 id="an-breakdown" className={h2}>
+        <h2 id="an-breakdown" tabIndex={-1} className={h2}>
           Cơ cấu doanh thu
         </h2>
         <ExportCsvButton
@@ -256,7 +258,7 @@ export function BreakdownBlock({
           context={`cơ cấu doanh thu theo ${dimLabel.toLowerCase()}`}
         />
       </div>
-      <div role="group" aria-label="Chiều phân tích" className="flex flex-wrap gap-2">
+      <div role="group" aria-label="Chiều phân tích" className="flex flex-wrap gap-2 print:hidden">
         {BREAKDOWN_DIMS.map((o) => (
           <button
             key={o.id}

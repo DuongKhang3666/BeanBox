@@ -110,7 +110,7 @@ export function AnalyticsChart({
         tabIndex={0}
         onKeyDown={onKey}
         onBlur={() => setActive(null)}
-        className="relative overflow-x-auto rounded-xl border border-coffee-100 bg-cream-50 focus-visible:outline-3 focus-visible:outline-offset-1 focus-visible:outline-moss-600"
+        className="relative overflow-x-auto rounded-xl border border-coffee-100 bg-cream-50 focus-visible:outline-3 focus-visible:outline-offset-1 focus-visible:outline-moss-600 print:overflow-visible"
       >
         <svg
           role="img"
@@ -118,7 +118,7 @@ export function AnalyticsChart({
           width={W}
           height={H}
           viewBox={`0 0 ${W} ${H}`}
-          className="block"
+          className="block print:h-auto print:w-full print:max-w-full"
           onMouseLeave={() => setActive(null)}
         >
           {ticks.map((t) => {
@@ -241,7 +241,7 @@ export function AnalyticsTable({
   const td = "px-3 py-1.5 text-right tabular-nums";
   return (
     <div
-      className="relative max-h-96 overflow-auto rounded-lg border border-coffee-200"
+      className="relative max-h-96 overflow-auto rounded-lg border border-coffee-200 print:max-h-none print:overflow-visible"
       tabIndex={0}
       role="group"
       aria-label="Bảng số liệu, có thể cuộn"

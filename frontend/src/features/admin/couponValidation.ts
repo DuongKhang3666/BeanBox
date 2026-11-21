@@ -54,6 +54,7 @@ function intIn(raw: string, min: number, max: number, label: string): string | u
 export function codeError(code: string): string | undefined {
   const c = code.trim();
   if (!c) return "Vui lòng nhập mã giảm giá.";
+  if (c.startsWith("-")) return "Mã không được bắt đầu bằng dấu gạch ngang.";
   if (!COUPON_CODE_RE.test(c)) {
     return "Mã gồm 3-30 ký tự: chữ in hoa không dấu, số, dấu gạch ngang hoặc gạch dưới.";
   }
@@ -61,12 +62,17 @@ export function codeError(code: string): string | undefined {
 }
 
 /** Trả map field -> lỗi (rỗng = hợp lệ). `usedCount` chỉ có ý nghĩa khi sửa. */
-export function validateCoupon(s: CouponFormState, usedCount = 0): Record<string, string> {
+export function validateCoupon(
+  s: CouponFormState,
+  usedCount = 0,
+  /** Sửa mã: `code` bị khóa và không gửi lên, nên không kiểm (mã cũ bắt đầu bằng "-" vẫn sửa được). */
+  editing = false,
+): Record<string, string> {
   const e: Record<string, string> = {};
   const put = (k: string, v: string | undefined) => {
     if (v) e[k] = v;
   };
-  put("code", codeError(s.code));
+  if (!editing) put("code", codeError(s.code));
   if (s.type === "PERCENT") put("value", intIn(s.value, 1, 100, "Phần trăm giảm"));
   if (s.type === "FIXED") put("value", intIn(s.value, 1, MAX_FIXED_VALUE, "Số tiền giảm"));
   if (s.type !== "FIXED" && s.maxDiscount.trim()) {

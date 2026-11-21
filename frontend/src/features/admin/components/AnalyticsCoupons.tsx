@@ -52,6 +52,7 @@ export function CouponsBlock({ from, to, refresh }: { from: string; to: string; 
   } else if (res.status === "error") {
     body = (
       <ErrorState
+        headingLevel={3}
         title="Không tải được hiệu quả mã giảm giá"
         description={adminErrorMessage(res.error)}
         onRetry={res.retry}
@@ -200,7 +201,7 @@ export function CouponsBlock({ from, to, refresh }: { from: string; to: string; 
   return (
     <section aria-labelledby="an-coupons" className={cn(card, "space-y-3")}>
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <h2 id="an-coupons" className={h2}>
+        <h2 id="an-coupons" tabIndex={-1} className={h2}>
           Mã giảm giá
         </h2>
         <ExportCsvButton
@@ -208,7 +209,11 @@ export function CouponsBlock({ from, to, refresh }: { from: string; to: string; 
           context="hiệu quả mã giảm giá"
         />
       </div>
-      <div role="group" aria-label="Sắp xếp mã giảm giá" className="flex flex-wrap gap-2">
+      <div
+        role="group"
+        aria-label="Sắp xếp mã giảm giá"
+        className="flex flex-wrap gap-2 print:hidden"
+      >
         {SORTS.map(([id, label]) => (
           <button
             key={id}

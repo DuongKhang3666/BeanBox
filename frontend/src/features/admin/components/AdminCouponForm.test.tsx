@@ -176,6 +176,18 @@ describe("AdminCouponNew", () => {
     expect(writeIdx(mock)).toBe(-1);
   });
 
+  it("mã bắt đầu bằng dấu gạch ngang bị chặn phía client, không gọi API", async () => {
+    const { mock, user } = await renderNew(() => jsonRes(201, { data: makeAdminCoupon() }));
+    await user.type(screen.getByLabelText("Mã giảm giá"), "-TET");
+    await user.type(screen.getByLabelText(/Phần trăm giảm/), "10");
+    await submit(user);
+    expect(
+      await screen.findByText("Mã không được bắt đầu bằng dấu gạch ngang."),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Mã giảm giá")).toHaveAttribute("aria-invalid", "true");
+    expect(writeIdx(mock)).toBe(-1);
+  });
+
   it("409 COUPON_CODE_TAKEN hiện dưới ô mã", async () => {
     const { user } = await renderNew(() =>
       errRes(409, "COUPON_CODE_TAKEN", "Mã đã tồn tại", { field: "code" }),
@@ -253,6 +265,18 @@ describe("AdminCouponEditor", () => {
     expect(method(mock.mock.calls[idx]![1] as RequestInit)).toBe("PATCH");
     expect(mock.mock.calls[idx]![0]).toBe("/api/v1/admin/coupons/cp1");
     expect(bodyOf(mock, idx)).toEqual({ value: 20 });
+  });
+
+  it("mã cũ bắt đầu bằng dấu gạch ngang vẫn sửa được trường khác, không gửi code", async () => {
+    const legacy = makeAdminCoupon({ code: "-OLD", value: 10 });
+    const { mock, user } = await renderEditor(() => jsonRes(200, { data: legacy }), legacy);
+    expect(screen.getByLabelText("Mã giảm giá")).toHaveValue("-OLD");
+    const value = screen.getByLabelText(/Phần trăm giảm/);
+    await user.clear(value);
+    await user.type(value, "15");
+    await user.click(screen.getByRole("button", { name: "Lưu thay đổi" }));
+    expect(await screen.findByText("Đã lưu thay đổi.")).toBeInTheDocument();
+    expect(bodyOf(mock, writeIdx(mock))).toEqual({ value: 15 });
   });
 
   it("xóa ô thời gian gửi null; xóa phạm vi gửi mảng rỗng", async () => {

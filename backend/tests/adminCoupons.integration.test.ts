@@ -232,6 +232,19 @@ describe('POST /admin/coupons: tạo và validate', () => {
     expect(await prisma.coupon.count({ where: { code: UP + 'DUP' } })).toBe(1);
   });
 
+  it('tạo mã bắt đầu bằng "-" -> 400 (sau khi trim + uppercase), không tạo dở', async () => {
+    for (const code of ['-ABC', '  -tm4c-neg ', '--TM4C-X', '-5']) {
+      const res = await cp('post', '', staff.who, { code, type: 'PERCENT', value: 5 });
+      expect(res.status, code).toBe(400);
+      expect(errOf(res).code, code).toBe('VALIDATION_ERROR');
+      expect(fieldsOf(res), code).toContain('code');
+      expect(JSON.stringify(res.body), code).toContain('Mã không được bắt đầu bằng dấu gạch ngang');
+    }
+    expect(await prisma.coupon.count({ where: { code: { startsWith: '-' } } })).toBe(0);
+    // Gạch ngang ở giữa/cuối vẫn hợp lệ.
+    expect((await create(`${UP}MID-DASH-`)).code).toBe(`${UP}MID-DASH-`);
+  });
+
   it('ghi AuditLog coupon.create với diff', async () => {
     const c = await create(UP + 'AUD1', { value: 15 });
     const log = await prisma.auditLog.findFirstOrThrow({
@@ -468,6 +481,52 @@ describe('PATCH /admin/coupons/:id', () => {
     expect(res.status).toBe(200);
     expect(dataOf(res).scope).toBeNull();
     expect((await prisma.coupon.findUniqueOrThrow({ where: { id: c.id } })).scope).toBeNull();
+  });
+});
+
+describe('mã cũ bắt đầu bằng "-" (đã tồn tại trước quy tắc mới)', () => {
+  it('vẫn hiển thị, sửa trường khác được (200), đổi code vẫn 400, áp dụng được ở giỏ và đặt hàng', async () => {
+    const legacyCode = `-${UP}OLD`;
+    // Tạo thẳng bằng DB: API không còn cho tạo mã dạng này.
+    const legacy = await prisma.coupon.create({
+      data: { code: legacyCode, type: 'FIXED', value: 20000, minOrder: 0 },
+    });
+    try {
+      const listed = dataOf(await cp('get', `?q=${encodeURIComponent(legacyCode)}`)) as Json[];
+      expect(listed.map((c) => c.code)).toContain(legacyCode);
+      expect(dataOf(await cp('get', `/${legacy.id}`))).toMatchObject({ code: legacyCode });
+
+      const upd = await cp('patch', `/${legacy.id}`, staff.who, { minOrder: 1000, value: 25000 });
+      expect(upd.status, JSON.stringify(upd.body)).toBe(200);
+      expect(dataOf(upd)).toMatchObject({ code: legacyCode, minOrder: 1000, value: 25000 });
+
+      // Gửi `code` (dù là mã cũ hay mã mới bắt đầu bằng "-") vẫn bị từ chối: không đổi được mã.
+      for (const code of ['-MOI-KHAC', legacyCode]) {
+        const res = await cp('patch', `/${legacy.id}`, staff.who, { isActive: true, code });
+        expect(res.status, code).toBe(400);
+        expect(errOf(res).code, code).toBe('VALIDATION_ERROR');
+      }
+      expect((await prisma.coupon.findUniqueOrThrow({ where: { id: legacy.id } })).code).toBe(
+        legacyCode,
+      );
+
+      const v = await fx.mkVariant('legacy', { stock: 5, price: 100000 });
+      const who = await fx.guestWith([[v.id, 1]]);
+      const applied = await fx.call('post', '/cart/apply-coupon', who, { code: legacyCode });
+      expect(applied.status, JSON.stringify(applied.body)).toBe(200);
+      expect(dataOf(applied).coupon).toMatchObject({
+        code: legacyCode,
+        valid: true,
+        discount: 25000,
+      });
+      const order = await fx.postOrder(who, fx.guestOrderBody());
+      expect(order.status, JSON.stringify(order.body)).toBe(201);
+      expect(dataOf(order)).toMatchObject({ couponCode: legacyCode });
+    } finally {
+      await prisma.couponRedemption.deleteMany({ where: { couponId: legacy.id } });
+      await prisma.order.updateMany({ where: { couponId: legacy.id }, data: { couponId: null } });
+      await prisma.coupon.deleteMany({ where: { id: legacy.id } });
+    }
   });
 });
 

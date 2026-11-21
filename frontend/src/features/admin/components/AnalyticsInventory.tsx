@@ -135,6 +135,7 @@ export function InventoryBlock({ refresh }: { refresh: number }) {
   } else if (res.status === "error") {
     body = (
       <ErrorState
+        headingLevel={3}
         title="Không tải được số liệu tồn kho"
         description={adminErrorMessage(res.error)}
         onRetry={res.retry}
@@ -179,7 +180,11 @@ export function InventoryBlock({ refresh }: { refresh: number }) {
           />
         </div>
 
-        <div role="group" aria-label="Danh sách tồn kho" className="flex flex-wrap gap-2">
+        <div
+          role="group"
+          aria-label="Danh sách tồn kho"
+          className="flex flex-wrap gap-2 print:hidden"
+        >
           {tabs.map((t) => (
             <button
               key={t.id}
@@ -194,7 +199,11 @@ export function InventoryBlock({ refresh }: { refresh: number }) {
         </div>
 
         {tab === "slowMovers" ? (
-          <div role="group" aria-label="Số ngày không bán" className="flex flex-wrap gap-2">
+          <div
+            role="group"
+            aria-label="Số ngày không bán"
+            className="flex flex-wrap gap-2 print:hidden"
+          >
             <span className="inline-flex h-11 items-center text-sm text-coffee-800">
               Không bán trong:
             </span>
@@ -241,7 +250,7 @@ export function InventoryBlock({ refresh }: { refresh: number }) {
     <section aria-labelledby="an-inventory" className={cn(card, "space-y-3")}>
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h2 id="an-inventory" className={h2}>
+          <h2 id="an-inventory" tabIndex={-1} className={h2}>
             Tồn kho
           </h2>
           <p className="text-sm text-coffee-800">Số liệu hiện tại, không theo khoảng ngày.</p>

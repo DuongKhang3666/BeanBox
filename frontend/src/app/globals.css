@@ -56,3 +56,24 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* In /admin/phan-tich (D-054): lề trang, giữ nền thanh/biểu đồ, chữ đen để đọc được khi in trắng đen,
+   không cắt ngang dòng bảng, tiêu đề không nằm cuối trang. Các phần tử khác ẩn bằng `print:hidden`. */
+@media print {
+  @page {
+    margin: 12mm;
+  }
+  .analytics-print {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .analytics-print :is(h1, h2, h3, p, span, td, th, caption, a, li, dt, dd, summary, strong) {
+    color: #000 !important;
+  }
+  .analytics-print :is(h2, h3) {
+    break-after: avoid;
+  }
+  .analytics-print tr {
+    break-inside: avoid;
+  }
+}

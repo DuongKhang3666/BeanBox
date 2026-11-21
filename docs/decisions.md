@@ -57,6 +57,7 @@
 - [D-051 Cơ cấu doanh thu, top sản phẩm, top khách hàng (Bước 2)](#d-051-cơ-cấu-doanh-thu-top-sản-phẩm-top-khách-hàng-bước-2)
 - [D-052 Khách hàng, vận hành, tồn kho (Bước 3)](#d-052-khách-hàng-vận-hành-tồn-kho-bước-3)
 - [D-053 Hiệu quả mã giảm giá và xuất CSV (Bước 4)](#d-053-hiệu-quả-mã-giảm-giá-và-xuất-csv-bước-4)
+- [D-054 Hiệu năng, a11y và bản in khu phân tích (Bước 5, phần A)](#d-054-hiệu-năng-a11y-và-bản-in-khu-phân-tích-bước-5-phần-a)
 
 ---
 
@@ -845,3 +846,19 @@
   - "Giảm" của mã FREESHIP có thể gồm cả miễn phí ship theo ngưỡng; mã FREESHIP đã xóa hiện giảm 0 (xem mục 2).
   - Hạn mức xuất tính theo IP (như các limiter khác); sau reverse proxy phụ thuộc `TRUST_PROXY` (D-009).
 - **Docs bị ảnh hưởng:** `api-contract.md` §16.4, §14.4, §12.0, §1 (0.17), `admin-dashboard-plan.md`, `testing.md`, `deployment.md`, `.env.example`, `.env.production.example`. Không đổi `db-schema.md` (không có migration).
+
+## D-054 Hiệu năng, a11y và bản in khu phân tích (Bước 5, phần A)
+
+- **Ngày:** 2026-11-21 · **Người chốt:** Tech Lead (phần README/ảnh thuộc phần B, đã làm)
+- **Trạng thái:** Áp dụng.
+- **Bối cảnh:** Bước 5 của khu phân tích (D-049..D-053) cần đo truy vấn ở quy mô lớn, rà a11y/mobile, thêm bản in và dọn việc nhỏ.
+- **Quyết định:**
+  1. **Không thêm index, không có migration.** Đo trên Postgres 17.11, 100.000 đơn/294.111 dòng hàng/365 ngày (số liệu ở `testing.md`). Điểm chậm còn lại (breakdown danh mục/thương hiệu ~0,9 s, top-products ~0,4 s ở 365 ngày) do `COUNT(DISTINCT)` sắp xếp ra đĩa trên khoảng chứa ~87% số đơn; hai index thử (một phần theo `paymentStatus = 'PAID'`, phủ trên `OrderItem`) không được planner dùng. Ba index ứng viên khác (`lower("contactEmail")`, `OrderStatusHistory(orderId, toStatus, createdAt)`, `Order(couponId, paidAt)`) phục vụ truy vấn đã dưới 250 ms, không đáng chi phí ghi trên bảng `Order` nóng.
+  2. **Tối ưu truy vấn, kết quả không đổi:** tồn kho (lần bán cuối gộp một lần), đơn cần hoàn tiền (đi từ `Payment`), tổng cơ cấu danh mục/thương hiệu (đếm đơn bằng `EXISTS`); `shm_size: 256mb` cho `db` trong compose.
+  3. **Giới hạn quy mô và khi nào cần bảng tổng hợp:** chấp nhận được tới ~100.000 đơn/năm; khi p50 breakdown/top-products ở 365 ngày vượt ~1 s (khoảng 150.000-200.000 đơn/năm) thêm bảng tổng hợp theo ngày.
+  4. **Công cụ sinh dữ liệu demo** `backend/scripts/generate-demo-orders.ts` chạy tay trên DB tạm, có rào an toàn (chỉ `DEMO_DATABASE_URL`, từ chối DB dev/production), không vào build/image.
+  5. **A11y:** quét axe cho khu phân tích mở rộng trong `m6b.spec.ts` (không thêm lượt đăng nhập vào `a11y.spec.ts`, D-044); heading đích của mục lục có `tabIndex={-1}`; `ErrorState` nhận `headingLevel` để không nhảy cấp heading.
+  6. **Bản in** bằng biến thể `print:` và một khối `@media print`; không có nút "In".
+  7. **Mã giảm giá không được bắt đầu bằng `-` khi tạo** (dễ bị hiểu nhầm là tùy chọn dòng lệnh/công thức bảng tính). `PATCH` vốn không nhận `code` (đổi mã luôn 400), nên mã cũ dạng `-...` vẫn hiển thị, sửa trường khác và áp dụng ở checkout như trước; không cần migrate dữ liệu, seed không có mã như vậy.
+- **Hệ quả/rủi ro:** số đo từ một máy cá nhân (nhiễu ~30%); breakdown danh mục/thương hiệu và top-products gần 1 s ở 100.000 đơn/365 ngày; dữ liệu demo không khớp sổ kho.
+- **Docs bị ảnh hưởng:** `api-contract.md` §13.8 (0.18), `testing.md`, `admin-dashboard-plan.md`. Không đổi `db-schema.md`.

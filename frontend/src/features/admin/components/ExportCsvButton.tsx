@@ -52,7 +52,7 @@ export function ExportCsvButton({ params, context }: { params: ExportParams; con
   }
 
   return (
-    <div className="flex flex-col items-start sm:items-end">
+    <div className="flex flex-col items-start sm:items-end print:hidden">
       <Button
         variant="outline"
         size="sm"

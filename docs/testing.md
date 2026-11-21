@@ -16,6 +16,8 @@
 | Backend  | `npm run lint`, `npm run typecheck`, `npm test`                  | Test integration dùng DB Postgres thật (cần Docker chạy).              |
 | Frontend | `npm run lint`, `npm run typecheck`, `npm test`, `npm run build` | Vitest + jsdom; `testTimeout`/`hookTimeout` = 15 s; loại trừ `e2e/**`. |
 
+Ghi chú (2026-11-21): vitest frontend chạy mặc định 16 worker trên máy 16 luồng; một lần trước đây có 10-11 test form quá thời gian khi máy đang bận (tiến trình khác chạy song song). Vòng kiểm cuối chạy lại mặc định 3 lần ở working tree và 2 lần ở HEAD sạch: đều 0 timeout (92 file; 819 test ở working tree, 817 ở HEAD) trong khoảng 35-39 s, nên đó không phải hồi quy của Bước 5. Nếu gặp lại trên máy nhiều luồng đang tải, chạy `npx vitest run --maxWorkers=6`.
+
 ### Test bảo mật phiên và cache (D-045)
 
 - `backend/tests/sessionRevocation.integration.test.ts`: access token gắn với phiên; logout, reset-password, change-password (phiên khác 401, phiên hiện tại 200), dùng lại refresh token, refresh hết hạn đều chặn access token ngay; user bị khóa vẫn 403. Test tự ký token (`authMiddleware`, `securityHardening`) phải tạo một `RefreshToken` thật với `familyId = sid`; thu hồi phiên của user (khóa/đổi role) làm access token cũ trả 401 (không còn 403).
@@ -179,6 +181,83 @@ docker rm -fv bb-drift
 ```
 
 Mã thoát `0` là khớp; `2` là drift (migrations khác `schema.prisma`: tạo migration mới bằng `npm run prisma:migrate`); mã khác là lỗi chạy lệnh. Mật khẩu `drift` chỉ dành cho container tạm này.
+
+## Dữ liệu demo lớn, hiệu năng và kiểm tra khu phân tích (D-054)
+
+### Sinh dữ liệu demo (cho đo hiệu năng và ảnh README)
+
+`backend/scripts/generate-demo-orders.ts` sinh đơn hàng bằng SQL tập hợp theo lô (`generate_series` + `INSERT ... SELECT`, không lặp từng đơn): đơn, dòng hàng (1-5 dòng, biến thể seed), `Payment`, `OrderStatusHistory` (đúng cách mã thật ghi, gồm 3 loại hủy: khách, cửa hàng, hết hạn dùng `EXPIRE_REASON`), user CUSTOMER giả (`demo.khachN@example.com`), khách vãng lai, mã giảm giá seed, COD/VNPAY/STRIPE, rải theo ngày giờ VN, `shippingAddress` có `provinceCode/provinceName` thật từ dữ liệu địa điểm. Không cập nhật tồn kho, `InventoryMovement`, `soldCount`, `CouponRedemption` (dữ liệu demo, không khớp sổ kho). Nhận dạng: `Order.idempotencyKey LIKE 'demo-%'`; `--reset` xóa đúng các dòng đó.
+
+```bash
+# 1. DB tạm (KHÔNG dùng DB dev), cổng khác 5432, shm đủ cho truy vấn song song
+docker run -d --name bb-tmp-perf --shm-size=256m -e POSTGRES_USER=beanbox -e POSTGRES_PASSWORD=tmp-pw   -e POSTGRES_DB=beanbox_perf -p 127.0.0.1:55442:5432 postgres:17
+# 2. migrate + seed trên DB tạm
+cd backend
+DATABASE_URL=postgresql://beanbox:tmp-pw@127.0.0.1:55442/beanbox_perf npx prisma migrate deploy
+DATABASE_URL=postgresql://beanbox:tmp-pw@127.0.0.1:55442/beanbox_perf npx prisma db seed
+# 3. sinh dữ liệu (chỉ đọc DEMO_DATABASE_URL)
+DEMO_DATABASE_URL=postgresql://beanbox:tmp-pw@127.0.0.1:55442/beanbox_perf   npx tsx scripts/generate-demo-orders.ts --orders 100000 --days 365 --seed 42   # [--reset] [--batch N]
+# 4. xong việc
+docker rm -fv bb-tmp-perf
+```
+
+Rào an toàn (`backend/scripts/demoDbGuard.ts`, test `backend/tests/demoDbGuard.test.ts`): từ chối khi thiếu `DEMO_DATABASE_URL`, `NODE_ENV=production`, trùng `DATABASE_URL` (môi trường hoặc `backend/.env`), hoặc localhost cổng 5432; không in URL/mật khẩu. Script nằm ngoài `tsconfig.build.json` và `.dockerignore`, không vào build và image. Quy mô đã chạy: 100.000 đơn, 294.111 dòng hàng, 9.167 user demo, 365 ngày, trong khoảng 44 giây (máy dưới). Phân bố: DELIVERED ~86%, CANCELLED ~9,8%, RETURNED ~2,9%, còn lại đơn đang xử lý; COD 50%, VNPAY 30%, STRIPE 20%; ~26% đơn có mã giảm giá.
+
+### Đo hiệu năng (Postgres 17.11, 100.000 đơn / 294.111 dòng hàng / 365 ngày)
+
+Máy: Intel i5-13450HX, 16 luồng, 8 GB RAM khả dụng, Windows 11, Postgres 17 trong Docker (shared_buffers 128MB, work_mem 4MB mặc định), backend `tsx` cục bộ, đo HTTP thật có Bearer ADMIN, 7 lần sau 1 lần làm nóng, lấy trung vị (p50). "Trước" = mã ở HEAD của Bước 4; "Sau" = mã Bước 5. Khoảng 30 ngày và 365 ngày kết thúc hôm nay. Máy cá nhân có nhiễu +-30%, đọc theo bậc độ lớn.
+
+| Endpoint | Khoảng | Trước (ms) | Sau (ms) |
+| --- | --- | ---: | ---: |
+| `inventory` | (không theo khoảng) | 453 | 102 |
+| `export:inventory(slowMovers)` | (không theo khoảng) | 453 | 141 |
+| `overview` | 30 ngày | 27 | 40 |
+| `overview` | 365 ngày | 62 | 54 |
+| `breakdown:category` | 30 ngày | 273 | 170 |
+| `breakdown:category` | 365 ngày | 1242 | 890 |
+| `breakdown:brand` | 30 ngày | 237 | 154 |
+| `breakdown:brand` | 365 ngày | 1174 | 812 |
+| `breakdown:paymentMethod` | 30 ngày | 19 | 18 |
+| `breakdown:paymentMethod` | 365 ngày | 29 | 23 |
+| `breakdown:shippingMethod` | 30 ngày | 17 | 20 |
+| `breakdown:shippingMethod` | 365 ngày | 30 | 24 |
+| `breakdown:province` | 30 ngày | 26 | 22 |
+| `breakdown:province` | 365 ngày | 53 | 42 |
+| `top-products:revenue` | 30 ngày | 64 | 55 |
+| `top-products:revenue` | 365 ngày | 409 | 404 |
+| `top-products:quantity` | 30 ngày | 63 | 52 |
+| `top-products:quantity` | 365 ngày | 386 | 400 |
+| `top-customers:revenue` | 30 ngày | 38 | 35 |
+| `top-customers:revenue` | 365 ngày | 179 | 174 |
+| `top-customers:orders` | 30 ngày | 32 | 32 |
+| `top-customers:orders` | 365 ngày | 170 | 242 |
+| `customers` | 30 ngày | 64 | 88 |
+| `customers` | 365 ngày | 62 | 77 |
+| `operations` | 30 ngày | 323 | 104 |
+| `operations` | 365 ngày | 327 | 132 |
+| `coupons` | 30 ngày | 41 | 18 |
+| `coupons` | 365 ngày | 55 | 65 |
+| `export:top-products(200)` | 30 ngày | 63 | 64 |
+| `export:top-products(200)` | 365 ngày | 412 | 434 |
+| `export:operations` | 30 ngày | 327 | 81 |
+| `export:operations` | 365 ngày | 326 | 150 |
+
+Thay đổi truy vấn (kết quả không đổi; test tích hợp hiện có giữ nguyên và đều qua):
+
+- `inventory`: "lần bán cuối" từ subquery tương quan theo từng biến thể thành một `LEFT JOIN` gộp một lần (453 -> 102 ms).
+- `operations` ("đơn cần hoàn tiền", `ordersNeedingRefund`): đi từ `Payment SUCCEEDED` rồi `GROUP BY ... HAVING` thay cho `EXISTS` + `COUNT(*)` theo từng đơn (327 -> 132 ms ở 365 ngày).
+- `breakdown` chiều danh mục/thương hiệu: tổng toàn tập đếm số đơn bằng `EXISTS` trên `Order` thay `COUNT(DISTINCT)` trên phép nối, hai truy vấn chạy song song (1242 -> 890 ms).
+- `docker-compose*.yml`: `shm_size: 256mb` cho `db` (mặc định 64MB gây lỗi "could not resize shared memory segment" với truy vấn song song ở dữ liệu lớn).
+
+Còn trên 300 ms ở 365 ngày: `breakdown` danh mục/thương hiệu (~0,8-0,9 s) và `top-products` (~0,4 s). Nguyên nhân (EXPLAIN ANALYZE): khoảng 365 ngày chứa ~87% số đơn nên `Seq Scan` trên `Order`/`OrderItem` là đúng; chi phí chính là `COUNT(DISTINCT o.id)` buộc sắp xếp ~250.000 dòng ra đĩa (`Sort Method: external merge Disk: ~15-24MB`, work_mem 4MB); bỏ `COUNT(DISTINCT)` thì `top-products` còn ~56 ms. Đã thử trên DB tạm: index một phần `Order("paidAt") INCLUDE (status) WHERE "paymentStatus" = 'PAID'` và index phủ `OrderItem("orderId") INCLUDE ("productId","lineTotal","quantity")` -> planner không dùng, thời gian không đổi (925 -> 950 ms); viết lại gộp theo (đơn, nhóm) hoặc đếm đơn chỉ cho top-N đều không nhanh hơn qua HTTP (thậm chí chậm hơn với top-N tương quan: 2,2 s), nên không áp dụng. Các ứng viên khác (`lower("contactEmail")`, `OrderStatusHistory(orderId, toStatus, createdAt)`, `Order(couponId, paidAt)`) phục vụ truy vấn đã dưới 250 ms nên chưa đáng chi phí ghi. **Không thêm migration, không đổi `db-schema.md`.** EXPLAIN thô nằm ở scratchpad của phiên làm việc, không commit.
+
+Giới hạn quy mô: dưới ~100.000 đơn/năm mọi endpoint dưới 1 s ở khoảng 365 ngày, các endpoint chính dưới 300 ms. Khi p50 của breakdown/top-products ở 365 ngày vượt ~1 s (khoảng 150.000-200.000 đơn/năm) hoặc cần xuất nhiều báo cáo đồng thời, thêm bảng tổng hợp theo ngày (doanh thu, đơn, số lượng theo danh mục/thương hiệu/sản phẩm/phương thức) cập nhật khi đơn đổi trạng thái hoặc bằng job đêm.
+
+### A11y, mobile và bản in khu phân tích
+
+- Kiểm tay trên DB 100.000 đơn (axe với tag `wcag2a, wcag2aa, wcag21a, wcag21aa` + đo `scrollWidth <= clientWidth`) ở 1440, 768, 390px, khoảng 365 ngày, cả khi mở "Xem dạng bảng" và ở từng tab tồn kho (Hết hàng, Sắp hết, Bán chậm): 50 kiểm tra, 0 vi phạm, không cuộn ngang. Rà thêm: thứ tự heading h1 -> h2 khối -> h3 (khối lỗi dùng `ErrorState headingLevel={3}` nên không nhảy cấp), mục lục là `nav` có `aria-label`, mọi link neo tới id tồn tại, Enter trên link chuyển focus tới heading đích (`tabIndex={-1}`), nhãn nút xuất duy nhất (9 nhãn), mọi nhóm nút có `aria-pressed`.
+- Lựa chọn (D-054): mở rộng quét axe sẵn có trong `frontend/e2e/m6b.spec.ts` (phiên admin đã đăng nhập; thêm 390px, bảng thay thế, các tab tồn kho, kiểm không tràn ngang) thay vì `a11y.spec.ts` (chỉ storefront, D-044; thêm lượt đăng nhập admin sẽ chạm rate limit đăng nhập).
+- Bản in (`print:` Tailwind + khối `@media print` trong `globals.css`): ẩn header/footer site, menu admin, mục lục, bộ lọc, mọi nút (xuất CSV, làm mới, preset, đổi chiều/sort/tab), bỏ `overflow`/`max-h` của bảng và biểu đồ, thẻ `break-inside: avoid`, chữ đen. Kiểm bằng Playwright `emulateMedia({ media: 'print' })` + ảnh chụp: còn tiêu đề, dòng "Từ dd/mm/yyyy đến dd/mm/yyyy", KPI, biểu đồ SVG, bảng đầy đủ; không có nút. Không có nút "In" (dùng Ctrl+P).
 
 ## Chụp ảnh màn hình cho README
 

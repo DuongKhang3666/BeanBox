@@ -38,6 +38,13 @@ BeanBox là web thương mại điện tử bán hạt cà phê, dụng cụ pha
 - Duyệt đánh giá (ẩn/hiện, trả lời), hộp thư liên hệ, nhật ký thao tác (audit log).
 - Chỉ Admin: cài đặt cửa hàng (phí ship, ngưỡng freeship, thông tin liên hệ...), quản lý người dùng.
 
+**Phân tích kinh doanh (chỉ Admin, `/admin/phan-tich`)**: kế hoạch ở [docs/admin-dashboard-plan.md](docs/admin-dashboard-plan.md), API ở [api-contract §16](docs/api-contract.md).
+
+- KPI (doanh thu, đơn đã thanh toán, giá trị đơn trung bình, tỷ lệ hủy, hoàn tiền, khách mới...) kèm so sánh với kỳ trước; biểu đồ doanh thu theo ngày/tuần/tháng, có bảng thay thế cho trình đọc màn hình.
+- Cơ cấu doanh thu theo danh mục, thương hiệu, phương thức thanh toán, giao hàng và tỉnh/thành; top sản phẩm và top khách; khách lần đầu so với quay lại.
+- Vận hành: đơn hủy theo loại, đơn trả hàng, thời gian xử lý, đơn cần xử lý. Tồn kho: hết hàng, sắp hết, bán chậm, giá trị tồn.
+- Hiệu quả mã giảm giá; xuất CSV (chống CSV injection, ghi audit log, có rate limit); bản in.
+
 ### Vận hành
 
 - Triển khai bằng Docker Compose với Caddy (HTTPS tự động, rate limit ở edge), backup hằng ngày, giám sát uptime bằng script.
@@ -177,6 +184,11 @@ Danh sách đầy đủ ở [docs/decisions.md](docs/decisions.md).
 
 - Mọi số tiền là `Int` VND ở schema Prisma và API, không dùng float. Checkout không nhận giá từ client: server tính lại giá hiệu lực, mã giảm giá, phí ship và phụ phí khối lượng từ giỏ hàng.
 
+**Phân tích kinh doanh** ([D-019](docs/decisions.md#d-019-dashboard-và-audit-log), [D-049](docs/decisions.md#d-049-khu-phân-tích-kinh-doanh-chỉ-admin), [D-053](docs/decisions.md#d-053-hiệu-quả-mã-giảm-giá-và-xuất-csv-bước-4), [D-054](docs/decisions.md#d-054-hiệu-năng-a11y-và-bản-in-khu-phân-tích-bước-5-phần-a))
+
+- Doanh thu tính theo `paidAt` và chỉ gồm đơn đã thanh toán, chưa hủy hoặc hoàn trả; đơn đã đặt tính theo ngày tạo. Phân quyền hai lớp: router `/admin/analytics/*` gắn `requireAdmin` ở backend (STAFF nhận 403) và FE ẩn khu này với STAFF.
+- Xuất CSV có BOM, chống CSV injection theo kiểu ô, ghi audit trước khi gửi dữ liệu. Hiệu năng đo trên 100.000 đơn sinh bằng `backend/scripts/generate-demo-orders.ts` (chỉ chạy trên DB tạm); kết quả trước/sau ở [docs/testing.md](docs/testing.md).
+
 **Idempotency khi tạo đơn** ([kiến trúc, mục 5](docs/architecture.md#5-giỏ-hàng-giá-đơn-hàng))
 
 - `POST /orders` bắt buộc header `Idempotency-Key` (UUID v4). `Order.idempotencyKey` là unique và đơn lưu thêm fingerprint của payload: gửi lại cùng key và cùng payload trả lại đơn cũ, cùng key khác payload trả 409.
@@ -206,7 +218,7 @@ Danh sách đầy đủ ở [docs/decisions.md](docs/decisions.md).
 
 ## Ảnh chụp màn hình
 
-Ảnh chụp từ bản production chạy với dữ liệu demo. Chụp lại bằng script: xem [`docs/screenshots/README.md`](docs/screenshots/README.md).
+Ảnh chụp từ bản production chạy với dữ liệu demo (đơn hàng sinh ngẫu nhiên có seed cố định, không phải số liệu thật). Chụp lại bằng script: xem [`docs/screenshots/README.md`](docs/screenshots/README.md).
 
 **Trang chủ**
 
@@ -239,6 +251,12 @@ Danh sách đầy đủ ở [docs/decisions.md](docs/decisions.md).
 **Đơn hàng của tôi**
 
 ![Danh sách đơn hàng trong tài khoản khách](docs/screenshots/account-orders.png)
+
+**Phân tích kinh doanh (chỉ Admin)**
+
+![Phân tích kinh doanh: KPI so với kỳ trước và biểu đồ doanh thu theo ngày](docs/screenshots/admin-analytics.png)
+
+![Cơ cấu doanh thu theo danh mục trong phân tích kinh doanh](docs/screenshots/admin-analytics-breakdown.png)
 
 **Dashboard quản trị**
 
@@ -296,6 +314,7 @@ Demo chạy trên một VPS bằng `docker-compose.prod.yml`: Caddy làm reverse
 - [Nhật ký quyết định](docs/decisions.md)
 - [API contract](docs/api-contract.md) (nguồn sự thật cho FE và BE)
 - [Thiết kế DB](docs/db-schema.md)
+- [Kế hoạch khu Phân tích kinh doanh (Admin)](docs/admin-dashboard-plan.md)
 - [Kiểm thử](docs/testing.md)
 - [Triển khai](docs/deployment.md)
 - [Cấu hình thanh toán sandbox](docs/payments-setup.md)

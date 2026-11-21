@@ -222,9 +222,10 @@ export async function getBreakdown(
   } else {
     // Chiều cấp dòng hàng: revenue = Σ OrderItem.lineTotal (hàng hóa, chưa trừ giảm giá cấp đơn,
     // không gồm phí ship); orders = số đơn khác nhau trong nhóm.
-    let rows: ItemRow[];
-    if (dimension === 'category') {
-      rows = await prisma.$queryRaw<ItemRow[]>`
+    // Hai truy vấn độc lập chạy song song (nhóm, tổng toàn tập).
+    const groupQuery =
+      dimension === 'category'
+        ? prisma.$queryRaw<ItemRow[]>`
         SELECT COALESCE(p."categoryId", ${UNKNOWN_KEY}) AS key, MAX(c."name") AS label,
           COALESCE(SUM(oi."lineTotal") FILTER (WHERE o."paidAt" >= ${cur}), 0)::bigint AS revenue,
           COALESCE(SUM(oi."quantity") FILTER (WHERE o."paidAt" >= ${cur}), 0)::bigint AS quantity,
@@ -238,9 +239,8 @@ export async function getBreakdown(
         LEFT JOIN "Category" c ON c."id" = p."categoryId"
         WHERE o."paymentStatus" = 'PAID' AND o."status" NOT IN ('CANCELLED', 'RETURNED')
           AND o."paidAt" >= ${start} AND o."paidAt" < ${end}
-        GROUP BY 1`;
-    } else {
-      rows = await prisma.$queryRaw<ItemRow[]>`
+        GROUP BY 1`
+        : prisma.$queryRaw<ItemRow[]>`
         SELECT CASE WHEN p."id" IS NULL THEN ${UNKNOWN_KEY} ELSE p."brandId" END AS key,
           MAX(b."name") AS label,
           COALESCE(SUM(oi."lineTotal") FILTER (WHERE o."paidAt" >= ${cur}), 0)::bigint AS revenue,
@@ -256,19 +256,27 @@ export async function getBreakdown(
         WHERE o."paymentStatus" = 'PAID' AND o."status" NOT IN ('CANCELLED', 'RETURNED')
           AND o."paidAt" >= ${start} AND o."paidAt" < ${end}
         GROUP BY 1`;
-    }
-    // Tổng toàn tập (số đơn khác nhau không bằng tổng các nhóm).
-    const [t] = await prisma.$queryRaw<ItemTotalRow[]>`
+    // Tổng toàn tập (số đơn khác nhau không bằng tổng các nhóm). Số đơn đếm trên "Order" (bán nối
+    // với EXISTS dòng hàng) thay vì COUNT(DISTINCT) trên phép nối đơn x dòng hàng: tránh sắp xếp
+    // hàng trăm nghìn dòng ra đĩa (D-054); cùng kết quả: đơn có ít nhất một dòng hàng.
+    const totalQuery = prisma.$queryRaw<ItemTotalRow[]>`
       SELECT COALESCE(SUM(oi."lineTotal") FILTER (WHERE o."paidAt" >= ${cur}), 0)::bigint AS revenue,
         COALESCE(SUM(oi."quantity") FILTER (WHERE o."paidAt" >= ${cur}), 0)::bigint AS quantity,
-        (COUNT(DISTINCT o."id") FILTER (WHERE o."paidAt" >= ${cur}))::int AS orders,
         COALESCE(SUM(oi."lineTotal") FILTER (WHERE o."paidAt" < ${cur}), 0)::bigint AS prev_revenue,
         COALESCE(SUM(oi."quantity") FILTER (WHERE o."paidAt" < ${cur}), 0)::bigint AS prev_quantity,
-        (COUNT(DISTINCT o."id") FILTER (WHERE o."paidAt" < ${cur}))::int AS prev_orders
+        (SELECT (COUNT(*) FILTER (WHERE o2."paidAt" >= ${cur}))::int FROM "Order" o2
+          WHERE o2."paymentStatus" = 'PAID' AND o2."status" NOT IN ('CANCELLED', 'RETURNED')
+            AND o2."paidAt" >= ${start} AND o2."paidAt" < ${end}
+            AND EXISTS (SELECT 1 FROM "OrderItem" i WHERE i."orderId" = o2."id")) AS orders,
+        (SELECT (COUNT(*) FILTER (WHERE o2."paidAt" < ${cur}))::int FROM "Order" o2
+          WHERE o2."paymentStatus" = 'PAID' AND o2."status" NOT IN ('CANCELLED', 'RETURNED')
+            AND o2."paidAt" >= ${start} AND o2."paidAt" < ${end}
+            AND EXISTS (SELECT 1 FROM "OrderItem" i WHERE i."orderId" = o2."id")) AS prev_orders
       FROM "OrderItem" oi
       JOIN "Order" o ON o."id" = oi."orderId"
       WHERE o."paymentStatus" = 'PAID' AND o."status" NOT IN ('CANCELLED', 'RETURNED')
         AND o."paidAt" >= ${start} AND o."paidAt" < ${end}`;
+    const [rows, [t]] = await Promise.all([groupQuery, totalQuery]);
     total = { revenue: num(t?.revenue), orders: num(t?.orders), quantity: num(t?.quantity) };
     previousTotal = {
       revenue: num(t?.prev_revenue),

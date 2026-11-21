@@ -60,13 +60,15 @@ function searchClause(q: string): Prisma.OrderWhereInput[] {
  * Tập này nhỏ (chỉ đơn bất thường) nên lấy id rồi lọc bằng `id IN`.
  */
 export async function ordersNeedingRefund(): Promise<string[]> {
+  // Đi từ Payment SUCCEEDED (tập nhỏ hơn Order) rồi gộp theo đơn; cùng kết quả với dạng EXISTS +
+  // subquery đếm theo từng đơn nhưng không chạy subquery cho mỗi đơn (đo ở docs/testing.md, D-054).
   const rows = await prisma.$queryRaw<Array<{ id: string }>>`
-    SELECT o."id" FROM "Order" o
-    WHERE EXISTS (SELECT 1 FROM "Payment" p WHERE p."orderId" = o."id" AND p."status" = 'SUCCEEDED')
-      AND (
-        o."status" = 'CANCELLED'
-        OR (SELECT COUNT(*) FROM "Payment" p2 WHERE p2."orderId" = o."id" AND p2."status" = 'SUCCEEDED') >= 2
-      )`;
+    SELECT p."orderId" AS id
+    FROM "Payment" p
+    JOIN "Order" o ON o."id" = p."orderId"
+    WHERE p."status" = 'SUCCEEDED'
+    GROUP BY p."orderId", o."status"
+    HAVING o."status" = 'CANCELLED' OR COUNT(*) >= 2`;
   return rows.map((r) => r.id);
 }
 

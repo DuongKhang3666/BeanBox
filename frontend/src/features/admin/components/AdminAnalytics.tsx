@@ -48,8 +48,9 @@ import { OperationsBlock } from "./AnalyticsOperations";
 import { TopCustomersBlock, TopProductsBlock } from "./AnalyticsTops";
 import { ExportCsvButton } from "./ExportCsvButton";
 
-const card = "rounded-2xl border border-coffee-200 bg-white p-4";
-const h2 = "font-serif text-lg font-bold text-coffee-900";
+const card =
+  "rounded-2xl border border-coffee-200 bg-white p-4 print:break-inside-avoid print:rounded-lg print:border-coffee-400";
+const h2 = "scroll-mt-20 font-serif text-lg font-bold text-coffee-900";
 
 /** Mục lục neo trong trang (trang dài); id là id của heading từng khối. */
 const SECTIONS: ReadonlyArray<{ id: string; label: string }> = [
@@ -282,6 +283,7 @@ export function AdminAnalytics() {
     if (res.error instanceof ApiError && res.error.status === 403) return <Forbidden />;
     body = (
       <ErrorState
+        headingLevel={3}
         title="Không tải được số liệu phân tích"
         description={adminErrorMessage(res.error)}
         onRetry={res.retry}
@@ -305,9 +307,9 @@ export function AdminAnalytics() {
         <KpiGrid kpis={k} prevLabel={prevLabel} />
         <section aria-labelledby="an-chart" className={card}>
           <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
-            <h2 id="an-chart" className={h2}>
+            <h3 id="an-chart" className={h2}>
               Doanh thu theo {noun}
-            </h2>
+            </h3>
             <ExportCsvButton
               params={{
                 report: "series",
@@ -348,7 +350,7 @@ export function AdminAnalytics() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="analytics-print space-y-5 print:space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="font-serif text-2xl font-bold text-coffee-900">Phân tích kinh doanh</h1>
@@ -370,13 +372,14 @@ export function AdminAnalytics() {
               setRefresh((n) => n + 1);
             }}
             loading={res.status === "loading"}
+            className="print:hidden"
           >
             Làm mới
           </Button>
         </div>
       </div>
 
-      <section aria-label="Bộ lọc" className={cn(card, "space-y-4")}>
+      <section aria-label="Bộ lọc" className={cn(card, "space-y-4 print:hidden")}>
         <div role="group" aria-label="Khoảng thời gian" className="flex flex-wrap gap-2">
           {PRESETS.map((p) => (
             <button
@@ -413,7 +416,7 @@ export function AdminAnalytics() {
         </div>
       </section>
 
-      <nav aria-label="Mục lục phân tích" className="flex flex-wrap gap-2">
+      <nav aria-label="Mục lục phân tích" className="flex flex-wrap gap-2 print:hidden">
         {SECTIONS.map((x) => (
           <a key={x.id} href={`#${x.id}`} className={chipClass(false)}>
             {x.label}
@@ -422,7 +425,7 @@ export function AdminAnalytics() {
       </nav>
 
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <h2 id="an-overview" className={cn(h2, "scroll-mt-20")}>
+        <h2 id="an-overview" tabIndex={-1} className={h2}>
           Tổng quan
         </h2>
         <ExportCsvButton

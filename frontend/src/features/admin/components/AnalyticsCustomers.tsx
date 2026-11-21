@@ -35,6 +35,7 @@ export function CustomersBlock({
   } else if (res.status === "error") {
     body = (
       <ErrorState
+        headingLevel={3}
         title="Không tải được số liệu khách hàng"
         description={adminErrorMessage(res.error)}
         onRetry={res.retry}
@@ -107,7 +108,7 @@ export function CustomersBlock({
   return (
     <section aria-labelledby="an-customers" className={cn(card, "space-y-3")}>
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <h2 id="an-customers" className={h2}>
+        <h2 id="an-customers" tabIndex={-1} className={h2}>
           Khách hàng
         </h2>
         <ExportCsvButton params={{ report: "customers", from, to }} context="số liệu khách hàng" />

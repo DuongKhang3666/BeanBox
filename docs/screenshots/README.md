@@ -18,18 +18,20 @@ Mật khẩu `tmp` bên dưới chỉ dành cho container tạm, sẽ bị xóa 
 ### Git Bash
 
 ```bash
-docker run -d --name bb-tmp-shots -e POSTGRES_USER=beanbox -e POSTGRES_PASSWORD=tmp \
-  -e POSTGRES_DB=beanbox -p 55434:5432 postgres:17
-sleep 8
+docker run -d --name bb-tmp-shots --shm-size=256m -e POSTGRES_USER=beanbox -e POSTGRES_PASSWORD=tmp   -e POSTGRES_DB=beanbox -p 127.0.0.1:55434:5432 postgres:17
+sleep 10
 
 cd backend
-export DATABASE_URL=postgresql://beanbox:tmp@localhost:55434/beanbox   # chỉ trong shell này
+export DATABASE_URL=postgresql://beanbox:tmp@127.0.0.1:55434/beanbox   # chỉ trong shell này
 npx prisma migrate deploy
 npm run prisma:seed
 unset DATABASE_URL
 
+# Dữ liệu demo nhiều ngày cho trang /admin và /admin/phan-tich (cùng DB tạm)
+DEMO_DATABASE_URL=postgresql://beanbox:tmp@127.0.0.1:55434/beanbox   npx tsx scripts/generate-demo-orders.ts --orders 1500 --days 90 --seed 42
+
 cd ../frontend
-export SCREENSHOT_DATABASE_URL=postgresql://beanbox:tmp@localhost:55434/beanbox
+export SCREENSHOT_DATABASE_URL=postgresql://beanbox:tmp@127.0.0.1:55434/beanbox
 export E2E_BROWSER_CHANNEL=msedge
 npm run screenshots
 
@@ -39,30 +41,37 @@ docker rm -fv bb-tmp-shots
 ### PowerShell
 
 ```powershell
-docker run -d --name bb-tmp-shots -e POSTGRES_USER=beanbox -e POSTGRES_PASSWORD=tmp `
-  -e POSTGRES_DB=beanbox -p 55434:5432 postgres:17
-Start-Sleep 8
+docker run -d --name bb-tmp-shots --shm-size=256m -e POSTGRES_USER=beanbox -e POSTGRES_PASSWORD=tmp `
+  -e POSTGRES_DB=beanbox -p 127.0.0.1:55434:5432 postgres:17
+Start-Sleep 10
 
 cd backend
-$env:DATABASE_URL = "postgresql://beanbox:tmp@localhost:55434/beanbox"   # chỉ trong shell này
+$env:DATABASE_URL = "postgresql://beanbox:tmp@127.0.0.1:55434/beanbox"   # chỉ trong shell này
 npx prisma migrate deploy
 npm run prisma:seed
 Remove-Item Env:DATABASE_URL
 
-cd ..\frontend
-$env:SCREENSHOT_DATABASE_URL = "postgresql://beanbox:tmp@localhost:55434/beanbox"
+# Dữ liệu demo nhiều ngày cho trang /admin và /admin/phan-tich (cùng DB tạm)
+$env:DEMO_DATABASE_URL = "postgresql://beanbox:tmp@127.0.0.1:55434/beanbox"
+npx tsx scripts/generate-demo-orders.ts --orders 1500 --days 90 --seed 42
+Remove-Item Env:DEMO_DATABASE_URL
+
+cd ..rontend
+$env:SCREENSHOT_DATABASE_URL = "postgresql://beanbox:tmp@127.0.0.1:55434/beanbox"
 $env:E2E_BROWSER_CHANNEL = "msedge"
 npm run screenshots
 
 docker rm -fv bb-tmp-shots
 ```
 
-Lần chạy đầu mất khoảng 1-3 phút vì có bước `next build`. Script giả định DB **vừa seed**: muốn chụp lại thì xóa container và làm lại từ đầu (chạy lần hai trên cùng DB sẽ có thêm đơn và có thể thiếu tồn kho).
+Generator (`backend/scripts/generate-demo-orders.ts`, xem `docs/testing.md`) có rào an toàn riêng: chỉ đọc `DEMO_DATABASE_URL`, từ chối DB dev (cổng 5432) và production. Quy mô `--orders 1500 --days 90` cho khoảng 15-20 đơn mỗi ngày: biểu đồ 30 ngày có nhiều cột, KPI có so sánh với kỳ trước khác 0, trong khi số đơn (khoảng 1.500) vẫn gọn trong danh sách. Generator không đụng tồn kho, nên script ảnh vẫn tìm được sản phẩm còn hàng; đơn của script ảnh là đơn mới nhất nên nằm đầu danh sách đơn.
+
+Lần chạy đầu mất khoảng 1-3 phút vì có bước `next build`. Script giả định DB **vừa seed** (có thể kèm dữ liệu demo từ generator): muốn chụp lại thì xóa container và làm lại từ đầu (chạy lần hai trên cùng DB sẽ có thêm đơn và có thể thiếu tồn kho).
 
 ## Kiểm ảnh
 
-Mở từng file: không trắng, không trang lỗi hoặc spinner, không toast che nội dung, không thông tin thật. Kích thước mục tiêu mỗi ảnh khoảng 500 KB trở xuống. Tổng cộng script đăng nhập 1 lần admin và 1 lần customer.
+Mở từng file (kiểm cả số liệu hợp lý, không lộ thông tin thật): không trắng, không trang lỗi hoặc spinner, không toast che nội dung, không thông tin thật. Kích thước mục tiêu mỗi ảnh khoảng 500 KB trở xuống. Tổng cộng script đăng nhập 1 lần admin và 1 lần customer.
 
 ## Danh sách ảnh
 
-`home`, `category`, `product`, `compare`, `cart`, `checkout`, `order-lookup`, `account-orders`, `admin-dashboard`, `admin-orders`, `admin-product-edit`, `mobile-home`, `mobile-admin-orders`. Desktop 1440x900, mobile 390x844, chụp viewport (riêng `admin-orders` và `mobile-admin-orders` chụp cả trang vì bộ lọc chiếm gần hết màn hình đầu).
+`home`, `category`, `product`, `compare`, `cart`, `checkout`, `order-lookup`, `account-orders`, `admin-dashboard`, `admin-analytics`, `admin-analytics-breakdown`, `admin-orders`, `admin-product-edit`, `mobile-home`, `mobile-admin-orders`. Desktop 1440x900, mobile 390x844, chụp viewport (riêng `admin-orders` và `mobile-admin-orders` chụp cả trang vì bộ lọc chiếm gần hết màn hình đầu; `admin-analytics` chụp vùng từ đầu trang tới hết biểu đồ doanh thu, `admin-analytics-breakdown` chụp riêng khối cơ cấu doanh thu).

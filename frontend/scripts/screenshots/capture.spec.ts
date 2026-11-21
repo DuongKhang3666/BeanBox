@@ -5,6 +5,7 @@ import {
   test,
   type APIRequestContext,
   type Browser,
+  type Locator,
   type BrowserContext,
   type Page,
 } from "@playwright/test";
@@ -12,7 +13,7 @@ import { API, seedPassword } from "../../e2e/helpers";
 
 /**
  * Chụp ảnh cho README vào docs/screenshots/*.png. Xem docs/screenshots/README.md và
- * playwright.screenshots.config.ts (an toàn DB/cổng). Giả định DB tạm VỪA migrate + seed:
+ * playwright.screenshots.config.ts (an toàn DB/cổng). Giả định DB tạm VỪA migrate + seed (có thể thêm dữ liệu demo nhiều ngày bằng backend/scripts/generate-demo-orders.ts):
  * chạy lại cần DB mới. Chỉ dùng dữ liệu demo (tên, SĐT, email @example.com là giả).
  * Tổng đăng nhập: 1 admin + 1 customer (rate limit đăng nhập).
  */
@@ -270,6 +271,23 @@ async function shoot(page: Page, name: string, fullPage = false): Promise<void> 
   await page.screenshot({ path: path.join(OUT_DIR, `${name}.png`), fullPage });
 }
 
+/** Chụp một vùng của trang (toạ độ trang, sau khi cuộn về đầu): từ y=top tới đáy của `bottom`. */
+async function shootRegion(
+  page: Page,
+  name: string,
+  region: { top?: Locator; bottom: Locator; pad?: number },
+): Promise<void> {
+  await settle(page);
+  const b = (await region.bottom.boundingBox())!;
+  const t = region.top ? (await region.top.boundingBox())!.y : 0;
+  const y = Math.max(0, t - (region.top ? 12 : 0));
+  await page.screenshot({
+    path: path.join(OUT_DIR, `${name}.png`),
+    fullPage: true,
+    clip: { x: 0, y, width: DESKTOP.width, height: b.y + b.height + (region.pad ?? 12) - y },
+  });
+}
+
 async function withContext(
   browser: Browser,
   viewport: { width: number; height: number },
@@ -464,7 +482,7 @@ test("account-orders.png", async () => {
   }
 });
 
-test("admin: dashboard, orders, product edit, mobile orders", async () => {
+test("admin: dashboard, analytics, orders, product edit, mobile orders", async () => {
   const page = await admin.newPage();
   try {
     await page.goto("/admin");
@@ -473,6 +491,21 @@ test("admin: dashboard, orders, product edit, mobile orders", async () => {
       .toBeVisible()
       .catch(() => undefined);
     await shoot(page, "admin-dashboard");
+
+    await page.goto("/admin/phan-tich");
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Phân tích kinh doanh" }),
+    ).toBeVisible();
+    await expect(page.locator('[aria-busy="true"]')).toHaveCount(0, { timeout: 30_000 });
+    const chart = page.locator("section[aria-labelledby='an-chart']");
+    await expect(chart).toBeVisible();
+    // Khung: bộ lọc + KPI so kỳ trước + biểu đồ doanh thu (cả trang, cắt tới hết biểu đồ).
+    await shootRegion(page, "admin-analytics", { bottom: chart });
+    // Khung phụ: khối cơ cấu doanh thu (đợi dữ liệu tải xong).
+    const breakdown = page.locator("section[aria-labelledby='an-breakdown']");
+    await expect(breakdown).toBeVisible();
+    await expect(page.locator('[aria-busy="true"]')).toHaveCount(0, { timeout: 30_000 });
+    await shootRegion(page, "admin-analytics-breakdown", { top: breakdown, bottom: breakdown });
 
     await page.goto("/admin/don-hang");
     await expect(page.getByText(lookup.code).first()).toBeVisible();
