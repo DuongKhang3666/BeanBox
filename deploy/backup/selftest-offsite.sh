@@ -88,7 +88,10 @@ check "--list in ra $TS1" 'grep -qx "$TS1" "$T/list.out"'
 echo "== (c) Sửa 1 byte trên remote -> fetch phải FAIL ở checksum (mã 3)"
 VICTIM="$R/$TS1/beanbox-$TS1.dump.age"
 cp "$VICTIM" "$T/victim.orig"
-printf 'X' | dd of="$VICTIM" bs=1 seek=40 conv=notrunc 2>/dev/null
+# Byte gốc là ngẫu nhiên (file đã mã hóa): chọn byte ghi đè KHÁC byte gốc, nếu không có 1/256 khả năng file không đổi.
+ORIG_BYTE=$(dd if="$VICTIM" bs=1 skip=40 count=1 2>/dev/null | od -An -tx1 | tr -d ' \n')
+if [ "$ORIG_BYTE" = "58" ]; then NEW_BYTE='Y'; else NEW_BYTE='X'; fi
+printf '%s' "$NEW_BYTE" | dd of="$VICTIM" bs=1 seek=40 conv=notrunc 2>/dev/null
 BACKUP_DIR="$T/fetch2" sh "$DIR/fetch-remote.sh" "$TS1" > "$T/fetch2.out" 2>&1
 RC=$?
 check "fetch thoát 3 khi file remote bị sửa" '[ "$RC" -eq 3 ]'
