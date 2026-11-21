@@ -1,7 +1,7 @@
-import Link from "next/link";
 import { cn } from "@/lib/cn";
 import type { PaginationMeta } from "@/types/api";
 import { buildHref, type ProductFilters } from "../filters";
+import { ListingLink } from "./ListingNavigation";
 
 /** Dãy trang hiển thị: luôn có trang đầu/cuối, cửa sổ ±1 quanh trang hiện tại; null = dấu "…". */
 export function pageWindow(current: number, total: number): Array<number | null> {
@@ -36,14 +36,14 @@ export function Pagination({
       <ul className="flex flex-wrap items-center justify-center gap-2">
         {current > 1 ? (
           <li>
-            <Link
+            <ListingLink
               href={href(current - 1)}
               rel="prev"
               className={cn(item, "border-coffee-300 bg-white text-coffee-800 hover:bg-coffee-50")}
             >
               <span aria-hidden="true">←</span>
               <span className="sr-only">Trang trước</span>
-            </Link>
+            </ListingLink>
           </li>
         ) : null}
         {pageWindow(current, meta.totalPages).map((p, i) =>
@@ -53,7 +53,7 @@ export function Pagination({
             </li>
           ) : (
             <li key={p}>
-              <Link
+              <ListingLink
                 href={href(p)}
                 aria-current={p === current ? "page" : undefined}
                 aria-label={`Trang ${p}`}
@@ -65,20 +65,20 @@ export function Pagination({
                 )}
               >
                 {p}
-              </Link>
+              </ListingLink>
             </li>
           ),
         )}
         {current < meta.totalPages ? (
           <li>
-            <Link
+            <ListingLink
               href={href(current + 1)}
               rel="next"
               className={cn(item, "border-coffee-300 bg-white text-coffee-800 hover:bg-coffee-50")}
             >
               <span aria-hidden="true">→</span>
               <span className="sr-only">Trang sau</span>
-            </Link>
+            </ListingLink>
           </li>
         ) : null}
       </ul>

@@ -1,6 +1,7 @@
 # BeanBox – API Contract
 
-> Phiên bản 0.18 · 2026-11-21 · **Nguồn sự thật cho FE và BE.** Đổi contract phải sửa file này trước và nêu trong báo cáo.
+> Phiên bản 0.19 · 2026-11-21 · **Nguồn sự thật cho FE và BE.** Đổi contract phải sửa file này trước và nêu trong báo cáo.
+> Thay đổi 0.19 (D-056, D-057, D-058; Đợt 1 R-04/R-06/R-08): (1) §9.2 `POST /orders` nhận `captchaToken` tùy chọn: khi captcha Turnstile đã cấu hình (cùng `contactCaptcha` của `GET /settings/public`, §14.9) thì **khách vãng lai bắt buộc** gửi token (thiếu/sai -> 400 `CAPTCHA_FAILED`, Cloudflare lỗi -> 503 `SERVICE_UNAVAILABLE`), khách đăng nhập không cần; không cấu hình thì không đổi hành vi; `captchaToken` KHÔNG nằm trong `requestFingerprint` và được kiểm SAU nhánh replay. (2) §9.2/§2 mã lỗi mới `409 TOO_MANY_PENDING_ORDERS`: khách vãng lai đã có >= `GUEST_COD_MAX_OPEN` (mặc định 3) đơn COD khách vãng lai `PENDING` cùng SĐT (chuẩn hóa) hoặc cùng email (lowercase). (3) §11 #4: thêm actor `SYSTEM` cho `PENDING -> CANCELLED` (job tự hủy đơn COD khách vãng lai quá `GUEST_COD_HOLD_HOURS` = 48 giờ chưa được xác nhận, lý do "Quá hạn xác nhận đơn", hoàn kho + hoàn lượt mã + email); không áp cho khách có tài khoản và đơn online. (4) §16.3 `cancellations.byType` loại `expired` đổi nhãn thành "Hết hạn tự động" và gồm cả hủy tự động đơn COD guest (`actorId` null, `fromStatus = PENDING`, `note` = "Quá hạn xác nhận đơn"); nhãn này cũng ở CSV xuất `operations`. (5) §2/§16 mã lỗi mới `503 ANALYTICS_TIMEOUT` ("Truy vấn phân tích quá lâu, hãy thu hẹp khoảng ngày") khi truy vấn analytics vượt `ANALYTICS_STATEMENT_TIMEOUT_MS` (mặc định 15000) trên pool riêng; shape response thành công không đổi. Không có route mới, không cần migration. Env mới: `SMTP_SECURE`, `SMTP_REQUIRE_TLS`, `GUEST_COD_HOLD_HOURS`, `GUEST_COD_MAX_OPEN`, `DATABASE_POOL_MAX`, `ANALYTICS_POOL_MAX`, `ANALYTICS_STATEMENT_TIMEOUT_MS` (`architecture.md` §8).
 > Thay đổi 0.18 (D-054, phân tích kinh doanh Bước 5): §13.8 `code` của mã giảm giá **không được bắt đầu bằng `-`** khi tạo (400 `VALIDATION_ERROR`, `details.field = "code"`, thông báo "Mã không được bắt đầu bằng dấu gạch ngang"; kiểm sau trim + uppercase). Mã cũ đã có dạng `-...` vẫn hiển thị, sửa các trường khác (PATCH không nhận `code`, §13.8) và áp dụng được ở giỏ/checkout như trước. Không đổi shape response, không cần migration, không thêm index (D-054: đo hiệu năng 100.000 đơn).
 > Thay đổi 0.17 (D-053, phân tích kinh doanh Bước 4): §16.4 thành đặc tả đầy đủ cho `GET /admin/analytics/coupons?from&to&sort&limit` (hiệu quả mã giảm giá, chỉ ADMIN) và `GET /admin/analytics/export?report=...` (xuất CSV UTF-8 có BOM, chống CSV injection, chỉ ADMIN); thêm action audit `analytics.export` (§12.0, §14.4); limiter riêng cho xuất CSV 10/phút/IP, env `EXPORT_RATE_LIMIT_PER_MIN` (§1); `Content-Disposition` được expose qua CORS. Không đổi §14.3, §16.1-16.3 hay shape hiện có; không cần migration. Ghi chú: tham số của `export` được kiểm chặt (tham số không áp dụng cho báo cáo -> 400), khác quy ước bỏ qua tham số lạ của các endpoint JSON.
 > Thay đổi 0.16 (D-052, phân tích kinh doanh Bước 3): §16.3 thành đặc tả đầy đủ cho `GET /admin/analytics/customers?from&to`, `GET /admin/analytics/operations?from&to`, `GET /admin/analytics/inventory?slowDays` (chỉ ADMIN, no-store; hai endpoint đầu dùng cùng khoảng ngày và kỳ trước với §16.1, endpoint tồn kho là ảnh chụp hiện tại); phần "dự kiến" Bước 4 dời sang §16.4. Không đổi §14.3, §16.1, §16.2 hay shape hiện có; không cần migration (đã kiểm `EXPLAIN`, chưa thêm index).
@@ -115,7 +116,7 @@ Phân trang: query `page` (>= 1, mặc định 1), `pageSize` (1–100, mặc đ
 | 400  | `TOKEN_INVALID`              | Token reset/verify sai, hết hạn hoặc đã dùng                                                                                                                                                 |
 | 400  | `INVALID_PASSWORD`           | Mật khẩu hiện tại không đúng (đổi mật khẩu)                                                                                                                                                  |
 | 400  | `PAYMENT_SIGNATURE_INVALID`  | Chữ ký VNPay return / Stripe webhook sai hoặc quá hạn (§13.3, §13.4)                                                                                                                         |
-| 400  | `CAPTCHA_FAILED`             | Captcha form liên hệ thiếu hoặc không hợp lệ (§14.11, D-028)                                                                                                                                 |
+| 400  | `CAPTCHA_FAILED`             | Captcha form liên hệ (§14.11, D-028) hoặc captcha đặt đơn của khách vãng lai (§9.2, D-057) thiếu hoặc không hợp lệ                                                                           |
 | 401  | `UNAUTHORIZED`               | Thiếu/hết hạn/sai access token                                                                                                                                                               |
 | 401  | `INVALID_CREDENTIALS`        | Sai email hoặc mật khẩu (thông báo chung, không nói cái nào sai)                                                                                                                             |
 | 401  | `INVALID_REFRESH_TOKEN`      | Refresh token thiếu/sai/hết hạn/đã thu hồi (kể cả phát hiện reuse); cookie bị xóa                                                                                                            |
@@ -134,6 +135,7 @@ Phân trang: query `page` (>= 1, mặc định 1), `pageSize` (1–100, mặc đ
 | 409  | `CART_EMPTY`                 | Giỏ trống khi checkout                                                                                                                                                                       |
 | 409  | `COUPON_INVALID`             | Mã không hợp lệ; `details.reason` (xem §8.7)                                                                                                                                                 |
 | 409  | `PRICE_CHANGED`              | Giá tổng khác `expectedTotal` client gửi; `details.expectedTotal/grandTotal/quote` (§9.2)                                                                                                    |
+| 409  | `TOO_MANY_PENDING_ORDERS`    | Khách vãng lai đã có quá nhiều đơn COD chờ xác nhận cùng SĐT/email; `details.max` (§9.2, D-057)                                                                                              |
 | 409  | `IDEMPOTENCY_CONFLICT`       | Cùng `Idempotency-Key` nhưng nội dung hoặc người gọi khác                                                                                                                                    |
 | 409  | `INVALID_STATUS_TRANSITION`  | Chuyển trạng thái đơn không hợp lệ; `details.from/to/allowed`                                                                                                                                |
 | 409  | `ADDRESS_LIMIT_REACHED`      | Quá 10 địa chỉ                                                                                                                                                                               |
@@ -149,6 +151,7 @@ Phân trang: query `page` (>= 1, mặc định 1), `pageSize` (1–100, mặc đ
 | 429  | `RATE_LIMITED`               | Vượt giới hạn tần suất                                                                                                                                                                       |
 | 500  | `INTERNAL_ERROR`             | Lỗi hệ thống                                                                                                                                                                                 |
 | 503  | `SERVICE_UNAVAILABLE`        | DB/dịch vụ phụ thuộc không sẵn sàng                                                                                                                                                          |
+| 503  | `ANALYTICS_TIMEOUT`          | Truy vấn phân tích vượt `ANALYTICS_STATEMENT_TIMEOUT_MS` (§16, D-058); thu hẹp khoảng ngày rồi thử lại                                                                                      |
 
 ## 3. Health
 
@@ -958,6 +961,7 @@ Header bắt buộc: `Idempotency-Key: <uuid v4>`. Lấy item từ giỏ server;
 | `note`            | string <= 500, tùy chọn                                                                                                                            |
 | `acceptTerms`     | phải là `true`                                                                                                                                     |
 | `expectedTotal`   | int, tùy chọn; khác `grandTotal` server tính -> 409 `PRICE_CHANGED` (`details`: xem dưới)                                                          |
+| `captchaToken`    | string <= 2048, tùy chọn; **bắt buộc với khách vãng lai khi captcha bật** (`contactCaptcha` khác `null`, §14.9), bỏ qua khi tắt hoặc khi đã đăng nhập (D-057)  |
 
 Ví dụ:
 
@@ -987,6 +991,8 @@ Ví dụ:
 - b. Sau bước a (transaction đang giữ khóa dòng coupon nên các đơn đồng thời dùng cùng mã bị tuần tự hóa): đếm `CouponRedemption` của coupon chưa `releasedAt`, theo `userId` (user) hoặc `email` lowercase (guest). Nếu >= `perUserLimit` -> rollback, 409 `COUPON_INVALID` (`details.reason = PER_USER_LIMIT`). Thứ tự a rồi b bảo đảm `perUserLimit` không bị vượt khi đồng thời (Postgres READ COMMITTED: lệnh đếm chạy sau khi giao dịch trước commit).
 - c. Tạo `CouponRedemption(couponId, orderId, userId?, email)`.
 
+**Captcha (0.19, D-057).** Khi backend có ĐỦ `TURNSTILE_SITE_KEY` + `TURNSTILE_SECRET_KEY` (cùng cơ chế form liên hệ, D-028): khách vãng lai gửi `captchaToken` lấy từ widget Turnstile; server xác minh qua Cloudflare. Thiếu/rỗng/sai -> 400 `CAPTCHA_FAILED` ("Xác minh captcha không thành công, vui lòng thử lại"); Cloudflare không gọi được -> 503 `SERVICE_UNAVAILABLE`. Khách đã đăng nhập không cần token. Token chỉ dùng một lần nên bước này chạy SAU nhánh replay idempotency (replay không cần token) và `captchaToken` bị loại khỏi `requestFingerprint`. Chưa cấu hình (mặc định ở localhost) thì không đổi hành vi, `captchaToken` bị bỏ qua.
+**Giới hạn đơn COD đang mở (0.19, D-057).** Chỉ khách vãng lai đặt đơn `COD`: nếu đã có >= `GUEST_COD_MAX_OPEN` (env, mặc định 3) đơn `PENDING`, `COD`, `userId` null có cùng `contactPhone` (chuẩn hóa) HOẶC cùng `contactEmail` (lowercase) -> 409 `TOO_MANY_PENDING_ORDERS` (`details: { max }`; "Bạn đang có quá nhiều đơn hàng chờ xác nhận. Vui lòng chờ cửa hàng xác nhận các đơn trước hoặc liên hệ cửa hàng để được hỗ trợ."), rollback, không trừ kho, không đụng giỏ. Kiểm sau nhánh replay (gửi lại cùng key + cùng body vẫn 200) và trước bước trừ kho. Đếm chạy trong cùng transaction đặt đơn sau hai khóa advisory theo SĐT và email, nên các lần đặt song song cùng SĐT hoặc cùng email không vượt giới hạn (mức đảm bảo: tuần tự hóa theo từng SĐT/email; hai request khác SĐT và khác email không chờ nhau). Đơn của khách có tài khoản và đơn online không bị giới hạn, cũng không tính vào số đếm. Đơn rời `PENDING` (staff xác nhận, hủy, job quá hạn) thì không còn tính.
 **201** `{ "data": Order }` (đơn mới). **200** `{ "data": Order }` nếu `Idempotency-Key` đã dùng với cùng nội dung và cùng người gọi (trả lại đơn cũ ở trạng thái mới nhất, không tạo thêm, không trừ kho lần nữa).
 **Idempotency (làm rõ 0.4):**
 
@@ -998,7 +1004,7 @@ Ví dụ:
 - `OUT_OF_STOCK`: liệt kê MỌI dòng thiếu, `details.items[] {variantId, requested, available}`. `ITEM_UNAVAILABLE`: `details.items[] {variantId}`. Dòng giỏ có issue bất kỳ (`OUT_OF_STOCK`/`INSUFFICIENT_STOCK`/`UNAVAILABLE`) -> từ chối cả đơn.
 - Mã giảm giá không hợp lệ vì BẤT KỲ lý do nào ở `POST /orders` -> 409 `COUPON_INVALID` (`details.reason`), không âm thầm bỏ mã.
   **Email xác nhận (0.4):** sau commit, gửi nền email xác nhận đơn tới `contactEmail`; lỗi mail không ảnh hưởng đơn. Link: user -> `${WEB_APP_URL}/tai-khoan/don-hang/<code>`; guest -> `${WEB_APP_URL}/tra-cuu-don-hang?code=<code>` (KHÔNG đưa SĐT vào URL).
-  Lỗi: 400 `VALIDATION_ERROR` (gồm thiếu header key, `acceptTerms` false); 401 (guest dùng `addressId`); 404 (`addressId` lạ); 409 `CART_EMPTY`, `OUT_OF_STOCK` (rollback; `details.items[]`), `ITEM_UNAVAILABLE`, `COUPON_INVALID` (kể cả `reason` `USAGE_LIMIT`/`PER_USER_LIMIT` phát sinh ở bước giữ lượt, rollback cả trừ kho), `PRICE_CHANGED`, `IDEMPOTENCY_CONFLICT`, `PAYMENT_METHOD_UNAVAILABLE`; 429.
+  Lỗi: 400 `VALIDATION_ERROR` (gồm thiếu header key, `acceptTerms` false); 401 (guest dùng `addressId`); 404 (`addressId` lạ); 409 `CART_EMPTY`, `OUT_OF_STOCK` (rollback; `details.items[]`), `ITEM_UNAVAILABLE`, `COUPON_INVALID` (kể cả `reason` `USAGE_LIMIT`/`PER_USER_LIMIT` phát sinh ở bước giữ lượt, rollback cả trừ kho), `PRICE_CHANGED`, `IDEMPOTENCY_CONFLICT`, `PAYMENT_METHOD_UNAVAILABLE`, `TOO_MANY_PENDING_ORDERS` (0.19); 400 `CAPTCHA_FAILED` và 503 `SERVICE_UNAVAILABLE` (captcha, 0.19); 429.
   Lưu ý (D-005): đơn guest không có endpoint xem lại ngoài `GET /orders/track` (mã đơn + SĐT); FE lưu response vừa nhận (sessionStorage) để hiển thị trang thành công, mất thì hướng dẫn dùng trang `/tra-cuu-don-hang`.
 
 ### 9.3 `GET /orders/:code` – Auth (chỉ chủ đơn)
@@ -1107,7 +1113,7 @@ Làm rõ 0.4: `code` được trim + uppercase; sai định dạng `^BB-\d{6}-[2
 | 1   | `PENDING_PAYMENT`  | `CONFIRMED`        | SYSTEM                                     | IPN/return VNPay có chữ ký, webhook hoặc sync Stripe hợp lệ (số tiền khớp): `paymentStatus=PAID`, `paidAt`. Thực hiện ở hàm xử lý chung §13.5 |
 | 2   | `PENDING_PAYMENT`  | `CANCELLED`        | SYSTEM (quá `expiresAt`), CUSTOMER, Staff+ | Hoàn kho (`ORDER_RELEASE`); hoàn lượt mã                                                                                                      |
 | 3   | `PENDING`          | `CONFIRMED`        | Staff+                                     | `confirmedAt`                                                                                                                                 |
-| 4   | `PENDING`          | `CANCELLED`        | CUSTOMER, Staff+                           | Hoàn kho; hoàn lượt mã; `cancelReason`                                                                                                        |
+| 4   | `PENDING`          | `CANCELLED`        | CUSTOMER, Staff+, SYSTEM (chỉ job COD guest) | Hoàn kho; hoàn lượt mã; `cancelReason`. SYSTEM: job hủy đơn COD khách vãng lai (`userId` null) quá `GUEST_COD_HOLD_HOURS` (48 giờ) chưa xác nhận, lý do "Quá hạn xác nhận đơn", `actorId` null (D-057) |
 | 5   | `CONFIRMED`        | `PROCESSING`       | Staff+                                     | Đang đóng gói                                                                                                                                 |
 | 6   | `CONFIRMED`        | `CANCELLED`        | CUSTOMER, Staff+                           | Hoàn kho; hoàn lượt mã; nếu đã `PAID` online cần hoàn tiền thủ công                                                                           |
 | 7   | `PROCESSING`       | `SHIPPING`         | Staff+                                     | Bắt buộc `trackingNumber` (`carrier` tùy chọn)                                                                                                |
@@ -1906,7 +1912,7 @@ Giá trị ĐỌC từ DB được kiểm theo schema nới hơn (giá trị cũ
 }
 ```
 
-`contactCaptcha` (D-028): `{ "provider": "turnstile", "siteKey": "<site key>" }` khi backend có ĐỦ cả `TURNSTILE_SITE_KEY` và `TURNSTILE_SECRET_KEY`; thiếu một hoặc cả hai thì captcha tắt và trả `null` (mặc định). FE đọc giá trị lúc chạy, không nhúng lúc build; secret không bao giờ xuất hiện trong response.
+`contactCaptcha` (D-028): `{ "provider": "turnstile", "siteKey": "<site key>" }` khi backend có ĐỦ cả `TURNSTILE_SITE_KEY` và `TURNSTILE_SECRET_KEY`; thiếu một hoặc cả hai thì captcha tắt và trả `null` (mặc định). FE đọc giá trị lúc chạy, không nhúng lúc build; secret không bao giờ xuất hiện trong response. Từ 0.19 (D-057) cùng cấu hình này cũng bật captcha cho đặt đơn của khách vãng lai (§9.2); tên trường giữ nguyên `contactCaptcha` để không đổi contract, FE checkout đọc lại cùng giá trị.
 
 `innerCityProvinces` được dựng từ `innerCityProvinceCodes` + tên trong danh mục tỉnh. `home.banners` chỉ gồm phần tử `isActive`. `innerCityWardCount` là số nguyên, bằng số mã trong `innerCityWardCodes`, để trang chính sách nói đúng khi nội thành gồm thêm phường riêng; vẫn KHÔNG trả danh sách mã phường hay bất kỳ key nào khác. Header `Cache-Control: public, max-age=300`. FE dùng cho trang chính sách vận chuyển, footer, trang liên hệ và banner trang chủ (SSR, revalidate 300 giây); API lỗi thì FE dùng nội dung mặc định viết sẵn. Do cache, trang storefront (chính sách, footer, liên hệ, banner) cập nhật chậm tối đa khoảng 5 phút sau khi admin lưu.
 
@@ -2020,7 +2026,7 @@ Chỉ khi chạy development thêm `'unsafe-eval'` vào `script-src` (cả hai p
 
 ## 16. Phân tích kinh doanh (Admin)
 
-Từ 0.14 (D-049, D-050; kế hoạch: [`admin-dashboard-plan.md`](admin-dashboard-plan.md)). Router `/admin/analytics/*` chỉ ADMIN: `requireAdmin` ở cấp router (chưa đăng nhập 401 `UNAUTHORIZED`, STAFF/CUSTOMER 403 `FORBIDDEN`), mọi response `Cache-Control: no-store` (§12.0). Không đổi §14.3 (`GET /admin/dashboard` vẫn dành cho Staff+). Tiền là `Int` VND. Mọi ngày là ngày lịch Việt Nam (UTC+7, không DST).
+Từ 0.14 (D-049, D-050; kế hoạch: [`admin-dashboard-plan.md`](admin-dashboard-plan.md)). Router `/admin/analytics/*` chỉ ADMIN: `requireAdmin` ở cấp router (chưa đăng nhập 401 `UNAUTHORIZED`, STAFF/CUSTOMER 403 `FORBIDDEN`), mọi response `Cache-Control: no-store` (§12.0). Không đổi §14.3 (`GET /admin/dashboard` vẫn dành cho Staff+). Tiền là `Int` VND. Mọi ngày là ngày lịch Việt Nam (UTC+7, không DST). Từ 0.19 (D-058) mọi truy vấn của router này chạy trên **pool kết nối riêng** (`ANALYTICS_POOL_MAX`, mặc định 4) với `statement_timeout` = `ANALYTICS_STATEMENT_TIMEOUT_MS` (mặc định 15000 ms); truy vấn bị Postgres hủy (mã `57014`) -> **503 `ANALYTICS_TIMEOUT`** ("Truy vấn phân tích quá lâu, hãy thu hẹp khoảng ngày"), áp cho cả `/export`. Không đổi kết quả khi truy vấn kịp giờ.
 
 ### 16.1 Tổng quan (Bước 1, đã triển khai)
 
@@ -2218,7 +2224,7 @@ Từ 0.16 (D-052). Ba endpoint chỉ ADMIN, `no-store`, lỗi 400 theo §1 (`det
       "byType": [
         { "type": "customer", "label": "Khách hủy", "current": 4, "previous": 2 },
         { "type": "store", "label": "Cửa hàng hủy", "current": 3, "previous": 1 },
-        { "type": "expired", "label": "Hết hạn thanh toán", "current": 2, "previous": 2 },
+        { "type": "expired", "label": "Hết hạn tự động", "current": 2, "previous": 2 },
         { "type": "unknown", "label": "Không rõ", "current": 1, "previous": 0 }
       ]
     },
@@ -2252,11 +2258,11 @@ Từ 0.16 (D-052). Ba endpoint chỉ ADMIN, `no-store`, lỗi 400 theo §1 (`det
 ```
 
 - **`cancellations`**: đơn **tạo** trong kỳ đang `CANCELLED` (nên `total.current` = `kpis.cancelledOrders.current` của §16.1; `byType` luôn đủ 4 phần tử theo thứ tự `customer`, `store`, `expired`, `unknown` và tổng `current` = `total.current`). Loại đọc từ dòng `OrderStatusHistory` có `toStatus = CANCELLED` **mới nhất** của đơn:
-  - `expired`: `actorId` null, `fromStatus = PENDING_PAYMENT` và `note` = "Quá hạn thanh toán" (đúng như job hết hạn §13.6 ghi; hằng `EXPIRE_REASON` dùng chung);
+  - `expired` (nhãn "Hết hạn tự động" từ 0.19): `actorId` null và (`fromStatus = PENDING_PAYMENT` với `note` = "Quá hạn thanh toán", đúng như job hết hạn §13.6 ghi, hằng `EXPIRE_REASON`; hoặc `fromStatus = PENDING` với `note` = "Quá hạn xác nhận đơn", job hủy đơn COD khách vãng lai §11 #4, hằng `GUEST_COD_EXPIRE_REASON`; cả hai hằng export từ `jobs/cleanup.ts`);
   - `store`: người thao tác hiện có role `STAFF` hoặc `ADMIN`;
   - `customer`: các trường hợp còn lại có dòng lịch sử (khách có tài khoản, khách vãng lai, hoặc người thao tác đã bị xóa);
   - `unknown`: đơn `CANCELLED` không có dòng lịch sử.
-  - Đánh đổi: dựa vào role **hiện tại** của người thao tác (đổi role sau này làm số liệu cũ đổi); tài khoản người hủy bị xóa (`actorId` về null) rơi vào `customer`; một khách vãng lai hủy đơn `PENDING_PAYMENT` và tự nhập đúng lý do "Quá hạn thanh toán" sẽ bị tính là `expired` (chấp nhận, chỉ ảnh hưởng phân loại).
+  - Đánh đổi: dựa vào role **hiện tại** của người thao tác (đổi role sau này làm số liệu cũ đổi); tài khoản người hủy bị xóa (`actorId` về null) rơi vào `customer`; một khách vãng lai hủy đơn `PENDING_PAYMENT` và tự nhập đúng lý do "Quá hạn thanh toán" (hoặc hủy đơn `PENDING` với lý do "Quá hạn xác nhận đơn") sẽ bị tính là `expired` (chấp nhận, chỉ ảnh hưởng phân loại).
 - **`returns`**: `delivered` = số đơn có `deliveredAt` trong kỳ; `returned` = trong số đó, đơn hiện đang `RETURNED`; `rate` = `returned / delivered` (0 khi không có đơn giao; `changePts` `null` khi kỳ trước không có đơn giao).
 - **`refunds`**: `count` = số `Payment` có `refundedAt` trong kỳ; `amount` = Σ `Payment.amount` (bằng `kpis.refundedAmount` của §16.1).
 - **`fulfillment`** (đơn vị: giờ, làm tròn 1 chữ số thập phân; `n` = số mẫu của kỳ này; `avg`/`median` `null` khi `n = 0`; `previousAvg` `null` khi kỳ trước không có mẫu):

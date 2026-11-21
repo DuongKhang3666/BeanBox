@@ -9,6 +9,9 @@ export function applyTestEnv(): void {
   process.env.INTERNAL_API_SECRET = 'test-internal-secret-0123456789abcdefghij';
   process.env.FRONTEND_ORIGINS = 'http://localhost:3000';
   process.env.LOG_LEVEL = 'silent';
+  // D-057: nhiều test đặt hàng loạt đơn COD guest cùng một SĐT; nới giới hạn đơn mở cho cả suite.
+  // Test của chính giới hạn (guestCod.integration.test.ts) đặt lại env.GUEST_COD_MAX_OPEN = 3.
+  process.env.GUEST_COD_MAX_OPEN = '100';
   // Thanh toán online luôn tắt mặc định trong test (dotenv không ghi đè biến đã đặt, kể cả rỗng);
   // test cần bật thì tiêm paymentConfig giả qua createApp().
   for (const k of [

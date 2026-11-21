@@ -3,7 +3,7 @@ import { env } from './config/env.js';
 import { startBackgroundJobs } from './jobs/cleanup.js';
 import { logger } from './lib/logger.js';
 import { loadLocations } from './modules/locations/locations.data.js';
-import { prisma } from './lib/prisma.js';
+import { disconnectPrisma } from './lib/prisma.js';
 
 const app = createApp();
 const locations = loadLocations();
@@ -20,7 +20,7 @@ async function shutdown(signal: string) {
   logger.info(`Nhận ${signal}, đang tắt...`);
   stopJobs();
   server.close(async () => {
-    await prisma.$disconnect();
+    await disconnectPrisma();
     process.exit(0);
   });
   setTimeout(() => process.exit(1), 10_000).unref();

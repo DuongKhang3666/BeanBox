@@ -1,6 +1,7 @@
 import type { Request, RequestHandler } from 'express';
 import type { PaymentConfig } from '../../config/payments.js';
 import { asyncHandler } from '../../lib/asyncHandler.js';
+import type { CaptchaConfig, TurnstileVerifier } from '../../lib/turnstile.js';
 import type { StripeHttp } from '../payments/stripe.js';
 import { identityOf } from '../cart/cart.controller.js';
 import type {
@@ -37,11 +38,15 @@ export const requireIdempotencyKey: RequestHandler = (req, res, next) => {
 };
 
 export const createOrder = asyncHandler(async (req, res) => {
+  // Captcha tùy chọn (D-057): bật khi cấu hình Turnstile (cùng cơ chế với form liên hệ, D-028).
+  const config = req.app.locals.captchaConfig as CaptchaConfig | null | undefined;
+  const verify = req.app.locals.captchaVerify as TurnstileVerifier | undefined;
   const result = await service.placeOrder({
     identity: identityOf(req),
     idempotencyKey: res.locals.idempotencyKey as string,
     input: req.body as CreateOrderInput,
     paymentConfig: paymentConfigOf(req),
+    captcha: config && verify ? { verify } : null,
   });
   res.status(result.created ? 201 : 200).json({ data: result.order });
 });

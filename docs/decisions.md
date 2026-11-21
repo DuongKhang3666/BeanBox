@@ -58,6 +58,11 @@
 - [D-052 Khách hàng, vận hành, tồn kho (Bước 3)](#d-052-khách-hàng-vận-hành-tồn-kho-bước-3)
 - [D-053 Hiệu quả mã giảm giá và xuất CSV (Bước 4)](#d-053-hiệu-quả-mã-giảm-giá-và-xuất-csv-bước-4)
 - [D-054 Hiệu năng, a11y và bản in khu phân tích (Bước 5, phần A)](#d-054-hiệu-năng-a11y-và-bản-in-khu-phân-tích-bước-5-phần-a)
+- [D-055 CI: coverage, kiểm định dạng và Dependabot](#d-055-ci-coverage-kiểm-định-dạng-và-dependabot)
+- [D-056 Mailer bền vững](#d-056-mailer-bền-vững)
+- [D-057 Chống giữ kho bằng đơn COD khách vãng lai](#d-057-chống-giữ-kho-bằng-đơn-cod-khách-vãng-lai)
+- [D-058 Bảo vệ DB khỏi truy vấn analytics nặng và giới hạn tài nguyên container](#d-058-bảo-vệ-db-khỏi-truy-vấn-analytics-nặng-và-giới-hạn-tài-nguyên-container)
+- [D-059 Lớp lỗi, trạng thái tải, header mobile và múi giờ hiển thị](#d-059-lớp-lỗi-trạng-thái-tải-header-mobile-và-múi-giờ-hiển-thị)
 
 ---
 
@@ -471,13 +476,14 @@
 - **Trạng thái:** Áp dụng. Thay đổi phần "E2E chỉ cục bộ" của D-020.
 - **Bối cảnh:** Cần kiểm tra tự động trước khi deploy; chưa muốn deploy tự động.
 - **Quyết định:** Các job:
-  1. `backend`: Postgres service; `npm ci`, `prisma generate`, `migrate deploy` trên DB trống, kiểm drift bằng `prisma migrate diff --from-migrations ... --to-schema-datamodel ... --shadow-database-url ... --exit-code`, lint, typecheck, test, build.
+  1. `backend`: Postgres service; `npm ci`, `prisma generate`, `migrate deploy` trên DB trống, kiểm drift bằng `prisma migrate diff --from-migrations prisma/migrations --to-schema prisma/schema.prisma --exit-code` (shadow DB lấy từ `SHADOW_DATABASE_URL` qua `backend/prisma.config.ts`; exit 2 = drift), lint, typecheck, test, build.
   2. `frontend`: lint, typecheck, test, build.
   3. `e2e`: Playwright chromium của runner Linux, Postgres service, migrate + seed DB, chạy sau backend/frontend.
   4. `secret-scan`: gitleaks chạy bằng Docker image ghim phiên bản, quét lịch sử git.
   5. `audit`: `npm audit` cả hai phía, chỉ báo cáo, không làm fail.
-  6. `docker`: build image backend/frontend/caddy, không push.
-  7. Cache npm. KHÔNG có deploy tự động.
+  6. `docker`: build image backend/frontend/caddy/backup (không push), smoke image backup (rclone, age, pg_dump) và selftest backup off-site với Postgres service (D-043).
+  7. `ops-lint`: shellcheck cho `deploy/backup` và `deploy/monitoring`, `docker compose config` cho `docker-compose.prod.yml` với env giả.
+  8. Cache npm. KHÔNG có deploy tự động.
 - **Hệ quả/rủi ro:** E2E chuyển từ "chỉ cục bộ" (D-020) sang chạy trong CI; E2E có thể chậm/flaky hơn. `audit` không chặn nên cần xem báo cáo thủ công.
 - **Cập nhật 2026-11-20 (M8):** lệnh kiểm drift dùng `--to-schema` và bỏ `--shadow-database-url` theo Prisma 7 (D-036); job `docker` build thêm image backup và có thêm job `ops-lint` (shellcheck, `docker compose config`), xem `testing.md`.
 - **Docs bị ảnh hưởng:** `testing.md`; `.github/workflows/`.
@@ -516,7 +522,7 @@
   1. `prisma`, `@prisma/client`, `@prisma/adapter-pg` ~7.10.1.
   2. Generator `prisma-client`, output `src/generated/prisma`, ESM, import có đuôi `.js`. Thư mục sinh ra KHÔNG commit: phải chạy `npx prisma generate` sau mỗi `npm install`/`npm ci`.
   3. `backend/prisma.config.ts`: nạp `.env` bằng dotenv; URL đọc trực tiếp từ `process.env` (không dùng helper `env()` để `generate` chạy được khi không có DB); shadow DB qua `SHADOW_DATABASE_URL`; seed khai báo ở `migrations.seed`.
-  4. Driver adapter `pg` (`backend/src/lib/prisma.ts`): `connectionTimeoutMillis` 5000; pool pg mặc định 10 kết nối (Prisma 6 là `num_cpus*2+1`).
+  4. Driver adapter `pg` (`backend/src/lib/prisma.ts`): `connectionTimeoutMillis` 5000; pool pg mặc định 10 kết nối (lịch sử, trước D-036: Prisma 6 là `num_cpus*2+1`).
   5. CLI `prisma` chuyển sang `dependencies` để `migrate deploy` lúc khởi động container dùng bản cài từ lockfile (bỏ `npm i --no-save`).
   6. CI kiểm drift dùng `--to-schema` thay `--to-schema-datamodel` và bỏ `--shadow-database-url`. Script npm `postprisma:migrate`, `postdb:reset` giữ hành vi generate/seed như cũ (Prisma 7 không còn tự chạy).
   7. Khác biệt hành vi đã xử lý: lỗi P2002 qua adapter không còn `meta.target` mà nằm ở `meta.driverAdapterError.cause.constraint` (`fields` hoặc `index`); `uniqueTarget` (`orders.service.ts`) đọc cả hai, có test `orderUnique.integration.test.ts`.
@@ -862,3 +868,96 @@
   7. **Mã giảm giá không được bắt đầu bằng `-` khi tạo** (dễ bị hiểu nhầm là tùy chọn dòng lệnh/công thức bảng tính). `PATCH` vốn không nhận `code` (đổi mã luôn 400), nên mã cũ dạng `-...` vẫn hiển thị, sửa trường khác và áp dụng ở checkout như trước; không cần migrate dữ liệu, seed không có mã như vậy.
 - **Hệ quả/rủi ro:** số đo từ một máy cá nhân (nhiễu ~30%); breakdown danh mục/thương hiệu và top-products gần 1 s ở 100.000 đơn/365 ngày; dữ liệu demo không khớp sổ kho.
 - **Docs bị ảnh hưởng:** `api-contract.md` §13.8 (0.18), `testing.md`, `admin-dashboard-plan.md`. Không đổi `db-schema.md`.
+
+## D-055 CI: coverage, kiểm định dạng và Dependabot
+
+- **Ngày:** 2026-11-21 · **Người chốt:** Tech Lead (Đợt 1, R-07 của `roadmap-next.md`)
+- **Trạng thái:** Áp dụng. Bổ sung D-033.
+- **Bối cảnh:** CI chưa đo coverage dù `requirements.md` §6.6 yêu cầu, chưa kiểm định dạng (đã có lần file lệch Prettier lọt vào HEAD) và không có cơ chế báo cập nhật phụ thuộc. Phạm vi dự án là portfolio chạy localhost, nên chọn công cụ nhẹ, không cần dịch vụ ngoài.
+- **Quyết định:**
+  1. **Coverage:** `@vitest/coverage-v8` (cùng major với vitest 5) ở cả `backend/` và `frontend/`; script `test:coverage`; reporter `text-summary` + `json-summary` + `html` vào `coverage/`; đo `src/**`, loại file test, `.d.ts`, `src/generated` (backend), `src/types` (frontend). CI chạy `test:coverage` thay cho `test`, in bảng tóm tắt vào `$GITHUB_STEP_SUMMARY` và upload html (retention 7 ngày). Chi phí: instrument v8 làm test chậm hơn (chưa đo chính xác).
+  2. **Ngưỡng = số đo làm tròn xuống trừ khoảng 2 điểm, KHÔNG đặt 70 %:** backend đo 96,56 / 89,36 / 97,65 / 97,93 (statements / branches / functions / lines) -> ngưỡng 94 / 87 / 95 / 95; frontend đo 83,55 / 77,73 / 83,67 / 86,12 -> 81 / 75 / 81 / 84. Con số 70 % của `requirements.md` thấp hơn xa thực tế nên không bắt được việc tụt; mục tiêu của ngưỡng là chống suy giảm, không phải đạt chỉ tiêu. Nâng ngưỡng khi coverage tăng có chủ đích. `requirements.md` §6.6 đã sửa theo hướng "đo trong CI, ngưỡng không cho tụt".
+  3. **Frontend nới timeout khi `--coverage`** (60 s thay vì 15 s): instrument v8 làm vài test form dài (`AdminProductForm`, `AdminSettings`...) chạy quá 15 s ở lần đo đầu (2-5 test timeout, thay đổi giữa các lần chạy). Chạy thường giữ 15 s.
+  4. **`format:check`** (`prettier --check .`) ở cả hai phía, bước riêng trong job `backend` và `frontend`. Thêm `endOfLine: "auto"` vào hai `.prettierrc.json`: working tree Windows (autocrlf) có file CRLF dù index là LF, mặc định `lf` làm `--check` báo hàng chục file lệch giả (49/50 file được báo chỉ vì CRLF). `auto` giữ nguyên kiểu xuống dòng hiện có nên kết quả như nhau trên CI Linux và máy Windows; đánh đổi: không còn bắt file CRLF lỡ được commit, nhưng index đang LF toàn bộ và `.gitattributes` chưa ép `eol` cho mã nguồn (việc để sau nếu cần). `frontend/.prettierignore` thêm `test-results`, `playwright-report`, `*.tsbuildinfo`. Lần đầu chạy chỉ có 1 file lệch thật (`frontend/e2e/compare.spec.ts`), đã format.
+  5. **Dependabot** (`.github/dependabot.yml`, version 2): npm (`/backend`, `/frontend`), docker (`/backend`, `/frontend`, `/deploy/caddy`, `/deploy/backup`), github-actions (`/`); hằng tuần (thứ Hai), gộp minor/patch thành một PR mỗi mục, tối đa 5 PR mở mỗi mục, tiền tố commit `chore(deps)`/`chore(docker)`/`chore(ci)`. Bản major vẫn mở PR riêng. Không tự merge. Chưa ghim SHA cho Actions (vẫn theo tag; việc để sau, ghi ở `roadmap-next.md` R-07). Trivy chưa làm.
+  6. **actionlint** kiểm `.github/workflows/*.yml` bằng Docker image chính thức (`rhysd/actionlint`, chạy tay, chưa đưa vào CI): `docker run --rm -v "<repo>:/repo" --workdir /repo rhysd/actionlint:latest -color` (Git Bash cần `MSYS_NO_PATHCONV=1`). Kết quả lần này: sạch (v1.7.12).
+- **Hệ quả/rủi ro:** CI chậm hơn một chút và thêm artifact; ngưỡng có thể làm PR fail khi xóa test hoặc thêm mã khó test (cần nâng/hạ ngưỡng có ý thức); Dependabot tạo PR mỗi tuần dù dự án không deploy; `dependabot.yml` chưa kiểm được trên GitHub (chỉ kiểm cú pháp YAML bằng Prettier và đối chiếu schema thủ công).
+- **Docs bị ảnh hưởng:** `testing.md`, `README.md`, `requirements.md` §6.6, `roadmap-next.md`; `.github/workflows/ci.yml`, `.github/dependabot.yml`.
+
+## D-056 Mailer bền vững
+
+- **Ngày:** 2026-11-21 · **Người chốt:** Tech Lead (Đợt 1, R-06 của `roadmap-next.md`)
+- **Trạng thái:** Áp dụng.
+- **Bối cảnh:** `createSmtpMailer` cứng `secure: false`, không `requireTLS`, không timeout (một SMTP treo giữ socket vô hạn), gửi fire-and-forget không retry, nhánh SMTP không có test. Phạm vi dự án là portfolio chạy localhost, nên chọn mức gia cố nhẹ, không thêm bảng/migration.
+- **Quyết định:**
+  1. **Env mới** (zod, `.env.example`, `.env.production.example`, compose prod): `SMTP_SECURE` (bool, mặc định `false`; `true` = TLS ngầm định, cổng 465) và `SMTP_REQUIRE_TLS` (bool; mặc định `false` khi không production, `true` khi `NODE_ENV=production` trừ khi đặt `false` tường minh). Giá trị khác `true`/`false` làm backend không khởi động; chuỗi rỗng coi như chưa đặt.
+  2. **Timeout:** `connectionTimeout` 10 giây, `greetingTimeout` 10 giây, `socketTimeout` 20 giây (hằng trong `lib/mailer.ts`). Tùy chọn transport dựng bằng hàm thuần `buildSmtpTransportOptions(env)` để test không cần mở kết nối.
+  3. **Retry trong tiến trình:** tối đa **3 lần thử** (gồm lần đầu), chờ 1 giây rồi 4 giây giữa các lần (mảng `[1s, 4s, 16s]`, phần tử 16 giây chỉ dùng nếu nâng số lần thử). Chỉ retry lỗi tạm thời: mã `ECONNECTION`, `ETIMEDOUT`, `ESOCKET`, `ECONNRESET`, `ECONNREFUSED`, `EPIPE`, `EAI_AGAIN`, `EDNS` hoặc SMTP `responseCode` 4xx. Lỗi vĩnh viễn (SMTP 5xx, `EAUTH`, `ETLS`, `EENVELOPE`, lỗi lạ) không retry. Hàm chờ tiêm được (`deliverWithRetry(msg, ctx, { delay })`) để test chạy nhanh. `sendMailInBackground(msg, ctx?)` không bao giờ ném lỗi ra luồng request.
+  4. **Log:** mỗi lần thất bại log `error` với `mail` (loại: `order-confirmation`, `order-status`, `verify-email`, `reset-password`, `contact`), `orderCode` (nếu có), `attempt/maxAttempts`, `transient`, `willRetry` và đối tượng lỗi. **Không** log nội dung mail, token, link đặt lại mật khẩu; bỏ cả địa chỉ người nhận (trước đây có `to`) để giảm PII trong log.
+- **Hệ quả/đánh đổi:**
+  - Retry nằm trong RAM: backend restart giữa lúc chờ thì mail mất; mail bị bỏ cuộc sau 3 lần cũng mất (chỉ có log). Outbox (bảng + job) để sau, chưa cần ở localhost.
+  - Tổng thời gian cố gắng tối đa ~5 giây chờ + 3 lần timeout (tới ~3x20 giây) giữ một promise nền, không chặn request.
+  - `SMTP_REQUIRE_TLS=true` mặc định ở production: SMTP không hỗ trợ TLS bị từ chối (đúng ý đồ). Chạy production thử với Mailpit (không TLS) phải đặt `SMTP_REQUIRE_TLS=false`.
+  - Kiểm bằng SMTP thật cần R-26 (chưa làm); nhánh SMTP chỉ được test ở mức tùy chọn transport, chưa có kiểm thử qua socket thật.
+- **Docs bị ảnh hưởng:** `api-contract.md` (0.19, danh sách env), `architecture.md` §8, `deployment.md` (bảng biến env), `testing.md`, `backend/.env.example`, `.env.production.example`, `docker-compose.prod.yml`.
+
+## D-057 Chống giữ kho bằng đơn COD khách vãng lai
+
+- **Ngày:** 2026-11-21 · **Người chốt:** Tech Lead (Đợt 1, R-04 của `roadmap-next.md`)
+- **Trạng thái:** Áp dụng. Bổ sung D-001, D-010, D-028, D-052.
+- **Bối cảnh:** Đơn COD trừ kho ngay và không có hạn; khách vãng lai không cần tài khoản, chỉ bị giới hạn theo IP (10 đơn/phút). Một người có thể đặt nhiều đơn COD rồi để đó, giữ hết tồn kho, hoặc nhập email người khác để họ nhận mail xác nhận.
+- **Quyết định:**
+  1. **Hạn giữ kho:** đơn COD của khách vãng lai (`userId` null) `PENDING` tạo quá `GUEST_COD_HOLD_HOURS` giờ (env, 1..720, mặc định 48) bị job nền hủy: cùng nhịp 60 giây và cùng advisory lock `EXPIRE_PAYMENTS_LOCK_KEY` với job hết hạn thanh toán (chạy nối tiếp trong `safeRunExpire`), tối đa 50 đơn/lượt (index `[status, createdAt]`), mỗi đơn 1 transaction, khóa `Order` rồi kiểm lại điều kiện, `cancelOrderTx` với actor `SYSTEM`, `actorId` null, lý do hằng `GUEST_COD_EXPIRE_REASON` = "Quá hạn xác nhận đơn" (export từ `jobs/cleanup.ts`), hoàn kho + hoàn lượt mã, gửi email trạng thái hủy sau commit (`afterOrdersExpired`). Chạy lần hai không hủy/hoàn kho lần nữa (điều kiện trạng thái trong transaction). Không áp cho khách có tài khoản và đơn online (đã có `expiresAt`). Máy trạng thái §11 #4 thêm actor `SYSTEM` cho `PENDING -> CANCELLED` (hẹp: `PENDING -> CONFIRMED` và các trạng thái sau vẫn không có SYSTEM).
+  2. **Phân loại hủy (D-052, §16.3):** loại `expired` gồm thêm (`actorId` null, `fromStatus = PENDING`, `note = GUEST_COD_EXPIRE_REASON`); nhãn đổi từ "Hết hạn thanh toán" thành "Hết hạn tự động" (API, UI, CSV, docs, fixture test). Đánh đổi như D-052: khách vãng lai tự nhập đúng lý do "Quá hạn xác nhận đơn" khi hủy đơn `PENDING` cũng bị tính `expired`.
+  3. **Giới hạn đơn mở:** khi khách vãng lai đặt đơn COD, nếu đã có >= `GUEST_COD_MAX_OPEN` (env, 1..100, mặc định 3) đơn COD, `PENDING`, `userId` null cùng `contactPhone` (đã chuẩn hóa) HOẶC cùng `contactEmail` (lowercase) -> 409 `TOO_MANY_PENDING_ORDERS` (`details.max`). Kiểm SAU nhánh idempotency replay (gửi lại cùng key + cùng body vẫn trả đơn cũ). Đếm trong cùng transaction đặt đơn, sau hai khóa `pg_advisory_xact_lock(hashtextextended(...))` theo SĐT và email (sắp theo chuỗi để không deadlock; khóa theo giao dịch, tự nhả khi commit/rollback). **Mức đảm bảo:** các lần đặt song song cùng SĐT hoặc cùng email bị tuần tự hóa nên không vượt giới hạn (có test 6 request song song, đúng 3 thành công); hai request khác cả SĐT lẫn email không chờ nhau. Dùng index sẵn có (`contactPhone`, `contactEmail`, `[status, createdAt]`), không migration.
+  4. **Captcha tùy chọn:** nếu Turnstile đã cấu hình (cùng env/`app.locals` của form liên hệ, D-028) thì `POST /orders` của khách vãng lai bắt buộc `captchaToken` (xác minh qua `lib/turnstile.ts`; hàm dùng chung mới `assertCaptcha`, form liên hệ cũng dùng lại: thiếu/sai 400 `CAPTCHA_FAILED`, Cloudflare lỗi 503 `SERVICE_UNAVAILABLE`); khách đăng nhập không cần. Token Turnstile dùng một lần nên: kiểm sau nhánh replay, và `captchaToken` bị loại khỏi `requestFingerprint` (gửi lại cùng đơn với token mới vẫn cùng `Idempotency-Key`). FE checkout hiện widget `TurnstileWidget` (tái dùng) cho khách vãng lai khi có site key, khóa nút Đặt hàng tới khi có token, reset widget sau mỗi lần gửi lỗi, `Idempotency-Key` tính trên payload không gồm token. Site key lấy từ `contactCaptcha` của `GET /settings/public` (giữ tên cũ để không đổi contract); trang `/thanh-toan` giờ là ISR 300 giây đọc cấu hình này, và nếu HTML cũ làm FE thiếu widget thì khi gặp `CAPTCHA_FAILED` FE nạp lại cấu hình. CSP storefront đã cho phép Turnstile (`script-src`, `default-src`/`frame-src` trong `frontend/src/lib/csp.ts`); admin không đổi.
+- **Hệ quả/rủi ro (đánh đổi đã chấp nhận):**
+  - Hạn 48 giờ chỉ đo từ `createdAt`: đơn chờ xác nhận lâu vì cửa hàng bận cũng bị hủy (cùng ngưỡng "quá 24 giờ" ở màn Vận hành chỉ là cảnh báo). Cửa hàng cần xác nhận kịp hoặc tăng `GUEST_COD_HOLD_HOURS`.
+  - Giới hạn theo SĐT/email chặn luôn khách thật có nhiều đơn chờ (ví dụ mua cho nhiều người cùng SĐT); thông báo hướng dẫn chờ xác nhận hoặc liên hệ cửa hàng. Kẻ xấu dùng nhiều SĐT/email khác nhau vẫn qua được (không phải kiểm soát tuyệt đối, chỉ nâng chi phí); captcha và rate limit IP bổ sung.
+  - Email nhập tùy ý vẫn có thể là của người khác: giới hạn chỉ hạn chế số mail xác nhận/hủy gửi tới một email, chưa có xác minh email (ngoài phạm vi).
+  - Bộ lọc "đơn nghi vấn" cho staff (đề xuất ban đầu của R-04) chưa làm.
+  - Test chung đặt `GUEST_COD_MAX_OPEN=100` trong `tests/testEnv.ts` vì nhiều test đặt hàng loạt đơn cùng một SĐT; test của giới hạn (`guestCod.integration.test.ts`) đặt lại 3.
+  - Trang `/thanh-toan` chuyển từ tĩnh sang ISR 300 giây (gọi `GET /settings/public` lúc dựng); khi backend tắt lúc build rơi về mặc định (captcha tắt).
+- **Docs bị ảnh hưởng:** `api-contract.md` §2, §9.2, §11, §14.9 (ghi chú), §16.3 (0.19), `architecture.md` §7-§8, `deployment.md`, `testing.md`, `backend/.env.example`, `.env.production.example`, `docker-compose.prod.yml`. Không đổi `db-schema.md` (không migration).
+
+## D-058 Bảo vệ DB khỏi truy vấn analytics nặng và giới hạn tài nguyên container
+
+- **Ngày:** 2026-11-21 · **Người chốt:** Tech Lead (Đợt 1, R-08 của `roadmap-next.md`)
+- **Trạng thái:** Áp dụng. Bổ sung D-054.
+- **Bối cảnh:** Analytics chạy trên DB giao dịch, không `statement_timeout`, dùng chung pool 10 kết nối với luồng đặt hàng; số đo D-054: breakdown 365 ngày ~0,8-0,9 giây ở 100.000 đơn. Compose không có giới hạn tài nguyên cho service nào.
+- **Quyết định:**
+  1. **Pool riêng cho analytics:** `PrismaClient` thứ hai `analyticsPrisma` (`lib/prisma.ts`, adapter `pg`) chỉ dùng cho truy vấn của `modules/admin/analytics/*` (overview, breakdown, top, customers, operations, inventory, coupons và export qua cùng service); `max` = `ANALYTICS_POOL_MAX` (1..50, mặc định 4). Ghi audit của export và `ordersNeedingRefund` (dùng chung với màn đơn hàng) vẫn ở pool chính. Pool chính `max` = `DATABASE_POOL_MAX` (1..100, mặc định 10, đúng mặc định cũ của `pg`).
+  2. **Timeout ở mức kết nối:** tùy chọn `statement_timeout` của `pg` (`PoolConfig`, gửi lúc bắt tay kết nối, đã kiểm: `SHOW statement_timeout` trả `15s` ở pool analytics và `0` ở pool chính) = `ANALYTICS_STATEMENT_TIMEOUT_MS` (1000..120000, mặc định 15000). Không dùng `SET LOCAL` vì analytics không chạy trong transaction.
+  3. **Ánh xạ lỗi:** Prisma 7 + adapter-pg ném `PrismaClientKnownRequestError` `P2010` với `meta.driverAdapterError.cause.code = '57014'` (query_canceled) (đã kiểm bằng `pg_sleep`); `isQueryCanceled` dò mã ở các tầng `cause/meta/driverAdapterError`. Middleware lỗi gắn cuối router analytics đổi thành 503 `ANALYTICS_TIMEOUT` ("Truy vấn phân tích quá lâu, hãy thu hẹp khoảng ngày"); lỗi khác chuyển tiếp nguyên vẹn (500). Có trong §2 và §16 của contract.
+  4. **Shutdown:** `disconnectPrisma()` đóng cả hai client (`server.ts`).
+  5. **Tài nguyên container** (`docker-compose.prod.yml`, cú pháp `mem_limit`/`cpus` ở mức service, `docker compose config -q` hợp lệ với env giả như job `ops-lint`): db 640m/1,0 cpu (gồm `/dev/shm` 256mb), backend 448m/1,0, frontend 320m/0,75, caddy 96m/0,25, backup 128m/0,25; tổng 1632m cho VPS 2 vCPU/2 GB. **Ước lượng, chưa đo trên VPS thật** (ghi trong comment compose). Dev `docker-compose.yml` không đổi.
+  6. **Không làm** bảng tổng hợp (R-19) và cache analytics (để sau); R-08 trong roadmap hết hai nửa còn lại (pool/timeout, giới hạn container).
+- **Hệ quả/rủi ro:**
+  - Hai pool tối đa 10 + 4 = 14 kết nối tới Postgres (mặc định `max_connections` 100): đủ rộng.
+  - Timeout 15 giây là ước lượng, nhiều hơn xa số đo hiện tại (< 1 giây ở 100.000 đơn); Admin chọn khoảng ngày rất lớn trên dữ liệu rất lớn sẽ nhận 503 thay vì treo.
+  - Hạn mức bộ nhớ backend 448m chưa kiểm với export lớn; nếu bị OOM-kill thì nâng (hướng dẫn trong comment compose). Chưa có số đo `docker stats`.
+  - Lỗi 57014 ở truy vấn trong `Promise.all` làm cả request thất bại; các truy vấn còn lại vẫn chạy tới hết hoặc tới timeout của chính chúng (không hủy chủ động).
+- **Docs bị ảnh hưởng:** `api-contract.md` §2, §16 (0.19), `architecture.md` §8, `deployment.md`, `testing.md`, `backend/.env.example`, `.env.production.example`, `docker-compose.prod.yml`, `roadmap-next.md`.
+
+
+## D-059 Lớp lỗi, trạng thái tải, header mobile và múi giờ hiển thị
+
+- **Ngày:** 2026-11-21 · **Người chốt:** Tech Lead (Đợt 1, R-02 và R-12 của `roadmap-next.md`)
+- **Trạng thái:** Áp dụng. Bổ sung D-040, D-044, D-048.
+- **Bối cảnh:** Lỗi trong layout gốc làm trắng trang (chỉ có `error.tsx`); đổi lọc/trang ở danh mục không có phản hồi tải; khi API sập hai trang trả ErrorState với HTTP 200 và metadata không noindex; header mobile 3 hàng chiếm 165/844 px, mục nav cuối bị cắt không có gợi ý; formatter ngày giờ không chỉ định múi giờ nên SSR (server UTC) có thể lệch giờ trình duyệt.
+- **Quyết định - phần 1 (R-02):**
+  1. **`app/global-error.tsx`:** client component có `<html lang="vi"><body>`, tiếng Việt, nút "Thử lại" (`reset()`), link `<a href="/">` thường (không phụ thuộc router/Provider), hiện mã `digest` nếu có và `console.error("global-error", digest, error)` (chưa có dịch vụ thu lỗi, ngoài phạm vi). Chỉ import `globals.css` (thẻ `<link>`), không script inline mới nên CSP storefront (D-040) không cần đổi. Chưa kiểm bằng cách ép layout gốc ném lỗi trên trình duyệt thật (chỉ test render + build).
+  2. **Chỉ báo tải của danh mục/tìm kiếm là phía client, KHÔNG dùng `loading.tsx` ở route slug.** `features/catalog/components/ListingNavigation.tsx`: `ListingNavigationProvider` (một `useTransition` chung, đặt quanh bộ lọc + lưới ở `/danh-muc/[slug]` và `/tim-kiem`), `useListingPush` (dùng ở `FilterPanel`, `SortSelect`), `ListingLink` (dùng ở `Pagination`; click có phím bổ trợ/giữa vẫn là link thật) và `ListingResultsRegion` (bọc lưới + phân trang trong `ProductResults`). Trong lúc chờ server trả trang mới: vùng kết quả có `aria-busy="true"`, mờ `opacity-60` và chữ ẩn "Đang tải..." (`role="status"`, `sr-only`); chỉ đổi opacity nên không CLS; trang cũ giữ trên màn hình tới khi trang mới sẵn sàng. Không đổi cơ chế điều hướng/debounce của bộ lọc nên không ảnh hưởng D-035. `/tim-kiem` vẫn giữ `loading.tsx` (`ListingSkeleton`, không phải route slug, không có 404/308 theo slug). `/san-pham/[slug]` không có chỉ báo tải (không bỏ lỡ gì: chuyển giữa các sản phẩm là điều hướng link thường); `ProductDetailSkeleton` đã xóa.
+  3. **Bảng route `next build` trước/sau: không đổi.** Cả hai trang vốn đã là `ƒ` (Dynamic: đọc `searchParams`/không có `generateStaticParams`), dữ liệu cache ở tầng fetch (`revalidate`); `loading.tsx` không đổi kiểu route nào.
+  4. **Đã bỏ `loading.tsx` ở `/san-pham/[slug]` và `/danh-muc/[slug]` (sửa hồi quy HTTP).** Bản đầu thêm hai file này; đo trên production build cho thấy chúng làm slug không tồn tại trả HTTP 200 (soft-404; shell đã flush trước khi trang biết là 404) và có nguy cơ biến redirect 308 slug cũ (D-018) thành redirect phía client. Quyết định: xóa cả hai, thay bằng chỉ báo tải phía client (mục 2). Đo lại trên production build (`next build` + `next start`, API + DB tạm; `GET` không theo redirect): slug sản phẩm không tồn tại -> 404; slug danh mục không tồn tại -> 404; slug sản phẩm cũ (đã đổi qua API admin) -> 308 `Location: /san-pham/<slug mới>`; slug danh mục cũ -> 308 `Location: /danh-muc/<slug mới>`; trang thường (`/`, danh mục có thật) -> 200. Lưu ý khi tự kiểm: cây danh mục và tra cứu sản phẩm được cache ở tầng fetch (`revalidate`), nên slug đã được truy cập TRƯỚC khi đổi vẫn trả trang cũ (200) tới khi hết TTL; muốn thấy 308 ngay phải đổi slug trước lần truy cập đầu (hoặc xóa `.next/cache/fetch-cache`). Test tự động `Skeletons.test.tsx` khẳng định hai file `loading.tsx` không tồn tại để không ai thêm lại.
+  5. **Trang lỗi khi API sập:** giữ ErrorState với HTTP 200 (đã kiểm: Next không cho đặt 5xx khi shell đã stream) và `generateMetadata` nhánh lỗi trả `robots: { index: false, follow: false }` (đã kiểm HTML thật có `<meta name="robots" content="noindex, nofollow">`). **Cache:** trang là dynamic nên không có HTML cache; tầng fetch của Next chỉ lưu phản hồi 200 nên lỗi không bị giữ lại: đã kiểm bằng cách chạy `next start` khi API tắt (ErrorState + noindex), bật API, tải lại cùng tiến trình -> trang bình thường ngay, không noindex. Không chuyển sang `throw` (sẽ rơi `error.tsx` nhưng vẫn là 200 do streaming, không có lợi). Chưa xử lý: khi chỉ `getProducts` lỗi (danh mục vẫn tải được) trang danh mục hiện ErrorState mà metadata vẫn index (metadata không biết kết quả này).
+- **Quyết định - phần 2 (R-12):**
+  1. **Header mobile (< md) 2 hàng:** hàng 1 = logo + nút "Danh mục" (icon, chữ hiện từ 430 px, `sr-only` dưới đó) + giỏ + tài khoản; hàng 2 = ô tìm kiếm full-width. `<nav>` ngang chỉ hiện từ md. Nút (`MobileCategoryMenu`) có `aria-expanded`, `aria-controls`; bảng thả xuống `absolute` ngay dưới header (`<nav aria-label="Danh mục sản phẩm">`, thuộc tính `hidden` khi đóng), Escape đóng và trả focus về nút, bấm ra ngoài hoặc chọn link thì đóng; vùng chạm >= 44 px. Desktop (>= md) giữ nguyên bố cục (cùng DOM, đổi bằng `order`/`hidden`). Skip link, combobox tìm kiếm ARIA, MiniCart không đổi.
+  2. **Chiều cao header ở 390x844 (đo bằng `getBoundingClientRect` trên production build, Edge):** trước 165 px (19,5 % viewport), sau 113 px (13,4 %). Cả hai hàng vẫn sticky (không làm kiểu "ô tìm kiếm cuộn đi" để tránh offset cố định dễ vỡ khi hàng 1 bị xuống dòng). Đo thêm (Edge, production build, `getBoundingClientRect`): 390x844 khách và staff 113 px (2 hàng); 360x800 khách 113 px, 360x800 staff đăng nhập 165 px (xuống 3 hàng, chấp nhận; không tràn ngang ở cả bốn ca); menu Danh mục dùng được bằng bàn phím (Enter mở, Tab vào bảng, Escape đóng và trả focus), axe 0 serious/critical khi menu mở. Trang chủ không tràn ngang (`scrollWidth` = `clientWidth` = 390).
+  3. **Múi giờ:** `lib/format.ts` (`formatDate`, `formatDateTime`) cố định `timeZone: "Asia/Ho_Chi_Minh"` (cùng với `features/admin/format.ts` đã có sẵn). Test biên UTC: `2026-11-20T18:30:00Z` -> `21/11/2026 01:30`; chạy đúng với `TZ=UTC`, `America/Los_Angeles`, `Asia/Tokyo`. Các test cũ dùng `new Date(y, m, d, h)` (giờ máy) được đổi sang chuỗi ISO UTC.
+  4. **Không làm** "Mua lại" (FR-ORD-07) trong đợt này.
+- **Hệ quả/rủi ro:**
+  - Không còn soft-404 (đã bỏ `loading.tsx` ở route slug). Đổi lại, vào `/san-pham/[slug]` lần đầu không có skeleton (chờ server); danh mục có chỉ báo khi đổi lọc/sắp xếp/trang.
+  - Ảnh `docs/screenshots/mobile-home.png` đổi (header mới); `mobile-admin-orders.png` không đổi vì header admin riêng.
+  - Hai `<nav>` cùng danh sách link tồn tại trong DOM (một cái ẩn bằng CSS/`hidden` theo breakpoint); phần tử ẩn không vào cây truy cập nên không bị đọc trùng.
+- **Docs bị ảnh hưởng:** `testing.md`, `roadmap-next.md`, `docs/screenshots/mobile-home.png`.

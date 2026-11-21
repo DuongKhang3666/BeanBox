@@ -1,4 +1,5 @@
 import { env } from '../config/env.js';
+import { AppError } from './errors.js';
 import { logger } from './logger.js';
 
 /** Cloudflare Turnstile (D-028, api-contract §14.11). */
@@ -59,4 +60,27 @@ export function createTurnstileVerifier(
       return 'unavailable';
     }
   };
+}
+
+/**
+ * Xác minh token Turnstile cho form/endpoint dùng captcha tùy chọn (contact D-028, đặt đơn D-057).
+ * Thiếu/sai -> 400 `CAPTCHA_FAILED`; Cloudflare không gọi được -> 503 `SERVICE_UNAVAILABLE`.
+ */
+export async function assertCaptcha(
+  verify: TurnstileVerifier,
+  rawToken: string | undefined,
+): Promise<void> {
+  const token = (rawToken ?? '').trim();
+  const failed = () =>
+    new AppError(400, 'CAPTCHA_FAILED', 'Xác minh captcha không thành công, vui lòng thử lại');
+  if (token === '') throw failed();
+  const result = await verify(token);
+  if (result === 'invalid') throw failed();
+  if (result === 'unavailable') {
+    throw new AppError(
+      503,
+      'SERVICE_UNAVAILABLE',
+      'Không thể xác minh captcha lúc này, vui lòng thử lại sau',
+    );
+  }
 }

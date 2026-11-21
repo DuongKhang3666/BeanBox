@@ -85,9 +85,14 @@ test.describe("so sánh trên mobile", () => {
 
   // Hồi quy: chữ `sr-only` (position: absolute) trong ô bảng "—" lọt ra ngoài vùng cuộn ngang khi vùng
   // cuộn không phải là containing block, làm cả trang cuộn ngang (scrollWidth ~635px trên màn 390px).
-  test("bảng so sánh cuộn ngang trong vùng riêng, trang không tràn ngang", async ({ page, request }) => {
+  test("bảng so sánh cuộn ngang trong vùng riêng, trang không tràn ngang", async ({
+    page,
+    request,
+  }) => {
     const res = await request.get(`${API}/products?category=${CATEGORY}&pageSize=12`);
-    const slugs = ((await res.json()) as { data: { slug: string }[] }).data.slice(0, 4).map((p) => p.slug);
+    const slugs = ((await res.json()) as { data: { slug: string }[] }).data
+      .slice(0, 4)
+      .map((p) => p.slug);
     expect(slugs.length).toBe(4);
     await page.goto(`/so-sanh?sp=${slugs.join(",")}`);
     const table = page.getByRole("table", { name: /So sánh 4 sản phẩm/ });

@@ -10,7 +10,8 @@ import type { StripeHttp } from '../modules/payments/stripe.js';
 /**
  * Job nền (architecture §7). Chạy trong tiến trình API:
  * - dọn dẹp mỗi 60 phút (advisory lock `CLEANUP_LOCK_KEY`);
- * - hủy đơn PENDING_PAYMENT quá hạn mỗi 60 giây (advisory lock `EXPIRE_PAYMENTS_LOCK_KEY`, §13.6).
+ * - hủy đơn PENDING_PAYMENT quá hạn mỗi 60 giây (advisory lock `EXPIRE_PAYMENTS_LOCK_KEY`, §13.6);
+ * - hủy đơn COD của khách vãng lai quá hạn xác nhận cùng nhịp đó (cùng khóa, §11 #4, D-057).
  */
 
 /** Khóa advisory cố định cho job dọn dẹp ("BBCLEAN1" dạng số), tránh nhiều instance chạy cùng lúc. */
@@ -112,6 +113,8 @@ export type ExpirePaymentsResult =
   { skipped: true } | { skipped: false; cancelled: ExpiredOrder[]; errors: number };
 
 export const EXPIRE_REASON = 'Quá hạn thanh toán';
+/** Lý do hủy đơn COD khách vãng lai quá `GUEST_COD_HOLD_HOURS` chưa được xác nhận (D-057). */
+export const GUEST_COD_EXPIRE_REASON = 'Quá hạn xác nhận đơn';
 
 /** Hủy 1 đơn trong transaction riêng; trả null nếu đã đổi trạng thái/được gia hạn. */
 async function expireOneOrder(orderId: string, now: Date): Promise<ExpiredOrder | null> {
@@ -199,6 +202,106 @@ export async function runExpirePendingPaymentsOnce(
   );
 }
 
+// ---------------------------------------------------------------------------
+// Job hủy đơn COD khách vãng lai quá hạn xác nhận (D-057)
+
+export type ExpireGuestCodResult =
+  { skipped: true } | { skipped: false; cancelled: ExpiredOrder[]; errors: number };
+
+/**
+ * Hủy 1 đơn trong transaction riêng (actor SYSTEM, actorId null); trả null nếu đã đổi trạng thái
+ * (staff vừa xác nhận/khách vừa hủy) hoặc chưa quá hạn. Chạy 2 lần không hủy/hoàn kho lần hai.
+ */
+async function expireOneGuestCod(orderId: string, cutoff: Date, now: Date) {
+  return prisma.$transaction(
+    async (tx): Promise<ExpiredOrder | null> => {
+      await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${orderId} FOR UPDATE`;
+      const order = await tx.order.findUnique({
+        where: { id: orderId },
+        select: {
+          id: true,
+          code: true,
+          userId: true,
+          contactEmail: true,
+          status: true,
+          paymentMethod: true,
+          createdAt: true,
+        },
+      });
+      if (
+        !order ||
+        order.status !== 'PENDING' ||
+        order.userId !== null ||
+        order.paymentMethod !== 'COD' ||
+        order.createdAt.getTime() >= cutoff.getTime()
+      ) {
+        return null;
+      }
+      await cancelOrderTx(tx, {
+        orderId,
+        from: 'PENDING',
+        actor: 'SYSTEM',
+        actorId: null,
+        reason: GUEST_COD_EXPIRE_REASON,
+        now,
+      });
+      return {
+        id: order.id,
+        code: order.code,
+        userId: order.userId,
+        contactEmail: order.contactEmail,
+        stripeSessionIds: [],
+      };
+    },
+    { timeout: 30_000, maxWait: 10_000 },
+  );
+}
+
+/**
+ * Hủy tối đa 50 đơn COD khách vãng lai (`userId` null) `PENDING` tạo trước `now - GUEST_COD_HOLD_HOURS`
+ * (index `[status, createdAt]`). Cùng advisory lock với job hết hạn thanh toán; mỗi đơn 1 transaction.
+ * Không áp cho đơn của khách có tài khoản hay đơn online (đã có `expiresAt`).
+ */
+export async function runExpireGuestCodOnce(
+  now: Date = new Date(),
+  holdHours: number = env.GUEST_COD_HOLD_HOURS,
+): Promise<ExpireGuestCodResult> {
+  const cutoff = new Date(now.getTime() - holdHours * 3600 * 1000);
+  return prisma.$transaction(
+    async (lockTx): Promise<ExpireGuestCodResult> => {
+      const rows = await lockTx.$queryRaw<Array<{ locked: boolean }>>`
+        SELECT pg_try_advisory_xact_lock(${EXPIRE_PAYMENTS_LOCK_KEY}::bigint) AS locked`;
+      if (!rows[0]?.locked) return { skipped: true };
+
+      const candidates = await lockTx.order.findMany({
+        where: {
+          status: 'PENDING',
+          userId: null,
+          paymentMethod: 'COD',
+          createdAt: { lt: cutoff },
+        },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        take: EXPIRE_BATCH_SIZE,
+        select: { id: true },
+      });
+
+      const cancelled: ExpiredOrder[] = [];
+      let errors = 0;
+      for (const { id } of candidates) {
+        try {
+          const done = await expireOneGuestCod(id, cutoff, now);
+          if (done) cancelled.push(done);
+        } catch (err) {
+          errors++;
+          logger.error({ err, orderId: id }, 'Hủy đơn COD quá hạn xác nhận thất bại');
+        }
+      }
+      return { skipped: false, cancelled, errors };
+    },
+    { timeout: 120_000, maxWait: 10_000 },
+  );
+}
+
 export interface AfterExpiredOptions {
   paymentConfig?: PaymentConfig;
   /** HTTP client Stripe (test tiêm bản giả). */
@@ -214,7 +317,7 @@ export async function afterOrdersExpired(
   opts: AfterExpiredOptions = {},
 ): Promise<void> {
   if (orders.length === 0) return;
-  logger.info(`Job hết hạn thanh toán: đã hủy ${orders.length} đơn`);
+  logger.info(`Job hết hạn tự động: đã hủy ${orders.length} đơn`);
   for (const o of orders) {
     try {
       const row = await prisma.order.findUnique({ where: { id: o.id } });
@@ -235,6 +338,12 @@ async function safeRunExpire(): Promise<void> {
     if (!r.skipped) await afterOrdersExpired(r.cancelled);
   } catch (err) {
     logger.error({ err }, 'Job hết hạn thanh toán thất bại');
+  }
+  try {
+    const g = await runExpireGuestCodOnce();
+    if (!g.skipped) await afterOrdersExpired(g.cancelled);
+  } catch (err) {
+    logger.error({ err }, 'Job hủy đơn COD quá hạn xác nhận thất bại');
   }
 }
 

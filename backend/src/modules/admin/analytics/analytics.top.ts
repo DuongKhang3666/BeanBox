@@ -1,4 +1,4 @@
-import { prisma } from '../../../lib/prisma.js';
+import { analyticsPrisma } from '../../../lib/prisma.js';
 import { vnDayStart } from '../admin.schema.js';
 import { vnDateKey } from '../dashboard/dashboard.service.js';
 import { dayNum, resolveRange, ymdOf } from './analytics.range.js';
@@ -63,7 +63,7 @@ export async function getTopProducts(
   // đã lưu trên dòng hàng; sản phẩm xóa mềm vẫn tính (deleted = true).
   const rows =
     sort === 'quantity'
-      ? await prisma.$queryRaw<ProductRow[]>`
+      ? await analyticsPrisma.$queryRaw<ProductRow[]>`
         SELECT oi."productId" AS product_id,
           COALESCE(MAX(p."name"), MAX(oi."productName")) AS name,
           MAX(p."slug") AS slug,
@@ -81,7 +81,7 @@ export async function getTopProducts(
         GROUP BY oi."productId"
         ORDER BY quantity DESC, revenue DESC, oi."productId"
         LIMIT ${limit}`
-      : await prisma.$queryRaw<ProductRow[]>`
+      : await analyticsPrisma.$queryRaw<ProductRow[]>`
         SELECT oi."productId" AS product_id,
           COALESCE(MAX(p."name"), MAX(oi."productName")) AS name,
           MAX(p."slug") AS slug,
@@ -162,7 +162,7 @@ export async function getTopCustomers(
   // không đọc SĐT hay địa chỉ (chỉ lấy fullName từ snapshot của đơn mới nhất).
   const rows =
     sort === 'orders'
-      ? await prisma.$queryRaw<CustomerRow[]>`
+      ? await analyticsPrisma.$queryRaw<CustomerRow[]>`
         SELECT o."userId" AS user_id,
           CASE WHEN o."userId" IS NULL THEN lower(o."contactEmail") END AS guest_email,
           MAX(u."fullName") AS user_name, MAX(u."email") AS user_email,
@@ -176,7 +176,7 @@ export async function getTopCustomers(
         GROUP BY o."userId", CASE WHEN o."userId" IS NULL THEN lower(o."contactEmail") END
         ORDER BY orders DESC, revenue DESC, MAX(o."paidAt") DESC, o."userId", guest_email
         LIMIT ${limit}`
-      : await prisma.$queryRaw<CustomerRow[]>`
+      : await analyticsPrisma.$queryRaw<CustomerRow[]>`
         SELECT o."userId" AS user_id,
           CASE WHEN o."userId" IS NULL THEN lower(o."contactEmail") END AS guest_email,
           MAX(u."fullName") AS user_name, MAX(u."email") AS user_email,

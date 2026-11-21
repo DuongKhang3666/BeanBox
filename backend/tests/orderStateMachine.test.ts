@@ -26,7 +26,7 @@ const TABLE: [OrderStatus, OrderStatus, OrderActor[]][] = [
   ['PENDING_PAYMENT', 'CONFIRMED', ['SYSTEM']],
   ['PENDING_PAYMENT', 'CANCELLED', ['SYSTEM', 'CUSTOMER', 'STAFF', 'ADMIN']],
   ['PENDING', 'CONFIRMED', ['STAFF', 'ADMIN']],
-  ['PENDING', 'CANCELLED', ['CUSTOMER', 'STAFF', 'ADMIN']],
+  ['PENDING', 'CANCELLED', ['SYSTEM', 'CUSTOMER', 'STAFF', 'ADMIN']],
   ['CONFIRMED', 'PROCESSING', ['STAFF', 'ADMIN']],
   ['CONFIRMED', 'CANCELLED', ['CUSTOMER', 'STAFF', 'ADMIN']],
   ['PROCESSING', 'SHIPPING', ['STAFF', 'ADMIN']],
@@ -77,6 +77,12 @@ describe('quy tắc nổi bật', () => {
       expect(allowedTransitions('CANCELLED', a)).toEqual([]);
       expect(allowedTransitions('RETURNED', a)).toEqual([]);
     }
+  });
+  it('SYSTEM chỉ được hủy PENDING (job COD khách vãng lai, D-057), không xác nhận', () => {
+    expect(canTransition('PENDING', 'CANCELLED', 'SYSTEM')).toBe(true);
+    expect(canTransition('PENDING', 'CONFIRMED', 'SYSTEM')).toBe(false);
+    expect(allowedTransitions('PENDING', 'SYSTEM')).toEqual(['CANCELLED']);
+    expect(canTransition('CONFIRMED', 'CANCELLED', 'SYSTEM')).toBe(false);
   });
   it('allowedTransitions', () => {
     expect(allowedTransitions('PENDING', 'CUSTOMER')).toEqual(['CANCELLED']);

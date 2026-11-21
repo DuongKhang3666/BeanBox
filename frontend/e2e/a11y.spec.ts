@@ -121,6 +121,41 @@ test.describe("a11y: trang công khai", () => {
   });
 });
 
+test.describe("header mobile 390x844 (D-059)", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("menu danh mục: mở, quét axe, chọn mục, đến đúng trang; không tràn ngang", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await page.waitForLoadState("networkidle");
+    const overflow = await page.evaluate(() => ({
+      scroll: document.documentElement.scrollWidth,
+      client: document.documentElement.clientWidth,
+    }));
+    expect(overflow.scroll).toBeLessThanOrEqual(overflow.client);
+
+    const button = page.getByRole("button", { name: "Danh mục", exact: true });
+    await expect(button).toHaveAttribute("aria-expanded", "false");
+    await button.click();
+    await expect(button).toHaveAttribute("aria-expanded", "true");
+    const panel = page.getByRole("navigation", { name: "Danh mục sản phẩm" });
+    await expect(panel).toBeVisible();
+    await scan(page, "/ (menu danh mục mở, mobile)");
+
+    // Escape đóng và trả focus về nút.
+    await page.keyboard.press("Escape");
+    await expect(panel).toBeHidden();
+    await expect(button).toBeFocused();
+
+    await button.click();
+    await panel.getByRole("link", { name: "Cà phê hạt" }).click();
+    await expect(page).toHaveURL(/\/danh-muc\/ca-phe-hat/);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await expect(panel).toBeHidden();
+  });
+});
+
 test("a11y: tài khoản customer", async ({ page }) => {
   await login(page, "customer@beanbox.local", seedPassword("CUSTOMER"));
   await page.goto("/tai-khoan");

@@ -96,6 +96,10 @@ const schema = z
     SMTP_PORT: z.coerce.number().int().default(1025),
     SMTP_USER: z.string().optional(),
     SMTP_PASS: z.string().optional(),
+    // D-056: true = TLS ngầm định (thường cổng 465); false = STARTTLS cơ hội (cổng 587/1025).
+    SMTP_SECURE: z.enum(['true', 'false']).optional(),
+    // D-056: bắt buộc nâng cấp TLS (STARTTLS) trước khi gửi. Mặc định true ở production, false nơi khác.
+    SMTP_REQUIRE_TLS: z.enum(['true', 'false']).optional(),
     MAIL_FROM: z.string().default('BeanBox <no-reply@beanbox.local>'),
     VNPAY_TMN_CODE: z.string().optional(),
     VNPAY_HASH_SECRET: z.string().optional(),
@@ -137,6 +141,39 @@ const schema = z
       .int('CONTACT_RETENTION_DAYS phải là số nguyên >= 0')
       .min(0, 'CONTACT_RETENTION_DAYS phải là số nguyên >= 0')
       .default(365),
+    // D-057: đơn COD của khách vãng lai (chưa đăng nhập) PENDING quá số giờ này thì job tự hủy.
+    GUEST_COD_HOLD_HOURS: z.coerce
+      .number()
+      .int('GUEST_COD_HOLD_HOURS phải là số nguyên từ 1 đến 720')
+      .min(1, 'GUEST_COD_HOLD_HOURS phải là số nguyên từ 1 đến 720')
+      .max(720, 'GUEST_COD_HOLD_HOURS phải là số nguyên từ 1 đến 720')
+      .default(48),
+    // D-057: số đơn COD khách vãng lai đang PENDING tối đa cho cùng SĐT hoặc cùng email.
+    GUEST_COD_MAX_OPEN: z.coerce
+      .number()
+      .int('GUEST_COD_MAX_OPEN phải là số nguyên từ 1 đến 100')
+      .min(1, 'GUEST_COD_MAX_OPEN phải là số nguyên từ 1 đến 100')
+      .max(100, 'GUEST_COD_MAX_OPEN phải là số nguyên từ 1 đến 100')
+      .default(3),
+    // D-058: pool chính và pool riêng cho truy vấn phân tích.
+    DATABASE_POOL_MAX: z.coerce
+      .number()
+      .int('DATABASE_POOL_MAX phải là số nguyên từ 1 đến 100')
+      .min(1, 'DATABASE_POOL_MAX phải là số nguyên từ 1 đến 100')
+      .max(100, 'DATABASE_POOL_MAX phải là số nguyên từ 1 đến 100')
+      .default(10),
+    ANALYTICS_POOL_MAX: z.coerce
+      .number()
+      .int('ANALYTICS_POOL_MAX phải là số nguyên từ 1 đến 50')
+      .min(1, 'ANALYTICS_POOL_MAX phải là số nguyên từ 1 đến 50')
+      .max(50, 'ANALYTICS_POOL_MAX phải là số nguyên từ 1 đến 50')
+      .default(4),
+    ANALYTICS_STATEMENT_TIMEOUT_MS: z.coerce
+      .number()
+      .int('ANALYTICS_STATEMENT_TIMEOUT_MS phải là số nguyên từ 1000 đến 120000')
+      .min(1000, 'ANALYTICS_STATEMENT_TIMEOUT_MS phải là số nguyên từ 1000 đến 120000')
+      .max(120000, 'ANALYTICS_STATEMENT_TIMEOUT_MS phải là số nguyên từ 1000 đến 120000')
+      .default(15000),
     SEED_ADMIN_PASSWORD: z.string().optional(),
     SEED_STAFF_PASSWORD: z.string().optional(),
     SEED_CUSTOMER_PASSWORD: z.string().optional(),
@@ -180,8 +217,12 @@ const schema = z
       }
     }
   })
-  .transform(({ COOKIE_SECURE, JOBS_ENABLED, ...v }) => ({
+  .transform(({ COOKIE_SECURE, JOBS_ENABLED, SMTP_SECURE, SMTP_REQUIRE_TLS, ...v }) => ({
     ...v,
+    /** Mặc định false (TLS ngầm định chỉ bật tường minh). */
+    SMTP_SECURE: SMTP_SECURE === 'true',
+    /** Mặc định true khi production, false nơi khác; đặt tường minh thì theo giá trị đặt. */
+    SMTP_REQUIRE_TLS: SMTP_REQUIRE_TLS ? SMTP_REQUIRE_TLS === 'true' : v.NODE_ENV === 'production',
     VNPAY_RETURN_URL: v.VNPAY_RETURN_URL ?? `${v.WEB_APP_URL}/thanh-toan/ket-qua?provider=vnpay`,
     /** Mặc định true; NODE_ENV=test luôn false. */
     JOBS_ENABLED: v.NODE_ENV === 'test' ? false : JOBS_ENABLED !== 'false',

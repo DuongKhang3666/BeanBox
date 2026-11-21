@@ -4,6 +4,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import type { PaginationMeta } from "@/types/api";
 import type { ProductListItem } from "@/types/catalog";
 import { buildHref, clearFilters, hasActiveFilters, type ProductFilters } from "../filters";
+import { ListingResultsRegion } from "./ListingNavigation";
 import { Pagination } from "./Pagination";
 import { ProductGrid } from "./ProductGrid";
 import { SortSelect } from "./SortSelect";
@@ -32,32 +33,34 @@ export function ProductResults({
         </p>
         <SortSelect pathname={pathname} filters={filters} />
       </div>
-      {items.length === 0 ? (
-        <EmptyState
-          title="Không có sản phẩm phù hợp"
-          description={
-            emptyDescription ??
-            "Hãy thử bỏ bớt bộ lọc hoặc chọn khoảng giá rộng hơn để xem thêm sản phẩm."
-          }
-          action={
-            hasActiveFilters(filters) || filters.page > 1 ? (
-              <Link
-                href={buildHref(pathname, clearFilters(filters))}
-                className={buttonClasses("secondary", "md")}
-              >
-                Xóa bộ lọc
-              </Link>
-            ) : undefined
-          }
-        />
-      ) : (
-        <>
-          {/* Giữ thứ tự tiêu đề h1 -> h2 -> h3 (tên sản phẩm trong thẻ là h3). */}
-          <h2 className="sr-only">Danh sách sản phẩm</h2>
-          <ProductGrid products={items} />
-          <Pagination pathname={pathname} filters={filters} meta={meta} />
-        </>
-      )}
+      <ListingResultsRegion>
+        {items.length === 0 ? (
+          <EmptyState
+            title="Không có sản phẩm phù hợp"
+            description={
+              emptyDescription ??
+              "Hãy thử bỏ bớt bộ lọc hoặc chọn khoảng giá rộng hơn để xem thêm sản phẩm."
+            }
+            action={
+              hasActiveFilters(filters) || filters.page > 1 ? (
+                <Link
+                  href={buildHref(pathname, clearFilters(filters))}
+                  className={buttonClasses("secondary", "md")}
+                >
+                  Xóa bộ lọc
+                </Link>
+              ) : undefined
+            }
+          />
+        ) : (
+          <>
+            {/* Giữ thứ tự tiêu đề h1 -> h2 -> h3 (tên sản phẩm trong thẻ là h3). */}
+            <h2 className="sr-only">Danh sách sản phẩm</h2>
+            <ProductGrid products={items} />
+            <Pagination pathname={pathname} filters={filters} meta={meta} />
+          </>
+        )}
+      </ListingResultsRegion>
     </div>
   );
 }

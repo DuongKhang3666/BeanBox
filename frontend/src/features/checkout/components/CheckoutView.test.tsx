@@ -1,9 +1,10 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeAddress, makeUser, errRes, jsonRes } from "@/features/account/testing";
 import type { CartContextValue } from "@/features/cart/CartProvider";
 import { makeCart, makeCartItem } from "@/features/cart/testing";
+import { DEFAULT_PUBLIC_SETTINGS } from "@/features/content/publicSettingsDefaults";
 import { makeOrder, makeQuote, makeShippingOption } from "@/features/orders/testing";
 import { ApiError } from "@/lib/api/errors";
 import { LAST_ORDER_KEY } from "./CheckoutForm";
@@ -622,5 +623,166 @@ describe("CheckoutView - thanh toán online", () => {
       expect(push).toHaveBeenCalledWith("/dat-hang-thanh-cong/BB-261110-K7QP?pay=failed"),
     );
     expect(assign).not.toHaveBeenCalled();
+  });
+});
+
+describe("CheckoutView – captcha Turnstile và giới hạn đơn chờ (D-057)", () => {
+  interface Opts {
+    sitekey: string;
+    callback: (t: string) => void;
+  }
+  let opts: Opts;
+  const turnstile = {
+    render: vi.fn((_el: HTMLElement, o: Opts) => {
+      opts = o;
+      return "widget-1";
+    }),
+    reset: vi.fn(),
+    remove: vi.fn(),
+  };
+  const CAPTCHA = { provider: "turnstile", siteKey: "checkout-site-key" } as const;
+
+  beforeEach(() => {
+    turnstile.render.mockClear();
+    turnstile.reset.mockClear();
+    turnstile.remove.mockClear();
+    (window as unknown as { turnstile?: unknown }).turnstile = turnstile;
+  });
+  afterEach(() => {
+    delete (window as unknown as { turnstile?: unknown }).turnstile;
+  });
+
+  async function readyToSubmit(u: ReturnType<typeof userEvent.setup>) {
+    await fillGuest(u);
+    await u.click(screen.getByRole("checkbox", { name: /điều khoản/ }));
+    await waitFor(() => expect(submitBtn()).toHaveTextContent("350.000₫"));
+  }
+
+  it("khách vãng lai + có site key: hiện widget, nút khóa tới khi có token, body có captchaToken", async () => {
+    const mock = stubFetch({
+      "POST /checkout/quote": () => jsonRes(200, { data: makeQuote() }),
+      "POST /orders": () => jsonRes(201, { data: makeOrder() }),
+    });
+    const u = userEvent.setup();
+    render(<CheckoutView captcha={CAPTCHA} />);
+    await waitFor(() => expect(turnstile.render).toHaveBeenCalledTimes(1));
+    expect(opts.sitekey).toBe("checkout-site-key");
+    await readyToSubmit(u);
+    expect(submitBtn()).toBeDisabled();
+
+    act(() => opts.callback("tok-1"));
+    expect(submitBtn()).toBeEnabled();
+    await u.click(submitBtn());
+    await waitFor(() => expect(push).toHaveBeenCalled());
+    expect(bodyOfCall(callsOf(mock, "POST /orders")[0]!).captchaToken).toBe("tok-1");
+  });
+
+  it("đã đăng nhập: không hiện widget, không gửi captchaToken", async () => {
+    auth = { status: "authenticated", user: makeUser() };
+    const mock = stubFetch({
+      "GET /me/addresses": () =>
+        jsonRes(200, { data: [makeAddress({ id: "a1", isDefault: true })] }),
+      "POST /checkout/quote": () => jsonRes(200, { data: makeQuote() }),
+      "POST /orders": () => jsonRes(201, { data: makeOrder() }),
+    });
+    const u = userEvent.setup();
+    render(<CheckoutView captcha={CAPTCHA} />);
+    await screen.findByRole("radio", { name: /Nguyễn Văn An/ });
+    expect(turnstile.render).not.toHaveBeenCalled();
+    await u.click(screen.getByRole("checkbox", { name: /điều khoản/ }));
+    await waitFor(() => expect(submitBtn()).toHaveTextContent("350.000₫"));
+    expect(submitBtn()).toBeEnabled();
+    await u.click(submitBtn());
+    await waitFor(() => expect(push).toHaveBeenCalled());
+    expect(bodyOfCall(callsOf(mock, "POST /orders")[0]!)).not.toHaveProperty("captchaToken");
+  });
+
+  it("không có site key: không hiện widget, nút không bị khóa, không gửi captchaToken", async () => {
+    const mock = stubFetch({
+      "POST /checkout/quote": () => jsonRes(200, { data: makeQuote() }),
+      "POST /orders": () => jsonRes(201, { data: makeOrder() }),
+    });
+    const u = userEvent.setup();
+    render(<CheckoutView captcha={null} />);
+    await readyToSubmit(u);
+    expect(turnstile.render).not.toHaveBeenCalled();
+    expect(submitBtn()).toBeEnabled();
+    await u.click(submitBtn());
+    await waitFor(() => expect(push).toHaveBeenCalled());
+    expect(bodyOfCall(callsOf(mock, "POST /orders")[0]!)).not.toHaveProperty("captchaToken");
+  });
+
+  it("CAPTCHA_FAILED: báo lỗi tiếng Việt, reset widget, nút khóa tới token mới", async () => {
+    stubFetch({
+      "POST /checkout/quote": () => jsonRes(200, { data: makeQuote() }),
+      "POST /orders": () => errRes(400, "CAPTCHA_FAILED", "x"),
+    });
+    const u = userEvent.setup();
+    render(<CheckoutView captcha={CAPTCHA} />);
+    await waitFor(() => expect(turnstile.render).toHaveBeenCalled());
+    await readyToSubmit(u);
+    act(() => opts.callback("tok-1"));
+    await u.click(submitBtn());
+    expect(await screen.findByRole("alert")).toHaveTextContent("Xác minh chưa thành công");
+    expect(turnstile.reset).toHaveBeenCalledWith("widget-1");
+    expect(submitBtn()).toBeDisabled();
+  });
+
+  it("gửi lại sau lỗi mạng với token mới: CÙNG Idempotency-Key (token không vào vân tay)", async () => {
+    let n = 0;
+    const mock = stubFetch({
+      "POST /checkout/quote": () => jsonRes(200, { data: makeQuote() }),
+      "POST /orders": () => {
+        n += 1;
+        if (n === 1) throw new TypeError("network down");
+        return jsonRes(201, { data: makeOrder() });
+      },
+    });
+    const u = userEvent.setup();
+    render(<CheckoutView captcha={CAPTCHA} />);
+    await waitFor(() => expect(turnstile.render).toHaveBeenCalled());
+    await readyToSubmit(u);
+    act(() => opts.callback("tok-1"));
+    await u.click(submitBtn());
+    expect(await screen.findByText(/Không thể kết nối/)).toBeInTheDocument();
+    expect(turnstile.reset).toHaveBeenCalled();
+    act(() => opts.callback("tok-2"));
+    await u.click(submitBtn());
+    await waitFor(() => expect(push).toHaveBeenCalled());
+    const calls = callsOf(mock, "POST /orders");
+    expect(bodyOfCall(calls[1]!).captchaToken).toBe("tok-2");
+    expect(keyOfCall(calls[0]!)).toBe(keyOfCall(calls[1]!));
+  });
+
+  it("HTML cũ không có widget nhưng server đã bật captcha: CAPTCHA_FAILED -> nạp lại cấu hình và hiện widget", async () => {
+    stubFetch({
+      "POST /checkout/quote": () => jsonRes(200, { data: makeQuote() }),
+      "POST /orders": () => errRes(400, "CAPTCHA_FAILED", "x"),
+      "GET /settings/public": () =>
+        jsonRes(200, { data: { ...DEFAULT_PUBLIC_SETTINGS, contactCaptcha: CAPTCHA } }),
+    });
+    const u = userEvent.setup();
+    render(<CheckoutView captcha={null} />);
+    await readyToSubmit(u);
+    await u.click(submitBtn());
+    await waitFor(() => expect(turnstile.render).toHaveBeenCalledTimes(1));
+    expect(opts.sitekey).toBe("checkout-site-key");
+    expect(screen.getByRole("alert")).toHaveTextContent("Xác minh chưa thành công");
+    expect(submitBtn()).toBeDisabled();
+  });
+
+  it("409 TOO_MANY_PENDING_ORDERS: thông báo tiếng Việt hướng dẫn chờ xác nhận hoặc liên hệ", async () => {
+    stubFetch({
+      "POST /checkout/quote": () => jsonRes(200, { data: makeQuote() }),
+      "POST /orders": () => errRes(409, "TOO_MANY_PENDING_ORDERS", "x", { max: 3 }),
+    });
+    const u = userEvent.setup();
+    render(<CheckoutView captcha={null} />);
+    await readyToSubmit(u);
+    await u.click(submitBtn());
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Bạn đang có quá nhiều đơn hàng chờ xác nhận. Vui lòng chờ cửa hàng xác nhận các đơn trước hoặc liên hệ cửa hàng",
+    );
+    expect(push).not.toHaveBeenCalled();
   });
 });

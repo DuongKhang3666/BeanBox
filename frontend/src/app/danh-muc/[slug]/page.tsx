@@ -11,6 +11,7 @@ import {
   lookupCategory,
 } from "@/features/catalog/api";
 import { Breadcrumbs, type Crumb } from "@/features/catalog/components/Breadcrumbs";
+import { ListingNavigationProvider } from "@/features/catalog/components/ListingNavigation";
 import { FilterPanel } from "@/features/catalog/components/FilterPanel";
 import { ProductResults } from "@/features/catalog/components/ProductResults";
 import { parseFilters, toApiQuery, type RawSearchParams } from "@/features/catalog/filters";
@@ -100,7 +101,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   try {
     tree = await getCategories();
   } catch {
-    return { title: "Danh mục sản phẩm", alternates: { canonical: path } };
+    // API lỗi: trang trả ErrorState nên không cho index (D-059).
+    return {
+      title: "Danh mục sản phẩm",
+      alternates: { canonical: path },
+      robots: { index: false, follow: false },
+    };
   }
   // Ngoài try: slug cũ ném NEXT_REDIRECT (308) và không được bị nuốt.
   const found = await resolveCategory(tree, slug);
@@ -190,31 +196,33 @@ export default async function CategoryPage({ params, searchParams }: Props) {
         </ul>
       ) : null}
 
-      <div className="flex flex-col gap-6 lg:flex-row">
-        <FilterPanel
-          pathname={pathname}
-          filters={filters}
-          subcategories={subcategories}
-          brands={brandRes.status === "fulfilled" ? brandRes.value : []}
-          showCoffeeFilters={isCoffeeTree}
-          origins={origins}
-        />
-        {productRes.status === "fulfilled" ? (
-          <ProductResults
+      <ListingNavigationProvider>
+        <div className="flex flex-col gap-6 lg:flex-row">
+          <FilterPanel
             pathname={pathname}
             filters={filters}
-            items={productRes.value.items}
-            meta={productRes.value.meta}
+            subcategories={subcategories}
+            brands={brandRes.status === "fulfilled" ? brandRes.value : []}
+            showCoffeeFilters={isCoffeeTree}
+            origins={origins}
           />
-        ) : (
-          <div className="min-w-0 flex-1">
-            <ErrorState
-              title="Chưa tải được danh sách sản phẩm"
-              description="Vui lòng tải lại trang hoặc thử lại sau ít phút."
+          {productRes.status === "fulfilled" ? (
+            <ProductResults
+              pathname={pathname}
+              filters={filters}
+              items={productRes.value.items}
+              meta={productRes.value.meta}
             />
-          </div>
-        )}
-      </div>
+          ) : (
+            <div className="min-w-0 flex-1">
+              <ErrorState
+                title="Chưa tải được danh sách sản phẩm"
+                description="Vui lòng tải lại trang hoặc thử lại sau ít phút."
+              />
+            </div>
+          )}
+        </div>
+      </ListingNavigationProvider>
     </Container>
   );
 }

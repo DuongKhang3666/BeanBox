@@ -1,11 +1,13 @@
 import { Prisma, type OrderStatus } from '../../generated/prisma/client.js';
 import { getPaymentConfig, isProviderEnabled, type PaymentConfig } from '../../config/payments.js';
+import { env } from '../../config/env.js';
 import { AppError } from '../../lib/errors.js';
 import { prisma } from '../../lib/prisma.js';
 import { sendMailInBackground } from '../../lib/mailer.js';
 import { generateOrderCode, normalizeOrderCode, ORDER_CODE_REGEX } from '../../lib/orderCode.js';
 import { normalizePhone } from '../../lib/phone.js';
 import { sha256Hex } from '../../lib/tokens.js';
+import { assertCaptcha, type TurnstileVerifier } from '../../lib/turnstile.js';
 import { refreshProductDenorm } from '../catalog/catalog.denorm.js';
 import {
   findCartForIdentity,
@@ -67,8 +69,14 @@ export function callerId(identity: CartIdentity): string {
   return token ? `g:${sha256Hex(token)}` : 'g:-';
 }
 
+/**
+ * `captchaToken` không vào vân tay: token Turnstile dùng một lần nên gửi lại cùng đơn (cùng
+ * Idempotency-Key) với token mới phải vẫn là replay, không phải IDEMPOTENCY_CONFLICT (D-057).
+ */
 export function requestFingerprint(input: CreateOrderInput, identity: CartIdentity): string {
-  return sha256Hex(stableStringify({ body: input, caller: callerId(identity) }));
+  const body: Record<string, unknown> = { ...input };
+  delete body.captchaToken;
+  return sha256Hex(stableStringify({ body, caller: callerId(identity) }));
 }
 
 /**
@@ -106,6 +114,8 @@ export interface PlaceOrderArgs {
   input: CreateOrderInput;
   /** Cấu hình thanh toán (mặc định đọc từ env). */
   paymentConfig?: PaymentConfig;
+  /** Có giá trị khi captcha bật (D-028/D-057); chỉ áp cho khách vãng lai. null/undefined = tắt. */
+  captcha?: { verify: TurnstileVerifier } | null;
   now?: Date;
 }
 
@@ -176,6 +186,8 @@ export async function placeOrder(args: PlaceOrderArgs): Promise<PlaceOrderResult
   if (!userId && input.addressId) {
     throw new AppError(401, 'UNAUTHORIZED', 'Vui lòng đăng nhập để dùng địa chỉ đã lưu');
   }
+  // Captcha (D-057): chỉ khách vãng lai, SAU nhánh replay (token dùng một lần nên replay không cần token).
+  if (!userId && args.captcha) await assertCaptcha(args.captcha.verify, input.captchaToken);
 
   let lastError: unknown;
   for (let attempt = 0; attempt < MAX_CODE_ATTEMPTS; attempt++) {
@@ -187,7 +199,10 @@ export async function placeOrder(args: PlaceOrderArgs): Promise<PlaceOrderResult
       );
       if (out.kind === 'replay') return { order: out.order, created: false };
       // Chỉ gửi mail khi tạo mới; lỗi mail không ảnh hưởng đơn.
-      sendMailInBackground(buildOrderConfirmationEmail(out.order, { loggedIn: userId !== null }));
+      sendMailInBackground(buildOrderConfirmationEmail(out.order, { loggedIn: userId !== null }), {
+        kind: 'order-confirmation',
+        orderCode: out.order.code,
+      });
       return { order: out.order, created: true };
     } catch (e) {
       const target = uniqueTarget(e);
@@ -221,6 +236,37 @@ const couponInvalid = (reason: string, minOrder?: number) =>
     ...(minOrder !== undefined ? { minOrder } : {}),
   });
 
+/**
+ * Khách vãng lai không được giữ quá `GUEST_COD_MAX_OPEN` đơn COD `PENDING` cùng SĐT (chuẩn hóa) hoặc
+ * cùng email (lowercase) (D-057). Hai khóa advisory theo giao dịch (SĐT, email; sắp xếp để không
+ * deadlock) tuần tự hóa các lần đặt song song cùng SĐT/email: sau khi có khóa, lệnh đếm (READ COMMITTED)
+ * thấy các đơn đã commit của giao dịch trước, nên không vượt giới hạn trừ khi hai request dùng
+ * SĐT khác nhau nhưng cùng email (hoặc ngược lại) giành khóa theo thứ tự đan xen. Khi đó vẫn đúng
+ * vì mỗi request giữ cả hai khóa trước khi đếm. Dùng index `contactPhone`/`contactEmail`/`[status, createdAt]`.
+ */
+async function assertGuestCodLimit(tx: Db, email: string, phone: string): Promise<void> {
+  const keys = [`guestcod:phone:${phone}`, `guestcod:email:${email.toLowerCase()}`].sort();
+  for (const k of keys) {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${k}, 0))`;
+  }
+  const open = await tx.order.count({
+    where: {
+      userId: null,
+      paymentMethod: 'COD',
+      status: 'PENDING',
+      OR: [{ contactPhone: phone }, { contactEmail: email.toLowerCase() }],
+    },
+  });
+  if (open >= env.GUEST_COD_MAX_OPEN) {
+    throw new AppError(
+      409,
+      'TOO_MANY_PENDING_ORDERS',
+      'Bạn đang có quá nhiều đơn hàng chờ xác nhận. Vui lòng chờ cửa hàng xác nhận các đơn trước hoặc liên hệ cửa hàng để được hỗ trợ.',
+      { max: env.GUEST_COD_MAX_OPEN },
+    );
+  }
+}
+
 async function createOrderInTx(tx: Db, a: TxArgs): Promise<TxOutcome> {
   const { identity, userId, input, now } = a;
 
@@ -230,6 +276,11 @@ async function createOrderInTx(tx: Db, a: TxArgs): Promise<TxOutcome> {
   const again = await findReplay(tx, a.key, a.fingerprint, { paymentConfig: a.paymentConfig, now });
   if (again) return { kind: 'replay', order: again };
   if (!cart || !locked) throw cartEmpty();
+
+  // a'. Giới hạn đơn COD đang mở của khách vãng lai (D-057), sau nhánh replay.
+  if (!userId && input.paymentMethod === 'COD') {
+    await assertGuestCodLimit(tx, input.contact!.email!, input.contact!.phone!);
+  }
 
   // b. Khóa variant theo id tăng dần rồi đọc dữ liệu mới nhất.
   const variantIds = (

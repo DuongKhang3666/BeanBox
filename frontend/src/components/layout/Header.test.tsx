@@ -23,7 +23,8 @@ describe("Header - bố cục khi đăng nhập STAFF/ADMIN (viewport 1024)", ()
     const form = screen.getByRole("search");
     const cls = form.className.split(/\s+/);
     expect(cls).toContain("flex-1");
-    expect(cls).toContain("min-w-40"); // 10rem từ mobile (thiếu chỗ thì xuống hàng)
+    expect(cls).toContain("min-w-full"); // mobile: ô tìm kiếm chiếm trọn hàng 2
+    expect(cls).toContain("md:min-w-40"); // 10rem từ md (thiếu chỗ thì xuống hàng)
     expect(cls).toContain("lg:min-w-48"); // 12rem từ lg
     expect(cls).toContain("md:max-w-xs");
     expect(cls).not.toContain("min-w-0");

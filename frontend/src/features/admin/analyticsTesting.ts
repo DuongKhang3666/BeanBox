@@ -47,7 +47,7 @@ export function makeOperations(over: Partial<AnalyticsOperations> = {}): Analyti
       byType: [
         { type: "customer", label: "Khách hủy", current: 4, previous: 2 },
         { type: "store", label: "Cửa hàng hủy", current: 3, previous: 1 },
-        { type: "expired", label: "Hết hạn thanh toán", current: 2, previous: 2 },
+        { type: "expired", label: "Hết hạn tự động", current: 2, previous: 2 },
         { type: "unknown", label: "Không rõ", current: 1, previous: 0 },
       ],
     },

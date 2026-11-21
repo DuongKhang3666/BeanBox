@@ -39,7 +39,8 @@ async function loadProduct(slug: string): Promise<ProductDetail | null | "error"
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
   const product = await loadProduct(slug);
-  if (product === "error") return { title: "Sản phẩm" };
+  // API lỗi: trang vẫn trả ErrorState, không để công cụ tìm kiếm index bản lỗi (D-059).
+  if (product === "error") return { title: "Sản phẩm", robots: { index: false, follow: false } };
   if (!product) return { title: "Không tìm thấy sản phẩm" };
 
   const title = product.seo.title || product.name;

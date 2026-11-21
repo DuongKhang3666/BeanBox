@@ -72,8 +72,29 @@ jobs:
           fi
           exit "$code"
       - run: npm run lint
+      - run: npm run format:check
       - run: npm run typecheck
-      - run: npm test
+      # Chạy test kèm coverage (ngưỡng ở vitest.config.ts, D-055); tụt dưới ngưỡng thì job fail.
+      - run: npm run test:coverage
+      - name: Tóm tắt coverage backend
+        if: ${{ !cancelled() }}
+        run: |
+          [ -f coverage/coverage-summary.json ] || exit 0
+          node -e "
+            const t = JSON.parse(require('fs').readFileSync('coverage/coverage-summary.json', 'utf8')).total;
+            const rows = ['statements', 'branches', 'functions', 'lines'].map(
+              (k) => '| ' + k + ' | ' + t[k].pct + '% | ' + t[k].covered + '/' + t[k].total + ' |',
+            );
+            console.log(['### Coverage backend', '', '| Chỉ số | Tỷ lệ | Số lượng |', '|---|---|---|', ...rows, ''].join(String.fromCharCode(10)));
+          " >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload báo cáo coverage backend (html)
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-backend
+          path: backend/coverage
+          if-no-files-found: ignore
+          retention-days: 7
       - run: npm run build
 
   frontend:
@@ -91,8 +112,28 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
       - run: npm run lint
+      - run: npm run format:check
       - run: npm run typecheck
-      - run: npm run test
+      - run: npm run test:coverage
+      - name: Tóm tắt coverage frontend
+        if: ${{ !cancelled() }}
+        run: |
+          [ -f coverage/coverage-summary.json ] || exit 0
+          node -e "
+            const t = JSON.parse(require('fs').readFileSync('coverage/coverage-summary.json', 'utf8')).total;
+            const rows = ['statements', 'branches', 'functions', 'lines'].map(
+              (k) => '| ' + k + ' | ' + t[k].pct + '% | ' + t[k].covered + '/' + t[k].total + ' |',
+            );
+            console.log(['### Coverage frontend', '', '| Chỉ số | Tỷ lệ | Số lượng |', '|---|---|---|', ...rows, ''].join(String.fromCharCode(10)));
+          " >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload báo cáo coverage frontend (html)
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-frontend
+          path: frontend/coverage
+          if-no-files-found: ignore
+          retention-days: 7
       - run: npm run build
 
   e2e:

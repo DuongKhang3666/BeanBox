@@ -1,5 +1,5 @@
 import { Prisma } from '../../../generated/prisma/client.js';
-import { prisma } from '../../../lib/prisma.js';
+import { analyticsPrisma } from '../../../lib/prisma.js';
 import { vnDayStart } from '../admin.schema.js';
 import { vnDateKey } from '../dashboard/dashboard.service.js';
 import { dayNum, resolveRange, ymdOf } from './analytics.range.js';
@@ -102,7 +102,7 @@ export async function getCoupons(query: CouponsQuery, now: Date = new Date()): P
   const limit = query.limit ?? 10;
 
   const [summaryRows, rows] = await Promise.all([
-    prisma.$queryRaw<SummaryRow[]>`
+    analyticsPrisma.$queryRaw<SummaryRow[]>`
       SELECT
         (COUNT(*) FILTER (WHERE o."paidAt" >= ${cur}
           AND (o."couponId" IS NOT NULL OR o."couponCode" IS NOT NULL)))::int AS with_cur,
@@ -132,7 +132,7 @@ export async function getCoupons(query: CouponsQuery, now: Date = new Date()): P
         AND o."paidAt" >= ${start} AND o."paidAt" < ${end}`,
     // Gộp theo couponId; mã đã xóa (couponId null, còn couponCode) gộp theo 'code:' || couponCode.
     // Chỉ liệt kê mã có đơn ở kỳ này; kỳ trước chỉ để so sánh.
-    prisma.$queryRaw<ItemRow[]>`
+    analyticsPrisma.$queryRaw<ItemRow[]>`
       SELECT COALESCE(o."couponId", 'code:' || o."couponCode") AS gkey,
         MAX(o."couponId") AS coupon_id,
         COALESCE(MAX(c."code"), MAX(o."couponCode")) AS code,

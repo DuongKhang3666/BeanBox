@@ -466,7 +466,7 @@ describe('operations - hủy, trả hàng, hoàn tiền, thời gian xử lý, c
     ]);
     expect(by.customer).toMatchObject({ label: 'Khách hủy', current: 3, previous: 0 });
     expect(by.store).toMatchObject({ label: 'Cửa hàng hủy', current: 2, previous: 1 });
-    expect(by.expired).toMatchObject({ label: 'Hết hạn thanh toán', current: 1, previous: 0 });
+    expect(by.expired).toMatchObject({ label: 'Hết hạn tự động', current: 1, previous: 0 });
     expect(by.unknown).toMatchObject({ label: 'Không rõ', current: 1, previous: 0 });
     expect(op.cancellations.total).toEqual({ current: 7, previous: 1, changePct: 600 });
     expect(op.cancellations.total.current).toBe(ov.kpis.cancelledOrders.current);

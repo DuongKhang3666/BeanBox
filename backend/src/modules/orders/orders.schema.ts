@@ -63,6 +63,11 @@ export const createOrderSchema = z
       .int('Tổng tiền không hợp lệ')
       .min(0, 'Tổng tiền không hợp lệ')
       .optional(),
+    // D-057: token Turnstile; chỉ dùng khi captcha bật và người gọi là khách vãng lai. Không vào fingerprint.
+    captchaToken: z
+      .string({ error: 'Mã xác minh không hợp lệ' })
+      .max(2048, 'Mã xác minh không hợp lệ')
+      .optional(),
   })
   .superRefine((v, ctx) => {
     const both = v.addressId !== undefined && v.shippingAddress !== undefined;

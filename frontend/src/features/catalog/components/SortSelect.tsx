@@ -1,7 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useTransition } from "react";
 import type { ProductSort } from "@/types/catalog";
 import {
   buildHref,
@@ -11,12 +9,12 @@ import {
   type ProductFilters,
 } from "../filters";
 import { SORT_LABELS } from "../labels";
+import { useListingPush } from "./ListingNavigation";
 
 const BASE_OPTIONS: ProductSort[] = ["newest", "price_asc", "price_desc", "bestseller", "rating"];
 
 export function SortSelect({ pathname, filters }: { pathname: string; filters: ProductFilters }) {
-  const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  const { pending, push } = useListingPush();
   const options: ProductSort[] = filters.q ? ["relevance", ...BASE_OPTIONS] : BASE_OPTIONS;
 
   return (
@@ -30,15 +28,12 @@ export function SortSelect({ pathname, filters }: { pathname: string; filters: P
         disabled={pending}
         onChange={(e) => {
           const sort = e.target.value as ProductSort;
-          startTransition(() => {
-            router.push(
-              buildHref(
-                pathname,
-                changeFilters(filters, { sort: sort === defaultSort(filters) ? undefined : sort }),
-              ),
-              { scroll: false },
-            );
-          });
+          push(
+            buildHref(
+              pathname,
+              changeFilters(filters, { sort: sort === defaultSort(filters) ? undefined : sort }),
+            ),
+          );
         }}
         className="h-11 rounded-lg border border-coffee-400 bg-white px-3 text-sm text-coffee-900"
       >

@@ -132,7 +132,7 @@ export async function register(input: RegisterInput, ctx: ClientContext): Promis
     throw err;
   }
 
-  sendMailInBackground(buildVerifyEmail(user, verifyToken));
+  sendMailInBackground(buildVerifyEmail(user, verifyToken), { kind: 'verify-email' });
   return issueSession(user, ctx);
 }
 
@@ -279,7 +279,7 @@ export async function requestPasswordReset(email: string): Promise<void> {
       },
     }),
   ]);
-  sendMailInBackground(buildResetEmail(user, raw));
+  sendMailInBackground(buildResetEmail(user, raw), { kind: 'reset-password' });
 }
 
 export async function resetPassword(input: ResetPasswordInput): Promise<void> {
@@ -387,7 +387,7 @@ export async function resendVerification(userId: string): Promise<void> {
       data: { userId, tokenHash: sha256Hex(raw), expiresAt: new Date(Date.now() + VERIFY_TTL_MS) },
     }),
   ]);
-  sendMailInBackground(buildVerifyEmail(user, raw));
+  sendMailInBackground(buildVerifyEmail(user, raw), { kind: 'verify-email' });
 }
 
 // ───────────── Đổi mật khẩu ─────────────

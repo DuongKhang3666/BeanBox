@@ -3,6 +3,10 @@
 # Chỉ service `caddy` publish cổng ra ngoài; db/backend/frontend chỉ nằm trong mạng Docker nội bộ.
 name: beanbox-prod
 
+# Giới hạn tài nguyên (D-058): ƯỚC LƯỢNG cho VPS 2 vCPU / 2 GB, CHƯA ĐO trên VPS thật. Tổng `mem_limit`
+# 1632m, chừa ~400 MB cho hệ điều hành và Docker. `cpus` là trần, không phải đặt trước. Backend vượt
+# `mem_limit` sẽ bị OOM-kill rồi `restart: unless-stopped` khởi động lại; nếu xuất CSV lớn (1000 dòng
+# tồn kho) hoặc build ảnh bị kill thì tăng giá trị tương ứng. Đo bằng `docker stats` sau khi deploy.
 x-logging: &default-logging
   driver: json-file
   options:
@@ -17,6 +21,8 @@ services:
     # /dev/shm mặc định 64MB: truy vấn phân tích chạy song song (parallel hash join) hết bộ nhớ chia sẻ
     # với dữ liệu lớn và lỗi "could not resize shared memory segment" (D-054).
     shm_size: 256mb
+    mem_limit: 640m # ước lượng, chưa đo trên VPS thật (gồm cả /dev/shm 256mb)
+    cpus: 1.0
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?Đặt POSTGRES_USER trong .env.production}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Đặt POSTGRES_PASSWORD trong .env.production}
@@ -54,6 +60,9 @@ services:
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
+      # D-056: để trống = SMTP_SECURE false, SMTP_REQUIRE_TLS true (production)
+      SMTP_SECURE: ${SMTP_SECURE:-}
+      SMTP_REQUIRE_TLS: ${SMTP_REQUIRE_TLS:-}
       MAIL_FROM: ${MAIL_FROM:-BeanBox <no-reply@beanbox.local>}
       VNPAY_TMN_CODE: ${VNPAY_TMN_CODE:-}
       VNPAY_HASH_SECRET: ${VNPAY_HASH_SECRET:-}
@@ -72,8 +81,16 @@ services:
       COUPON_RATE_LIMIT_PER_MIN: ${COUPON_RATE_LIMIT_PER_MIN:-10}
       QUOTE_RATE_LIMIT_PER_MIN: ${QUOTE_RATE_LIMIT_PER_MIN:-30}
       EXPORT_RATE_LIMIT_PER_MIN: ${EXPORT_RATE_LIMIT_PER_MIN:-10}
+      # D-057 (đơn COD khách vãng lai) và D-058 (pool/timeout analytics); để trống = mặc định
+      GUEST_COD_HOLD_HOURS: ${GUEST_COD_HOLD_HOURS:-}
+      GUEST_COD_MAX_OPEN: ${GUEST_COD_MAX_OPEN:-}
+      DATABASE_POOL_MAX: ${DATABASE_POOL_MAX:-}
+      ANALYTICS_POOL_MAX: ${ANALYTICS_POOL_MAX:-}
+      ANALYTICS_STATEMENT_TIMEOUT_MS: ${ANALYTICS_STATEMENT_TIMEOUT_MS:-}
     volumes:
       - uploads:/app/uploads
+    mem_limit: 448m # ước lượng, chưa đo trên VPS thật
+    cpus: 1.0
     logging: *default-logging
 
   frontend:
@@ -91,6 +108,8 @@ services:
     environment:
       API_INTERNAL_URL: http://backend:4000
       INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:?Đặt INTERNAL_API_SECRET trong .env.production}
+    mem_limit: 320m # ước lượng, chưa đo trên VPS thật
+    cpus: 0.75
     logging: *default-logging
 
   caddy:
@@ -128,6 +147,8 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+    mem_limit: 96m # ước lượng, chưa đo trên VPS thật
+    cpus: 0.25
     logging: *default-logging
 
   # Sao lưu hằng ngày (D-034) + off-site tùy chọn (M8). Bật: docker compose ... --profile backup up -d backup
@@ -159,6 +180,8 @@ services:
       - ./deploy/backup:/deploy/backup:ro
       - ./backups:/backups
       - uploads:/app/uploads:ro
+    mem_limit: 128m # ước lượng, chưa đo trên VPS thật (pg_dump + rclone)
+    cpus: 0.25
     logging: *default-logging
 
   # Seed dữ liệu demo (D-031): docker compose ... --profile tools run --rm seed

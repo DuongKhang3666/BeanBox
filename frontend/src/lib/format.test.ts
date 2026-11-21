@@ -19,13 +19,21 @@ describe("formatVND", () => {
 
 describe("formatDate", () => {
   it("định dạng dd/MM/yyyy", () => {
-    expect(formatDate(new Date(2026, 10, 10))).toBe("10/11/2026");
+    expect(formatDate("2026-11-10T05:00:00Z")).toBe("10/11/2026");
   });
   it("trả chuỗi rỗng khi ngày sai", () => {
     expect(formatDate("không phải ngày")).toBe("");
     expect(formatDateTime("x")).toBe("");
   });
   it("formatDateTime có giờ phút", () => {
-    expect(formatDateTime(new Date(2026, 10, 10, 14, 5))).toBe("10/11/2026 14:05");
+    expect(formatDateTime("2026-11-10T07:05:00Z")).toBe("10/11/2026 14:05");
+  });
+  it("cố định giờ Việt Nam ở biên UTC (không phụ thuộc TZ máy)", () => {
+    // 18:30 UTC ngày 20 = 01:30 ngày 21 giờ Việt Nam.
+    expect(formatDate("2026-11-20T18:30:00Z")).toBe("21/11/2026");
+    expect(formatDateTime("2026-11-20T18:30:00Z")).toBe("21/11/2026 01:30");
+    expect(formatDateTime(new Date(Date.UTC(2026, 11, 31, 17, 0)))).toBe("01/01/2027 00:00");
+    // 16:59 UTC vẫn là 23:59 cùng ngày.
+    expect(formatDateTime("2026-11-20T16:59:00Z")).toBe("20/11/2026 23:59");
   });
 });

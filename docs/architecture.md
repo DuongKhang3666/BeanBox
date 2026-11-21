@@ -1,6 +1,7 @@
 # BeanBox – Kiến trúc hệ thống
 
-> Phiên bản 0.8 · 2026-11-20 · Nguồn: `docs/requirements.md` + quyết định của Tech Lead.
+> Phiên bản 0.9 · 2026-11-21 · Nguồn: `docs/requirements.md` + quyết định của Tech Lead.
+> Thay đổi 0.9 (D-046..D-054, không đổi kiến trúc tổng thể, không thêm dịch vụ): gợi ý sản phẩm (`related` chấm điểm nội dung trong `lib/related.ts`, endpoint công khai `GET /products/:slug/bought-together` dùng SQL tham số hóa, ngưỡng riêng tư >= 2 khách, D-046); so sánh sản phẩm (danh sách ở localStorage, `GET /products/compare?slugs=`, trang `/so-sanh` noindex, D-047); quy ước vùng cuộn ngang `relative` và kiểm `/admin` ở 390/768 (D-048); khu phân tích kinh doanh chỉ Admin (`requireAdmin` ở cấp router `/admin/analytics/*`, FE `/admin/phan-tich`, biểu đồ SVG tự vẽ, D-049..D-052), xuất CSV có audit, fail-closed và limiter riêng sau `requireAdmin` (`lib/csv.ts`, D-053); đo hiệu năng trên 100.000 đơn, không thêm index, công cụ sinh dữ liệu demo ngoài build/image, bản in (D-054). Chi tiết: [`decisions.md`](decisions.md).
 > Thay đổi 0.8 (D-045, rà soát bảo mật): access token gắn với phiên, thu hồi có hiệu lực ngay (§4); `Cache-Control: no-store` mặc định cho `/api/v1` trừ GET công khai (§4); cấm `COOKIE_SECURE=false` ở production và thêm `AUTH_RATE_LIMIT_PER_MIN` (§8).
 > Thay đổi 0.7 (M8, D-036..D-040): nâng Prisma 7 với driver adapter `pg` và `prisma.config.ts`, client sinh ra ở `backend/src/generated` (không commit) (§1, §2, §10); entrypoint backend kiểm env trước `migrate deploy` và Caddy redirect đúng cổng (D-037, §1); backup off-site mã hóa tùy chọn (rclone + age, D-038) và giám sát uptime bằng tài liệu + `deploy/monitoring/check.sh` (D-039) ở §2; CSP đầy đủ chuyển sang thực thi, `/admin` dùng nonce qua `src/proxy.ts` (D-040, §4, ADR 13).
 > Thay đổi 0.6 (M7, D-025..D-035): triển khai production bằng Docker Compose với Caddy (TLS tự động, rate limit edge) ở §1, §2, §3; job dọn dẹp thêm xóa tin liên hệ cũ (D-029, §7); biến môi trường mới (Turnstile, `CONTACT_RETENTION_DAYS`, `SEED_ALLOW_PRODUCTION`, `INTERNAL_API_SECRET` bắt buộc ở production, biến compose prod) ở §8; thêm ADR 11-13 ở §9 (Caddy + edge rate limit, một instance không Redis, CSP tập con thực thi). Hướng dẫn vận hành: [`deployment.md`](deployment.md).
@@ -150,6 +151,7 @@ Quy tắc phân lớp backend: `routes` (khai báo + middleware) -> `controller`
 - Tác vụ nền (trong tiến trình backend, `setInterval`): 
   - Job dọn dẹp (M3): xóa giỏ guest không hoạt động > 30 ngày; xóa `RefreshToken`/`PasswordResetToken`/`EmailVerificationToken` đã hết hạn; xóa cứng `ContactMessage` có `status` `RESOLVED`/`SPAM` và `createdAt` cũ hơn `CONTACT_RETENTION_DAYS` ngày (D-029, mặc định 365, `0` = tắt). Chạy mỗi 60 phút, dùng `pg_try_advisory_xact_lock` để chỉ 1 instance chạy mỗi lượt; bật/tắt bằng env `JOBS_ENABLED` (mặc định `true`, luôn tắt khi `NODE_ENV=test`).
   - Job hết hạn thanh toán (M5, D-015): chạy mỗi 60 giây, advisory lock riêng, tối đa 50 đơn `PENDING_PAYMENT` có `expiresAt < now` mỗi lượt (kể cả `paymentStatus=FAILED`); mỗi đơn 1 transaction: `cancelOrderTx` (actor SYSTEM, hoàn kho, hoàn lượt mã), Payment `PENDING` -> `FAILED`; sau commit gửi email hủy và best-effort expire phiên Stripe (lỗi chỉ log). Cùng cờ `JOBS_ENABLED`.
+  - Job hủy đơn COD khách vãng lai quá hạn xác nhận (D-057): chạy cùng nhịp 60 giây và dùng cùng advisory lock với job hết hạn thanh toán (chạy nối tiếp nhau); tối đa 50 đơn `PENDING`, `userId` null, COD, tạo trước `now - GUEST_COD_HOLD_HOURS` giờ mỗi lượt; mỗi đơn 1 transaction, `cancelOrderTx` actor `SYSTEM`, lý do `GUEST_COD_EXPIRE_REASON`, hoàn kho + hoàn lượt mã, gửi email trạng thái sau commit.
 - Email: Nodemailer (Mailpit khi dev); gửi sau commit, lỗi gửi mail không làm hỏng đơn (log + retry đơn giản). Từ M5 gửi cả email đổi trạng thái (`CONFIRMED`, `SHIPPING`, `DELIVERED`, `CANCELLED`, D-016; `api-contract.md` §13.9).
 
 ## 8. Cấu hình môi trường
@@ -172,6 +174,7 @@ Quy tắc phân lớp backend: `routes` (khai báo + middleware) -> `controller`
 | `ACCESS_TOKEN_TTL` / `REFRESH_TOKEN_TTL_DAYS` | `15m` / `7` |
 | `API_INTERNAL_URL` (frontend) | `http://localhost:4000` (Docker: `http://backend:4000`) |
 | `SMTP_HOST/PORT/USER/PASS`, `MAIL_FROM` | Mailpit dev |
+| `SMTP_SECURE`, `SMTP_REQUIRE_TLS` | `SMTP_SECURE` mặc định `false` (`true` = TLS ngầm định, cổng 465); `SMTP_REQUIRE_TLS` mặc định `true` khi production, `false` còn lại (D-056) |
 | `VNPAY_TMN_CODE`, `VNPAY_HASH_SECRET` | Có cả hai thì bật VNPay; thiếu thì tắt (quote `enabled:false`, đặt đơn -> 409 `PAYMENT_METHOD_UNAVAILABLE`). Lấy từ tài khoản sandbox, xem `payments-setup.md` |
 | `VNPAY_PAYMENT_URL` | mặc định `https://sandbox.vnpayment.vn/paymentv2/vpcpay.html`; bắt buộc https |
 | `VNPAY_RETURN_URL` | mặc định `${WEB_APP_URL}/thanh-toan/ket-qua?provider=vnpay` |
@@ -180,6 +183,8 @@ Quy tắc phân lớp backend: `routes` (khai báo + middleware) -> `controller`
 | `ORDER_RATE_LIMIT_PER_MIN`, `COUPON_RATE_LIMIT_PER_MIN`, `QUOTE_RATE_LIMIT_PER_MIN` | mặc định `10`, `10`, `30` (D-011, D-016); số nguyên dương |
 | `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY` | captcha form liên hệ (D-028); có ĐỦ cả hai mới bật, chỉ một trong hai thì backend không khởi động; trống = tắt |
 | `CONTACT_RETENTION_DAYS` | mặc định `365`; số ngày giữ tin liên hệ `RESOLVED`/`SPAM` trước khi job xóa cứng; `0` = tắt (D-029) |
+| `GUEST_COD_HOLD_HOURS`, `GUEST_COD_MAX_OPEN` | mặc định `48` (1..720) và `3` (1..100): hạn giữ kho và số đơn COD khách vãng lai đang chờ xác nhận tối đa theo SĐT/email (D-057) |
+| `DATABASE_POOL_MAX`, `ANALYTICS_POOL_MAX`, `ANALYTICS_STATEMENT_TIMEOUT_MS` | mặc định `10`, `4`, `15000` (1000..120000): pool chính, pool riêng cho analytics, `statement_timeout` của pool analytics (D-058) |
 | `SEED_ADMIN_PASSWORD`, `SEED_STAFF_PASSWORD`, `SEED_CUSTOMER_PASSWORD` | mật khẩu cho seed; mặc định seed từ chối chạy khi `NODE_ENV=production` |
 | `SEED_ALLOW_PRODUCTION` | `true` để cho phép seed ở production (D-031); khi đó cả 3 mật khẩu phải >= 12 ký tự, có chữ và số, khác giá trị mẫu |
 | Biến compose production (`PUBLIC_URL`, `SITE_ADDRESS`, `ACME_EMAIL`, `HTTP_PORT`, `HTTPS_PORT`, `POSTGRES_*`, `EDGE_RATE_*`, `BACKUP_*`) | chỉ dùng ở `docker-compose.prod.yml` / `.env.production`; `PUBLIC_URL` được compose gán cho `WEB_APP_URL`, `FRONTEND_ORIGINS` và `NEXT_PUBLIC_SITE_URL` (nhúng lúc build frontend). Bảng đầy đủ: [`deployment.md`](deployment.md) §4. Cấu hình backup off-site (`BACKUP_REMOTE`, `RCLONE_CONFIG_*`, `BACKUP_AGE_RECIPIENTS`...) nằm riêng ở `.env.backup` (mẫu `.env.backup.example`, D-038), xem [`deployment.md`](deployment.md) §11 |

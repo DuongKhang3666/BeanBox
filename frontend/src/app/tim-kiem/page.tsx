@@ -4,6 +4,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { getBrands, getCoffeeOrigins, getProducts } from "@/features/catalog/api";
 import { Breadcrumbs } from "@/features/catalog/components/Breadcrumbs";
+import { ListingNavigationProvider } from "@/features/catalog/components/ListingNavigation";
 import { FilterPanel } from "@/features/catalog/components/FilterPanel";
 import { ProductResults } from "@/features/catalog/components/ProductResults";
 import { parseFilters, toApiQuery, type RawSearchParams } from "@/features/catalog/filters";
@@ -51,31 +52,33 @@ export default async function SearchPage({ searchParams }: Props) {
       <h1 className="font-serif text-3xl font-bold text-coffee-900">
         Kết quả cho &ldquo;{filters.q}&rdquo;
       </h1>
-      <div className="flex flex-col gap-6 lg:flex-row">
-        <FilterPanel
-          pathname={pathname}
-          filters={filters}
-          brands={brandRes.status === "fulfilled" ? brandRes.value : []}
-          showCoffeeFilters
-          origins={originRes.status === "fulfilled" ? originRes.value : []}
-        />
-        {productRes.status === "fulfilled" ? (
-          <ProductResults
+      <ListingNavigationProvider>
+        <div className="flex flex-col gap-6 lg:flex-row">
+          <FilterPanel
             pathname={pathname}
             filters={filters}
-            items={productRes.value.items}
-            meta={productRes.value.meta}
-            emptyDescription="Hãy kiểm tra chính tả, thử từ khóa ngắn hơn (ví dụ: “ethiopia”, “phin”) hoặc bỏ bớt bộ lọc."
+            brands={brandRes.status === "fulfilled" ? brandRes.value : []}
+            showCoffeeFilters
+            origins={originRes.status === "fulfilled" ? originRes.value : []}
           />
-        ) : (
-          <div className="min-w-0 flex-1">
-            <ErrorState
-              title="Chưa tải được kết quả tìm kiếm"
-              description="Vui lòng thử lại sau ít phút."
+          {productRes.status === "fulfilled" ? (
+            <ProductResults
+              pathname={pathname}
+              filters={filters}
+              items={productRes.value.items}
+              meta={productRes.value.meta}
+              emptyDescription="Hãy kiểm tra chính tả, thử từ khóa ngắn hơn (ví dụ: “ethiopia”, “phin”) hoặc bỏ bớt bộ lọc."
             />
-          </div>
-        )}
-      </div>
+          ) : (
+            <div className="min-w-0 flex-1">
+              <ErrorState
+                title="Chưa tải được kết quả tìm kiếm"
+                description="Vui lòng thử lại sau ít phút."
+              />
+            </div>
+          )}
+        </div>
+      </ListingNavigationProvider>
     </Container>
   );
 }

@@ -181,4 +181,6 @@ export interface PlaceOrderRequest {
   note?: string;
   acceptTerms: true;
   expectedTotal?: number;
+  /** Token Turnstile (D-057): chỉ khách vãng lai khi cửa hàng bật captcha. */
+  captchaToken?: string;
 }

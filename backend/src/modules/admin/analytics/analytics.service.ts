@@ -1,4 +1,4 @@
-import { prisma } from '../../../lib/prisma.js';
+import { analyticsPrisma } from '../../../lib/prisma.js';
 import { vnDayStart } from '../admin.schema.js';
 import { vnDateKey } from '../dashboard/dashboard.service.js';
 import {
@@ -191,7 +191,7 @@ export async function getOverview(
   // Một truy vấn mỗi nguồn trên [kỳ trước + kỳ này], GROUP BY ngày VN; tham số hóa, không N+1.
   const [paid, created, refunds, customers] = await Promise.all([
     // Doanh thu theo paidAt, định nghĩa D-019.
-    prisma.$queryRaw<Array<{ d: string; revenue: Raw; n: Raw; discount: Raw }>>`
+    analyticsPrisma.$queryRaw<Array<{ d: string; revenue: Raw; n: Raw; discount: Raw }>>`
       SELECT to_char("paidAt" + interval '7 hours', 'YYYY-MM-DD') AS d,
              SUM("grandTotal")::bigint AS revenue, COUNT(*)::int AS n,
              SUM("discountTotal")::bigint AS discount
@@ -200,20 +200,20 @@ export async function getOverview(
         AND "status" NOT IN ('CANCELLED', 'RETURNED')
         AND "paidAt" >= ${start} AND "paidAt" < ${end}
       GROUP BY d`,
-    prisma.$queryRaw<Array<{ d: string; n: Raw; cancelled: Raw }>>`
+    analyticsPrisma.$queryRaw<Array<{ d: string; n: Raw; cancelled: Raw }>>`
       SELECT to_char("createdAt" + interval '7 hours', 'YYYY-MM-DD') AS d,
              COUNT(*)::int AS n,
              (COUNT(*) FILTER (WHERE "status" = 'CANCELLED'))::int AS cancelled
       FROM "Order"
       WHERE "createdAt" >= ${start} AND "createdAt" < ${end}
       GROUP BY d`,
-    prisma.$queryRaw<Array<{ d: string; amount: Raw }>>`
+    analyticsPrisma.$queryRaw<Array<{ d: string; amount: Raw }>>`
       SELECT to_char("refundedAt" + interval '7 hours', 'YYYY-MM-DD') AS d,
              SUM("amount")::bigint AS amount
       FROM "Payment"
       WHERE "refundedAt" >= ${start} AND "refundedAt" < ${end}
       GROUP BY d`,
-    prisma.$queryRaw<Array<{ d: string; n: Raw }>>`
+    analyticsPrisma.$queryRaw<Array<{ d: string; n: Raw }>>`
       SELECT to_char("createdAt" + interval '7 hours', 'YYYY-MM-DD') AS d, COUNT(*)::int AS n
       FROM "User"
       WHERE "role" = 'CUSTOMER' AND "createdAt" >= ${start} AND "createdAt" < ${end}

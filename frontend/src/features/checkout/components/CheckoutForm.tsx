@@ -14,11 +14,17 @@ import { FormError } from "@/features/auth/components/FormError";
 import { normalizePhone } from "@/features/auth/validation";
 import { useCart } from "@/features/cart/CartProvider";
 import { cartErrorMessage, couponReasonMessage } from "@/features/cart/messages";
+import { fetchContactCaptcha } from "@/features/content/contactCaptcha";
+import {
+  TurnstileWidget,
+  type TurnstileHandle,
+} from "@/features/content/components/TurnstileWidget";
 import { ApiError } from "@/lib/api/errors";
 import { formatVND } from "@/lib/format";
 import type { Address } from "@/types/account";
 import type { User } from "@/types/auth";
 import type { Cart } from "@/types/cart";
+import type { ContactCaptcha } from "@/types/settings";
 import type { PaymentMethod, PlaceOrderRequest, Quote, ShippingMethod } from "@/types/order";
 import { placeOrder } from "@/features/orders/api";
 import { IdempotencyKeys } from "@/features/orders/idempotency";
@@ -79,13 +85,19 @@ function AddressRadioLabel({ a }: { a: Address }) {
   );
 }
 
+const CAPTCHA_REQUIRED_ERROR = "Vui lòng hoàn tất bước xác minh trước khi đặt hàng.";
+const CAPTCHA_UNAVAILABLE_ERROR = "Hiện chưa xác minh được, vui lòng thử lại sau ít phút.";
+
 export function CheckoutForm({
   cart,
   user,
+  captcha: initialCaptcha = null,
   onPlaced,
 }: {
   cart: Cart;
   user: User | null;
+  /** Từ GET /settings/public; null = captcha tắt. Chỉ dùng cho khách vãng lai (D-057). */
+  captcha?: ContactCaptcha | null;
   onPlaced: () => void;
 }) {
   const authed = !!user;
@@ -114,6 +126,13 @@ export function CheckoutForm({
   const [submitting, setSubmitting] = useState(false);
   const [alertTick, setAlertTick] = useState(0);
   const [removingCoupon, setRemovingCoupon] = useState(false);
+
+  // Captcha (D-057): chỉ khách vãng lai. Token Turnstile dùng một lần nên reset sau mỗi lần gửi lỗi.
+  const [captcha, setCaptcha] = useState<ContactCaptcha | null>(initialCaptcha);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaBroken, setCaptchaBroken] = useState(false);
+  const turnstile = useRef<TurnstileHandle>(null);
+  const needCaptcha = !authed && captcha !== null;
 
   const inFlight = useRef(false);
   const keys = useRef(new IdempotencyKeys());
@@ -201,8 +220,23 @@ export function CheckoutForm({
     };
   }
 
+  /** Server báo lỗi captcha: báo người dùng, lấy token mới; nếu đang không hiện widget thì nạp lại cấu hình. */
+  async function handleCaptchaError(err: ApiError) {
+    const unavailable = err.code === "SERVICE_UNAVAILABLE";
+    setProblem({ message: unavailable ? CAPTCHA_UNAVAILABLE_ERROR : orderErrorMessage(err) });
+    turnstile.current?.reset();
+    if (!needCaptcha) {
+      const latest = await fetchContactCaptcha();
+      if (latest) setCaptcha(latest);
+    }
+  }
+
   function handleError(err: unknown) {
     if (err instanceof ApiError) {
+      if (err.code === "CAPTCHA_FAILED" || (err.status === 503 && needCaptcha)) {
+        void handleCaptchaError(err);
+        return;
+      }
       switch (err.code) {
         case "PRICE_CHANGED": {
           const d = err.details as { grandTotal?: unknown; quote?: Quote } | undefined;
@@ -282,6 +316,11 @@ export function CheckoutForm({
       focusFirstInvalid(FIELD_ORDER, fe);
       return;
     }
+    if (needCaptcha && !captchaToken) {
+      setProblem({ message: CAPTCHA_REQUIRED_ERROR });
+      setAlertTick((t) => t + 1);
+      return;
+    }
     const payload = buildPayload();
     if (!payload) {
       setProblem({
@@ -296,9 +335,12 @@ export function CheckoutForm({
 
     inFlight.current = true;
     setSubmitting(true);
+    // Idempotency-Key gắn với payload KHÔNG gồm token: gửi lại sau lỗi mạng với token mới vẫn cùng key.
     const key = keys.current.keyFor(JSON.stringify(payload));
+    const body: PlaceOrderRequest =
+      needCaptcha && captchaToken ? { ...payload, captchaToken } : payload;
     try {
-      const order = await placeOrder(payload, key);
+      const order = await placeOrder(body, key);
       keys.current.reset();
       try {
         sessionStorage.setItem(LAST_ORDER_KEY, JSON.stringify(order));
@@ -319,6 +361,10 @@ export function CheckoutForm({
       keys.current.onError(err);
       handleError(err);
       setAlertTick((t) => t + 1);
+      // Token đã dùng (kể cả khi đơn bị từ chối vì lý do khác): cần token mới cho lần gửi sau.
+      if (needCaptcha && !(err instanceof ApiError && err.code === "CAPTCHA_FAILED")) {
+        turnstile.current?.reset();
+      }
     } finally {
       inFlight.current = false;
       setSubmitting(false);
@@ -718,12 +764,28 @@ export function CheckoutForm({
               </span>
             </label>
             <FieldError id="acceptTerms-error">{errors.acceptTerms}</FieldError>
+            {needCaptcha ? (
+              <div className="space-y-2">
+                <TurnstileWidget
+                  ref={turnstile}
+                  siteKey={captcha.siteKey}
+                  onToken={setCaptchaToken}
+                  onUnavailable={() => setCaptchaBroken(true)}
+                />
+                {captchaBroken ? (
+                  <p role="alert" className="text-sm text-danger-600">
+                    Không tải được bước xác minh (có thể do trình duyệt hoặc tiện ích đang chặn).
+                    Bạn có thể tải lại trang hoặc liên hệ cửa hàng để được hỗ trợ đặt hàng.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
             <Button
               type="submit"
               size="lg"
               className="w-full"
               loading={submitting}
-              disabled={hasIssues || !!invalidCoupon}
+              disabled={hasIssues || !!invalidCoupon || (needCaptcha && !captchaToken)}
             >
               {submitting
                 ? "Đang đặt hàng..."

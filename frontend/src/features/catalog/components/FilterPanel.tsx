@@ -1,8 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useId, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useId, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
 import { Spinner } from "@/components/ui/Spinner";
@@ -22,6 +21,7 @@ import {
   ROAST_LABELS,
   ROAST_VALUES,
 } from "../labels";
+import { useListingPush } from "./ListingNavigation";
 
 interface Option {
   value: string;
@@ -87,15 +87,11 @@ export function FilterPanel({
   showCoffeeFilters,
   origins = [],
 }: FilterPanelProps) {
-  const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  const { pending, push: pushHref } = useListingPush();
   const [open, setOpen] = useState(false);
   const panelId = useId();
 
-  const push = (next: ProductFilters) =>
-    startTransition(() => {
-      router.push(buildHref(pathname, next), { scroll: false });
-    });
+  const push = (next: ProductFilters) => pushHref(buildHref(pathname, next));
   const apply = (patch: Partial<ProductFilters>) => push(changeFilters(filters, patch));
 
   return (

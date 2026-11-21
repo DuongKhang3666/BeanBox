@@ -159,15 +159,15 @@ Workflow `.github/workflows/ci.yml` (chạy khi push lên `main` và trên pull 
 
 | Job           | Nội dung                                                                                                                           |
 | ------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `backend`     | Postgres service, `prisma migrate deploy` trên DB trống, kiểm drift migration so với `schema.prisma`, lint, typecheck, test, build |
-| `frontend`    | lint, typecheck, test, build                                                                                                       |
+| `backend`     | Postgres service, `prisma migrate deploy` trên DB trống, kiểm drift migration, lint, `format:check`, typecheck, test kèm coverage (có ngưỡng), build |
+| `frontend`    | lint, `format:check`, typecheck, test kèm coverage (có ngưỡng), build                                                              |
 | `e2e`         | Playwright (chromium) với Postgres + Mailpit, seed bằng mật khẩu giả của CI; chạy sau `backend` và `frontend`                      |
 | `secret-scan` | gitleaks (Docker, ghim phiên bản) quét toàn bộ lịch sử git                                                                         |
 | `audit`       | `npm audit` cả hai phía, chỉ báo cáo, không làm fail                                                                               |
 | `docker`      | Build image backend, frontend, Caddy; build image backup và chạy selftest backup off-site (không push)                             |
 | `ops-lint`    | `shellcheck` cho script trong `deploy/`, `docker compose config` cho file compose production                                       |
 
-Không có deploy tự động.
+Báo cáo coverage html được lưu ở artifact của job (7 ngày). Dependabot (`.github/dependabot.yml`) mở PR cập nhật hằng tuần cho npm, Docker và GitHub Actions, gộp minor/patch ([D-055](docs/decisions.md#d-055-ci-coverage-kiểm-định-dạng-và-dependabot)). Không có deploy tự động.
 
 ## Quyết định kỹ thuật nổi bật
 

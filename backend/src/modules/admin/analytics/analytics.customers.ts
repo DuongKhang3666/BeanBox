@@ -1,4 +1,4 @@
-import { prisma } from '../../../lib/prisma.js';
+import { analyticsPrisma } from '../../../lib/prisma.js';
 import { vnDayStart } from '../admin.schema.js';
 import { vnDateKey } from '../dashboard/dashboard.service.js';
 import { dayNum, resolveRange, ymdOf } from './analytics.range.js';
@@ -86,7 +86,7 @@ export async function getCustomers(
 
   // Một truy vấn: gộp theo khách trên mọi đơn tính doanh thu đến hết kỳ này (cần mốc đơn đầu tiên
   // mọi thời điểm), chỉ giữ khách có đơn trong kỳ này hoặc kỳ trước rồi đếm bằng FILTER.
-  const rows = await prisma.$queryRaw<AggRow[]>`
+  const rows = await analyticsPrisma.$queryRaw<AggRow[]>`
     WITH per AS (
       SELECT
         CASE WHEN o."userId" IS NOT NULL THEN 'u:' || o."userId"

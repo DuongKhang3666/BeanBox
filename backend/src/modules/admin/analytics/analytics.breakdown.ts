@@ -1,4 +1,4 @@
-import { prisma } from '../../../lib/prisma.js';
+import { analyticsPrisma } from '../../../lib/prisma.js';
 import { vnDayStart } from '../admin.schema.js';
 import { vnDateKey } from '../dashboard/dashboard.service.js';
 import { dayNum, resolveRange, ymdOf } from './analytics.range.js';
@@ -160,7 +160,7 @@ export async function getBreakdown(
     // Các câu SQL cố định theo nhánh code, không chèn tên cột từ input.
     let rows: OrderRow[];
     if (dimension === 'paymentMethod') {
-      rows = await prisma.$queryRaw<OrderRow[]>`
+      rows = await analyticsPrisma.$queryRaw<OrderRow[]>`
         SELECT o."paymentMethod"::text AS key, NULL::text AS label,
           COALESCE(SUM(o."grandTotal") FILTER (WHERE o."paidAt" >= ${cur}), 0)::bigint AS revenue,
           (COUNT(*) FILTER (WHERE o."paidAt" >= ${cur}))::int AS orders,
@@ -171,7 +171,7 @@ export async function getBreakdown(
           AND o."paidAt" >= ${start} AND o."paidAt" < ${end}
         GROUP BY 1`;
     } else if (dimension === 'shippingMethod') {
-      rows = await prisma.$queryRaw<OrderRow[]>`
+      rows = await analyticsPrisma.$queryRaw<OrderRow[]>`
         SELECT o."shippingMethod"::text AS key, NULL::text AS label,
           COALESCE(SUM(o."grandTotal") FILTER (WHERE o."paidAt" >= ${cur}), 0)::bigint AS revenue,
           (COUNT(*) FILTER (WHERE o."paidAt" >= ${cur}))::int AS orders,
@@ -183,7 +183,7 @@ export async function getBreakdown(
         GROUP BY 1`;
     } else {
       // province: snapshot trong shippingAddress (Json); thiếu mã -> nhóm key null.
-      rows = await prisma.$queryRaw<OrderRow[]>`
+      rows = await analyticsPrisma.$queryRaw<OrderRow[]>`
         SELECT NULLIF(btrim(o."shippingAddress"->>'provinceCode'), '') AS key,
           MAX(NULLIF(btrim(o."shippingAddress"->>'provinceName'), '')) AS label,
           COALESCE(SUM(o."grandTotal") FILTER (WHERE o."paidAt" >= ${cur}), 0)::bigint AS revenue,
@@ -225,7 +225,7 @@ export async function getBreakdown(
     // Hai truy vấn độc lập chạy song song (nhóm, tổng toàn tập).
     const groupQuery =
       dimension === 'category'
-        ? prisma.$queryRaw<ItemRow[]>`
+        ? analyticsPrisma.$queryRaw<ItemRow[]>`
         SELECT COALESCE(p."categoryId", ${UNKNOWN_KEY}) AS key, MAX(c."name") AS label,
           COALESCE(SUM(oi."lineTotal") FILTER (WHERE o."paidAt" >= ${cur}), 0)::bigint AS revenue,
           COALESCE(SUM(oi."quantity") FILTER (WHERE o."paidAt" >= ${cur}), 0)::bigint AS quantity,
@@ -240,7 +240,7 @@ export async function getBreakdown(
         WHERE o."paymentStatus" = 'PAID' AND o."status" NOT IN ('CANCELLED', 'RETURNED')
           AND o."paidAt" >= ${start} AND o."paidAt" < ${end}
         GROUP BY 1`
-        : prisma.$queryRaw<ItemRow[]>`
+        : analyticsPrisma.$queryRaw<ItemRow[]>`
         SELECT CASE WHEN p."id" IS NULL THEN ${UNKNOWN_KEY} ELSE p."brandId" END AS key,
           MAX(b."name") AS label,
           COALESCE(SUM(oi."lineTotal") FILTER (WHERE o."paidAt" >= ${cur}), 0)::bigint AS revenue,
@@ -259,7 +259,7 @@ export async function getBreakdown(
     // Tổng toàn tập (số đơn khác nhau không bằng tổng các nhóm). Số đơn đếm trên "Order" (bán nối
     // với EXISTS dòng hàng) thay vì COUNT(DISTINCT) trên phép nối đơn x dòng hàng: tránh sắp xếp
     // hàng trăm nghìn dòng ra đĩa (D-054); cùng kết quả: đơn có ít nhất một dòng hàng.
-    const totalQuery = prisma.$queryRaw<ItemTotalRow[]>`
+    const totalQuery = analyticsPrisma.$queryRaw<ItemTotalRow[]>`
       SELECT COALESCE(SUM(oi."lineTotal") FILTER (WHERE o."paidAt" >= ${cur}), 0)::bigint AS revenue,
         COALESCE(SUM(oi."quantity") FILTER (WHERE o."paidAt" >= ${cur}), 0)::bigint AS quantity,
         COALESCE(SUM(oi."lineTotal") FILTER (WHERE o."paidAt" < ${cur}), 0)::bigint AS prev_revenue,

@@ -1,5 +1,5 @@
 import { Prisma } from '../../../generated/prisma/client.js';
-import { prisma } from '../../../lib/prisma.js';
+import { analyticsPrisma } from '../../../lib/prisma.js';
 import { SLOW_DAYS_DEFAULT, type InventoryQuery } from './analytics.schema.js';
 
 /**
@@ -111,7 +111,7 @@ export async function getInventory(
   const since = new Date(now.getTime() - slowDays * DAY_MS);
 
   const [summaryRows, outRows, lowRows, slowRows] = await Promise.all([
-    prisma.$queryRaw<SummaryRow[]>`
+    analyticsPrisma.$queryRaw<SummaryRow[]>`
       SELECT COUNT(*)::int AS variants,
         (COUNT(*) FILTER (WHERE v."stock" <= 0))::int AS out_of_stock,
         (COUNT(*) FILTER (WHERE v."stock" > 0 AND v."stock" <= v."lowStockThreshold"))::int AS low_stock,
@@ -120,7 +120,7 @@ export async function getInventory(
       FROM "ProductVariant" v
       JOIN "Product" p ON p."id" = v."productId"
       WHERE ${SCOPE}`,
-    prisma.$queryRaw<ItemRow[]>`
+    analyticsPrisma.$queryRaw<ItemRow[]>`
       SELECT ${COLS}, ls.last_sold AS last_sold
       FROM "ProductVariant" v
       JOIN "Product" p ON p."id" = v."productId"
@@ -128,7 +128,7 @@ export async function getInventory(
       WHERE ${SCOPE} AND v."stock" <= 0
       ORDER BY p."name" ASC, v."name" ASC, v."sku" ASC
       LIMIT ${listLimit}`,
-    prisma.$queryRaw<ItemRow[]>`
+    analyticsPrisma.$queryRaw<ItemRow[]>`
       SELECT ${COLS}, ls.last_sold AS last_sold
       FROM "ProductVariant" v
       JOIN "Product" p ON p."id" = v."productId"
@@ -137,7 +137,7 @@ export async function getInventory(
       ORDER BY v."stock" ASC, p."name" ASC, v."sku" ASC
       LIMIT ${listLimit}`,
     // Bán chậm: còn hàng, không bán trong `slowDays` ngày gần nhất, loại biến thể tạo trong khoảng đó.
-    prisma.$queryRaw<SlowRow[]>`
+    analyticsPrisma.$queryRaw<SlowRow[]>`
       WITH slow AS (
         SELECT ${COLS}, ls.last_sold AS last_sold,
           (v."stock"::bigint * v."price") AS stock_value

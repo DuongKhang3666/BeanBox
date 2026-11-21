@@ -26,7 +26,8 @@ const RULES: readonly Rule[] = [
   { from: 'PENDING_PAYMENT', to: 'CONFIRMED', actors: ['SYSTEM'] }, // #1
   { from: 'PENDING_PAYMENT', to: 'CANCELLED', actors: ['SYSTEM', 'CUSTOMER', ...STAFF_PLUS] }, // #2
   { from: 'PENDING', to: 'CONFIRMED', actors: STAFF_PLUS }, // #3
-  { from: 'PENDING', to: 'CANCELLED', actors: ['CUSTOMER', ...STAFF_PLUS] }, // #4
+  // #4: SYSTEM chỉ cho job hủy đơn COD khách vãng lai quá hạn xác nhận (D-057).
+  { from: 'PENDING', to: 'CANCELLED', actors: ['SYSTEM', 'CUSTOMER', ...STAFF_PLUS] }, // #4
   { from: 'CONFIRMED', to: 'PROCESSING', actors: STAFF_PLUS }, // #5
   { from: 'CONFIRMED', to: 'CANCELLED', actors: ['CUSTOMER', ...STAFF_PLUS] }, // #6
   { from: 'PROCESSING', to: 'SHIPPING', actors: STAFF_PLUS }, // #7

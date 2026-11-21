@@ -121,7 +121,7 @@ export function notifyOrderStatusChange(order: OrderRowLike): void {
       },
       { loggedIn: order.userId !== null },
     );
-    if (msg) sendMailInBackground(msg);
+    if (msg) sendMailInBackground(msg, { kind: 'order-status', orderCode: order.code });
   } catch {
     // Không để lỗi dựng email ảnh hưởng đơn hàng.
   }

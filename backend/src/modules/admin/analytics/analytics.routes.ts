@@ -12,6 +12,7 @@ import {
   topCustomers,
   topProducts,
 } from './analytics.controller.js';
+import { mapAnalyticsErrors } from './analytics.errors.js';
 import {
   breakdownQuerySchema,
   couponsQuerySchema,
@@ -53,6 +54,8 @@ export function createAdminAnalyticsRouter({
     validate(exportQuerySchema, 'query'),
     exportCsv,
   );
+  // D-058: truy vấn quá statement_timeout -> 503 ANALYTICS_TIMEOUT (đặt SAU các route).
+  adminAnalyticsRouter.use(mapAnalyticsErrors);
 
   return adminAnalyticsRouter;
 }

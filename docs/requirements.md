@@ -325,7 +325,7 @@ FAILED_DELIVERY ──(chỉ staff)───────────────
 
 ### 6.6 Chất lượng code & kiểm thử
 - TypeScript strict; ESLint + Prettier.
-- Backend: unit test cho service (giá, mã giảm giá, phí ship, chuyển trạng thái), integration test cho API chính (Vitest/Jest + Supertest) – coverage ≥ 70 % phần nghiệp vụ.
+- Backend: unit test cho service (giá, mã giảm giá, phí ship, chuyển trạng thái), integration test cho API chính (Vitest/Jest + Supertest) – coverage được đo trong CI (`npm run test:coverage`) với ngưỡng không cho tụt; con số hiện tại và lý do không đặt cố định 70 % xem `testing.md` và D-055.
 - Frontend: test component quan trọng (React Testing Library); E2E luồng mua hàng (Playwright).
 - CI chạy lint + typecheck + test cho mỗi PR.
 

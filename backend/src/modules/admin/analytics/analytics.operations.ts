@@ -1,5 +1,5 @@
-import { EXPIRE_REASON } from '../../../jobs/cleanup.js';
-import { prisma } from '../../../lib/prisma.js';
+import { EXPIRE_REASON, GUEST_COD_EXPIRE_REASON } from '../../../jobs/cleanup.js';
+import { analyticsPrisma } from '../../../lib/prisma.js';
 import { vnDayStart } from '../admin.schema.js';
 import { vnDateKey } from '../dashboard/dashboard.service.js';
 import { ordersNeedingRefund } from '../orders/orders.service.js';
@@ -21,7 +21,7 @@ export type CancelType = (typeof CANCEL_TYPES)[number];
 export const CANCEL_LABELS: Record<CancelType, string> = {
   customer: 'Khách hủy',
   store: 'Cửa hàng hủy',
-  expired: 'Hết hạn thanh toán',
+  expired: 'Hết hạn tự động',
   unknown: 'Không rõ',
 };
 
@@ -111,12 +111,14 @@ export async function getOperations(
     await Promise.all([
       // Đơn TẠO trong kỳ đang CANCELLED, phân loại theo dòng lịch sử toStatus = CANCELLED mới nhất
       // (index [orderId, createdAt]); role là role HIỆN TẠI của actor (D-052).
-      prisma.$queryRaw<CancelRow[]>`
+      analyticsPrisma.$queryRaw<CancelRow[]>`
         SELECT (o."createdAt" >= ${curStart}) AS is_cur,
           CASE
             WHEN h."id" IS NULL THEN 'unknown'
-            WHEN h."actorId" IS NULL AND h."fromStatus" = 'PENDING_PAYMENT'
-              AND h."note" = ${EXPIRE_REASON} THEN 'expired'
+            WHEN h."actorId" IS NULL AND (
+              (h."fromStatus" = 'PENDING_PAYMENT' AND h."note" = ${EXPIRE_REASON})
+              OR (h."fromStatus" = 'PENDING' AND h."note" = ${GUEST_COD_EXPIRE_REASON})
+            ) THEN 'expired'
             WHEN u."role" IN ('STAFF', 'ADMIN') THEN 'store'
             ELSE 'customer'
           END AS type,
@@ -132,7 +134,7 @@ export async function getOperations(
         LEFT JOIN "User" u ON u."id" = h."actorId"
         WHERE o."status" = 'CANCELLED' AND o."createdAt" >= ${prevStart} AND o."createdAt" < ${end}
         GROUP BY 1, 2`,
-      prisma.$queryRaw<ReturnRow[]>`
+      analyticsPrisma.$queryRaw<ReturnRow[]>`
         SELECT
           (COUNT(*) FILTER (WHERE "deliveredAt" >= ${curStart}))::int AS del_cur,
           (COUNT(*) FILTER (WHERE "deliveredAt" >= ${curStart} AND "status" = 'RETURNED'))::int AS ret_cur,
@@ -140,7 +142,7 @@ export async function getOperations(
           (COUNT(*) FILTER (WHERE "deliveredAt" < ${curStart} AND "status" = 'RETURNED'))::int AS ret_prev
         FROM "Order"
         WHERE "deliveredAt" >= ${prevStart} AND "deliveredAt" < ${end}`,
-      prisma.$queryRaw<RefundRow[]>`
+      analyticsPrisma.$queryRaw<RefundRow[]>`
         SELECT
           (COUNT(*) FILTER (WHERE "refundedAt" >= ${curStart}))::int AS n_cur,
           COALESCE(SUM("amount") FILTER (WHERE "refundedAt" >= ${curStart}), 0)::bigint AS amt_cur,
@@ -150,7 +152,7 @@ export async function getOperations(
         WHERE "refundedAt" >= ${prevStart} AND "refundedAt" < ${end}`,
       // Giờ = giây / 3600. Xác nhận: chỉ đơn COD (đơn online tự xác nhận khi thanh toán).
       // Giao: confirmedAt -> deliveredAt. Trung vị = percentile_cont(0.5).
-      prisma.$queryRaw<FulfillRow[]>`
+      analyticsPrisma.$queryRaw<FulfillRow[]>`
         SELECT
           AVG(EXTRACT(EPOCH FROM ("confirmedAt" - "createdAt")) / 3600.0)
             FILTER (WHERE "paymentMethod" = 'COD' AND "confirmedAt" >= ${curStart} AND "confirmedAt" < ${end})
@@ -178,13 +180,13 @@ export async function getOperations(
         WHERE ("confirmedAt" >= ${prevStart} AND "confirmedAt" < ${end})
            OR ("deliveredAt" >= ${prevStart} AND "deliveredAt" < ${end})`,
       // Ảnh chụp hiện tại: đơn PENDING quá 24 giờ, cũ nhất trước.
-      prisma.$queryRaw<PendingRow[]>`
+      analyticsPrisma.$queryRaw<PendingRow[]>`
         SELECT "code", "createdAt", "grandTotal", (COUNT(*) OVER ())::int AS total
         FROM "Order"
         WHERE "status" = 'PENDING' AND "createdAt" < ${pendingBefore}
         ORDER BY "createdAt" ASC, "id" ASC
         LIMIT ${PENDING_OLDEST_LIMIT}`,
-      prisma.order.groupBy({
+      analyticsPrisma.order.groupBy({
         by: ['status'],
         where: { status: { in: ['RETURN_REQUESTED', 'FAILED_DELIVERY'] } },
         _count: { _all: true },

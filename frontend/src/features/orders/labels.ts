@@ -99,6 +99,10 @@ export function orderErrorMessage(err: unknown): string {
     }
     case "CART_EMPTY":
       return "Giỏ hàng của bạn đang trống.";
+    case "TOO_MANY_PENDING_ORDERS":
+      return "Bạn đang có quá nhiều đơn hàng chờ xác nhận. Vui lòng chờ cửa hàng xác nhận các đơn trước hoặc liên hệ cửa hàng để được hỗ trợ.";
+    case "CAPTCHA_FAILED":
+      return "Xác minh chưa thành công. Vui lòng hoàn tất lại bước xác minh rồi đặt hàng lại.";
     case "IDEMPOTENCY_CONFLICT":
       return "Yêu cầu đặt hàng bị trùng lặp. Vui lòng kiểm tra lại thông tin rồi bấm Đặt hàng lần nữa.";
     case "PAYMENT_METHOD_UNAVAILABLE":

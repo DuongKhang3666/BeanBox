@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { useCart } from "@/features/cart/CartProvider";
 import { cartErrorMessage, hasBlockingIssue } from "@/features/cart/messages";
+import type { ContactCaptcha } from "@/types/settings";
 import { CheckoutForm } from "./CheckoutForm";
 
 function CheckoutSkeleton() {
@@ -27,7 +28,7 @@ function CheckoutSkeleton() {
 }
 
 /** Cổng vào /thanh-toan: giỏ đang tải / lỗi / rỗng / có dòng chặn, còn lại hiển thị form. */
-export function CheckoutView() {
+export function CheckoutView({ captcha = null }: { captcha?: ContactCaptcha | null }) {
   const { status: authStatus, user } = useAuth();
   const { cart, status, error, reload } = useCart();
   const [placed, setPlaced] = useState(false);
@@ -85,5 +86,7 @@ export function CheckoutView() {
     );
   }
 
-  return <CheckoutForm cart={cart} user={user} onPlaced={() => setPlaced(true)} />;
+  return (
+    <CheckoutForm cart={cart} user={user} captcha={captcha} onPlaced={() => setPlaced(true)} />
+  );
 }

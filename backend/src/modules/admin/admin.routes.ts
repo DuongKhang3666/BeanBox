@@ -48,7 +48,7 @@ export function createAdminRouter({
   router.use('/settings', adminSettingsRouter);
   router.use('/users', adminUsersRouter);
   router.use('/contact-messages', adminContactRouter);
-  // Stub: các task sau điền route; mount ở gốc vì route tự khai báo đường dẫn đầy đủ.
+  // Các router dưới đây mount ở gốc vì route tự khai báo đường dẫn đầy đủ (inventory, catalog, products).
   router.use(inventoryRouter);
   router.use(adminCatalogRouter);
   router.use(adminProductsRouter);

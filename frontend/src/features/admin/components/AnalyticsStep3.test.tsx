@@ -191,7 +191,7 @@ describe("Vận hành", () => {
     expect(within(row("Khách hủy")).getByText("4")).toBeInTheDocument();
     expect(row("Khách hủy").querySelector('[style*="width: 40%"]')).not.toBeNull();
     expect(within(row("Cửa hàng hủy")).getByText("30%")).toBeInTheDocument();
-    expect(within(row("Hết hạn thanh toán")).getByText("20%")).toBeInTheDocument();
+    expect(within(row("Hết hạn tự động")).getByText("20%")).toBeInTheDocument();
     expect(within(row("Không rõ")).getByText("10%")).toBeInTheDocument();
     const foot = within(table).getByRole("row", { name: /^Tổng/ });
     expect(within(foot).getByText("10")).toBeInTheDocument();
@@ -208,7 +208,7 @@ describe("Vận hành", () => {
               byType: [
                 { type: "customer", label: "Khách hủy", current: 0, previous: 0 },
                 { type: "store", label: "Cửa hàng hủy", current: 0, previous: 0 },
-                { type: "expired", label: "Hết hạn thanh toán", current: 0, previous: 0 },
+                { type: "expired", label: "Hết hạn tự động", current: 0, previous: 0 },
                 { type: "unknown", label: "Không rõ", current: 0, previous: 0 },
               ],
             },
