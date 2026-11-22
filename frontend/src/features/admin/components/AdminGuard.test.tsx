@@ -1,6 +1,7 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { makeUser } from "@/features/account/testing";
+import { ADMIN_2FA_REQUIRED_EVENT } from "@/lib/api/client";
 import type { UserRole } from "@/types/auth";
 import { AdminGuard } from "./AdminGuard";
 
@@ -77,4 +78,65 @@ describe("AdminGuard", () => {
       }
     },
   );
+
+  it("D-070: Admin bị bắt buộc 2FA mà chưa bật -> màn hình hướng dẫn, nút tới /tai-khoan, không chuyển hướng, không lộ nội dung", () => {
+    auth = {
+      status: "authenticated",
+      user: makeUser({ role: "ADMIN", twoFactorRequired: true }),
+      logoutReason: null,
+    };
+    renderGuard();
+    expect(screen.getByRole("heading", { name: "Cần bật xác thực 2 lớp" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Bật xác thực 2 lớp" })).toHaveAttribute(
+      "href",
+      "/tai-khoan#account-2fa",
+    );
+    expect(screen.queryByText("Nội dung quản trị")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Đơn hàng" })).not.toBeInTheDocument();
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it("D-070: cờ tắt hoặc Admin đã bật 2FA -> vào bình thường", () => {
+    auth = {
+      status: "authenticated",
+      user: makeUser({ role: "ADMIN", twoFactorEnabled: true, twoFactorRequired: false }),
+      logoutReason: null,
+    };
+    renderGuard();
+    expect(screen.getByText("Nội dung quản trị")).toBeInTheDocument();
+    expect(screen.queryByText("Cần bật xác thực 2 lớp")).not.toBeInTheDocument();
+  });
+
+  it("D-070: cờ bật giữa phiên (sự kiện 403) -> chuyển sang màn hình bật 2FA, không chuyển hướng", () => {
+    auth = {
+      status: "authenticated",
+      user: makeUser({ role: "ADMIN", twoFactorEnabled: false, twoFactorRequired: false }),
+      logoutReason: null,
+    };
+    renderGuard();
+    expect(screen.getByText("Nội dung quản trị")).toBeInTheDocument();
+    act(() => {
+      window.dispatchEvent(new CustomEvent(ADMIN_2FA_REQUIRED_EVENT));
+    });
+    expect(screen.getByRole("heading", { name: "Cần bật xác thực 2 lớp" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Bật xác thực 2 lớp" })).toHaveAttribute(
+      "href",
+      "/tai-khoan#account-2fa",
+    );
+    expect(screen.queryByText("Nội dung quản trị")).not.toBeInTheDocument();
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it("D-070: sự kiện 403 nhưng user đã bật 2FA (đã làm mới) -> vẫn vào được", () => {
+    auth = {
+      status: "authenticated",
+      user: makeUser({ role: "ADMIN", twoFactorEnabled: true, twoFactorRequired: false }),
+      logoutReason: null,
+    };
+    renderGuard();
+    act(() => {
+      window.dispatchEvent(new CustomEvent(ADMIN_2FA_REQUIRED_EVENT));
+    });
+    expect(screen.getByText("Nội dung quản trị")).toBeInTheDocument();
+  });
 });

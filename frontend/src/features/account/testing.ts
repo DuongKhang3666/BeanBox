@@ -24,6 +24,7 @@ export function makeUser(over: Partial<User> = {}): User {
     role: "CUSTOMER",
     emailVerified: true,
     twoFactorEnabled: false,
+    twoFactorRequired: false,
     createdAt: "2026-11-10T08:30:00.000Z",
     ...over,
   };

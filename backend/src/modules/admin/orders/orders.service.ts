@@ -19,6 +19,7 @@ import {
   expireStripeSessionsBestEffort,
   type ExpireSessionsOptions,
 } from '../../payments/payments.expire.js';
+import { uniqueTarget } from '../../orders/orders.service.js';
 import { notifyOrderStatusChange } from '../../orders/orders.statusEmails.js';
 import { applyPaymentResult } from '../../payments/payments.apply.js';
 import { afterPaymentApplied } from '../../payments/payments.service.js';
@@ -208,28 +209,43 @@ export interface UpdateStatusArgs {
   role: 'STAFF' | 'ADMIN';
   ip: string | null;
   now?: Date;
+  /** Test tiêm bộ sinh số ngẫu nhiên cho mã vận đơn giả. */
+  randomInt?: RandomIntFn;
   /** Cấu hình để expire phiên Stripe sau khi hủy (§14.7); test tiêm HTTP giả. */
   stripe?: ExpireSessionsOptions;
 }
 
 const MAX_TRACKING_ATTEMPTS = 8;
 
-/** Mã vận đơn giả duy nhất (kiểm trùng trong DB, thử lại tối đa 8 lần). `rand` tiêm được để test. */
-export async function generateUniqueTrackingNumber(
-  tx: Prisma.TransactionClient,
-  method: 'STANDARD' | 'EXPRESS',
-  now: Date,
-  rand?: RandomIntFn,
-): Promise<string> {
-  for (let i = 0; i < MAX_TRACKING_ATTEMPTS; i++) {
-    const code = generateTrackingNumber(method, now, rand);
-    const clash = await tx.order.findFirst({
-      where: { trackingNumber: code },
-      select: { id: true },
-    });
-    if (!clash) return code;
+/** Lỗi unique của chỉ mục `Order_trackingNumber_key` (D-068); đọc tên cột/chỉ mục qua `uniqueTarget`. */
+export function isTrackingNumberViolation(e: unknown): boolean {
+  return (uniqueTarget(e) ?? '').includes('trackingNumber');
+}
+
+/**
+ * Chạy transaction đổi trạng thái; mã vận đơn trùng (P2002) -> 409 `TRACKING_NUMBER_TAKEN` nếu do staff nhập,
+ * hoặc chạy lại cả transaction (tối đa MAX_TRACKING_ATTEMPTS) nếu mã do server sinh (D-068).
+ * Không thể thử lại bên trong cùng transaction vì Postgres hủy transaction sau lỗi unique.
+ */
+async function runWithTrackingRetry<T>(
+  run: () => Promise<T>,
+  wasGenerated: () => boolean,
+): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await run();
+    } catch (e) {
+      if (!isTrackingNumberViolation(e)) throw e;
+      if (!wasGenerated()) {
+        throw new AppError(409, 'TRACKING_NUMBER_TAKEN', 'Mã vận đơn đã được dùng cho đơn khác', {
+          field: 'trackingNumber',
+        });
+      }
+      if (attempt >= MAX_TRACKING_ATTEMPTS) {
+        throw new AppError(500, 'INTERNAL_ERROR', 'Không thể tạo mã vận đơn, vui lòng thử lại');
+      }
+    }
   }
-  throw new AppError(500, 'INTERNAL_ERROR', 'Không thể tạo mã vận đơn, vui lòng thử lại');
 }
 
 const staleConflict = (currentStatus: OrderStatus) =>
@@ -246,126 +262,136 @@ export async function updateOrderStatus(args: UpdateStatusArgs): Promise<AdminOr
   const from = input.fromStatus as OrderStatus;
 
   let stripeSessionIds: string[] = [];
-  const { dto, row } = await prisma.$transaction(async (tx) => {
-    stripeSessionIds = [];
-    const locked = await tx.$queryRaw<Array<{ id: string }>>`
+  let generatedTracking = false;
+  const runTx = () =>
+    prisma.$transaction(async (tx) => {
+      stripeSessionIds = [];
+      generatedTracking = false;
+      const locked = await tx.$queryRaw<Array<{ id: string }>>`
       SELECT "id" FROM "Order" WHERE "code" = ${code} FOR UPDATE`;
-    if (locked.length === 0) throw notFound();
-    const order = await tx.order.findUniqueOrThrow({ where: { id: locked[0]!.id } });
+      if (locked.length === 0) throw notFound();
+      const order = await tx.order.findUniqueOrThrow({ where: { id: locked[0]!.id } });
 
-    // 1. Admin đang xem trạng thái cũ (kiểm TRƯỚC mọi thao tác khác, kể cả cancelOrderTx).
-    if (order.status !== from) throw staleConflict(order.status);
+      // 1. Admin đang xem trạng thái cũ (kiểm TRƯỚC mọi thao tác khác, kể cả cancelOrderTx).
+      if (order.status !== from) throw staleConflict(order.status);
 
-    // 2. Máy trạng thái.
-    if (!canTransition(from, to, role)) {
-      throw new AppError(409, 'INVALID_STATUS_TRANSITION', 'Không thể chuyển trạng thái đơn hàng', {
-        from,
-        to,
-        allowed: allowedTransitions(from, role),
-      });
-    }
-
-    // 3. Trường bắt buộc theo chuyển. Mã vận đơn/hãng là TÙY CHỌN (D-062): để trống thì server sinh giả lập.
-    if (
-      (to === 'FAILED_DELIVERY' || (from === 'PROCESSING' && to === 'CANCELLED')) &&
-      !input.note
-    ) {
-      throw fieldError('note', 'Vui lòng nhập lý do');
-    }
-
-    const before = { status: from, trackingNumber: order.trackingNumber, carrier: order.carrier };
-    let after: Record<string, unknown> = { ...before, status: to };
-
-    if (to === 'CANCELLED') {
-      // Order đã khóa; khóa/đặt FAILED cho Payment PENDING trước khi hoàn kho (D-015, §14.7).
-      stripeSessionIds = await failPendingPaymentsTx(tx, order.id);
-      await cancelOrderTx(tx, {
-        orderId: order.id,
-        from,
-        actor: role,
-        actorId,
-        reason: input.note ?? DEFAULT_CANCEL_REASON,
-        now,
-      });
-    } else {
-      const data: Prisma.OrderUpdateManyMutationInput = { status: to };
-      if (to === 'CONFIRMED') data.confirmedAt = now;
-      if (to === 'SHIPPING') {
-        // Staff nhập thì giữ nguyên; để trống: dùng lại mã đã có (lần SHIPPING trước), chưa có thì sinh giả lập
-        // cùng hãng giả lập theo phương thức giao.
-        let trackingNumber = input.trackingNumber ?? order.trackingNumber;
-        let carrier = input.carrier ?? order.carrier;
-        if (!trackingNumber) {
-          trackingNumber = await generateUniqueTrackingNumber(tx, order.shippingMethod, now);
-          carrier = input.carrier ?? SIMULATED_CARRIERS[order.shippingMethod].name;
-        }
-        data.trackingNumber = trackingNumber;
-        if (carrier) data.carrier = carrier;
-        after = { ...after, trackingNumber, carrier: carrier ?? order.carrier };
+      // 2. Máy trạng thái.
+      if (!canTransition(from, to, role)) {
+        throw new AppError(
+          409,
+          'INVALID_STATUS_TRANSITION',
+          'Không thể chuyển trạng thái đơn hàng',
+          {
+            from,
+            to,
+            allowed: allowedTransitions(from, role),
+          },
+        );
       }
-      if (to === 'DELIVERED') {
-        data.deliveredAt = now;
-        if (order.paymentMethod === 'COD' && order.paymentStatus !== 'PAID') {
-          data.paymentStatus = 'PAID';
-          data.paidAt = now;
-        }
+
+      // 3. Trường bắt buộc theo chuyển. Mã vận đơn/hãng là TÙY CHỌN (D-062): để trống thì server sinh giả lập.
+      if (
+        (to === 'FAILED_DELIVERY' || (from === 'PROCESSING' && to === 'CANCELLED')) &&
+        !input.note
+      ) {
+        throw fieldError('note', 'Vui lòng nhập lý do');
       }
-      const updated = await tx.order.updateMany({ where: { id: order.id, status: from }, data });
-      if (updated.count === 0) {
-        const cur = await tx.order.findUnique({
-          where: { id: order.id },
-          select: { status: true },
+
+      const before = { status: from, trackingNumber: order.trackingNumber, carrier: order.carrier };
+      let after: Record<string, unknown> = { ...before, status: to };
+
+      if (to === 'CANCELLED') {
+        // Order đã khóa; khóa/đặt FAILED cho Payment PENDING trước khi hoàn kho (D-015, §14.7).
+        stripeSessionIds = await failPendingPaymentsTx(tx, order.id);
+        await cancelOrderTx(tx, {
+          orderId: order.id,
+          from,
+          actor: role,
+          actorId,
+          reason: input.note ?? DEFAULT_CANCEL_REASON,
+          now,
         });
-        throw cur ? staleConflict(cur.status) : notFound();
-      }
-
-      if (to === 'DELIVERED') {
-        const items = await tx.orderItem.findMany({
-          where: { orderId: order.id },
-          select: { productId: true, quantity: true },
-        });
-        const qtyByProduct = new Map<string, number>();
-        for (const i of items) {
-          qtyByProduct.set(i.productId, (qtyByProduct.get(i.productId) ?? 0) + i.quantity);
+      } else {
+        const data: Prisma.OrderUpdateManyMutationInput = { status: to };
+        if (to === 'CONFIRMED') data.confirmedAt = now;
+        if (to === 'SHIPPING') {
+          // Staff nhập thì giữ nguyên; để trống: dùng lại mã đã có (lần SHIPPING trước), chưa có thì sinh giả lập
+          // cùng hãng giả lập theo phương thức giao.
+          let trackingNumber = input.trackingNumber ?? order.trackingNumber;
+          let carrier = input.carrier ?? order.carrier;
+          if (!trackingNumber) {
+            trackingNumber = generateTrackingNumber(order.shippingMethod, now, args.randomInt);
+            generatedTracking = true;
+            carrier = input.carrier ?? SIMULATED_CARRIERS[order.shippingMethod].name;
+          }
+          data.trackingNumber = trackingNumber;
+          if (carrier) data.carrier = carrier;
+          after = { ...after, trackingNumber, carrier: carrier ?? order.carrier };
         }
-        const productIds = [...qtyByProduct.keys()].sort();
-        if (productIds.length > 0) {
-          await tx.$queryRaw`SELECT "id" FROM "Product" WHERE "id" IN (${Prisma.join(productIds)}) ORDER BY "id" FOR NO KEY UPDATE`;
-          for (const productId of productIds) {
-            await tx.product.update({
-              where: { id: productId },
-              data: { soldCount: { increment: qtyByProduct.get(productId)! } },
-            });
+        if (to === 'DELIVERED') {
+          data.deliveredAt = now;
+          if (order.paymentMethod === 'COD' && order.paymentStatus !== 'PAID') {
+            data.paymentStatus = 'PAID';
+            data.paidAt = now;
           }
         }
+        const updated = await tx.order.updateMany({ where: { id: order.id, status: from }, data });
+        if (updated.count === 0) {
+          const cur = await tx.order.findUnique({
+            where: { id: order.id },
+            select: { status: true },
+          });
+          throw cur ? staleConflict(cur.status) : notFound();
+        }
+
+        if (to === 'DELIVERED') {
+          const items = await tx.orderItem.findMany({
+            where: { orderId: order.id },
+            select: { productId: true, quantity: true },
+          });
+          const qtyByProduct = new Map<string, number>();
+          for (const i of items) {
+            qtyByProduct.set(i.productId, (qtyByProduct.get(i.productId) ?? 0) + i.quantity);
+          }
+          const productIds = [...qtyByProduct.keys()].sort();
+          if (productIds.length > 0) {
+            await tx.$queryRaw`SELECT "id" FROM "Product" WHERE "id" IN (${Prisma.join(productIds)}) ORDER BY "id" FOR NO KEY UPDATE`;
+            for (const productId of productIds) {
+              await tx.product.update({
+                where: { id: productId },
+                data: { soldCount: { increment: qtyByProduct.get(productId)! } },
+              });
+            }
+          }
+        }
+
+        await tx.orderStatusHistory.create({
+          data: {
+            orderId: order.id,
+            fromStatus: from,
+            toStatus: to,
+            note: input.note ?? null,
+            actorId,
+          },
+        });
       }
 
-      await tx.orderStatusHistory.create({
-        data: {
-          orderId: order.id,
-          fromStatus: from,
-          toStatus: to,
-          note: input.note ?? null,
-          actorId,
-        },
+      await writeAudit(tx, {
+        actorId,
+        action: 'order.status',
+        entity: 'Order',
+        entityId: order.id,
+        diff: diffFields(before, after, ['status', 'trackingNumber', 'carrier']),
+        ip,
       });
-    }
 
-    await writeAudit(tx, {
-      actorId,
-      action: 'order.status',
-      entity: 'Order',
-      entityId: order.id,
-      diff: diffFields(before, after, ['status', 'trackingNumber', 'carrier']),
-      ip,
-    });
-
-    const full = await tx.order.findUniqueOrThrow({
-      where: { id: order.id },
-      include: adminOrderInclude,
-    });
-    return { dto: toAdminOrderDto(full, role, args.now ?? new Date()), row: full };
-  }, TX_OPTIONS);
+      const full = await tx.order.findUniqueOrThrow({
+        where: { id: order.id },
+        include: adminOrderInclude,
+      });
+      return { dto: toAdminOrderDto(full, role, args.now ?? new Date()), row: full };
+    }, TX_OPTIONS);
+  const { dto, row } = await runWithTrackingRetry(runTx, () => generatedTracking);
 
   // Sau commit (api-contract §13.9): không gửi khi lỗi; lỗi gửi chỉ log.
   notifyOrderStatusChange(row);

@@ -1,6 +1,6 @@
 import { Router, type RequestHandler } from 'express';
 import { UPLOADS_DIR } from '../../config/paths.js';
-import { requireAuth, requireStaff } from '../../middlewares/auth.js';
+import { requireAdminTwoFactor, requireAuth, requireStaff } from '../../middlewares/auth.js';
 import { createAdminAnalyticsRouter } from './analytics/analytics.routes.js';
 import { adminAuditRouter } from './audit/audit.routes.js';
 import { adminCatalogRouter } from './catalog/catalog.routes.js';
@@ -37,7 +37,7 @@ export function createAdminRouter({
 }: AdminRouterOptions): Router {
   const router = Router();
   router.use(noStore); // đặt trước auth để cả 401/403 cũng không bị cache
-  router.use(requireAuth, requireStaff);
+  router.use(requireAuth, requireStaff, requireAdminTwoFactor);
 
   router.use('/orders', adminOrdersRouter);
   router.use('/coupons', adminCouponsRouter);

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { NOINDEX_PATHS } from "@/lib/seo";
 
 // Trang/layout riêng tư phải khai báo robots noindex (kiểm tra metadata, không render).
 vi.mock("next/navigation", () => ({
@@ -42,6 +43,13 @@ const MODULES: Record<string, () => Promise<Mod>> = {
 };
 
 describe("noindex cho trang riêng tư", () => {
+  it("mọi đường dẫn trong NOINDEX_PATHS đều có module được kiểm bên dưới (D-069)", () => {
+    const covered = [...Object.keys(MODULES), "/tim-kiem"].map((k) => k.split(" ")[0]!);
+    for (const p of NOINDEX_PATHS) {
+      expect(covered.some((c) => c === p || c.startsWith(`${p}/`))).toBe(true);
+    }
+  });
+
   for (const [name, load] of Object.entries(MODULES)) {
     it(name, async () => {
       const mod = await load();

@@ -3,7 +3,7 @@ import type { Express } from 'express';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.js';
 import { prisma } from '../src/lib/prisma.js';
-import { generateUniqueTrackingNumber } from '../src/modules/admin/orders/orders.service.js';
+import { updateOrderStatus } from '../src/modules/admin/orders/orders.service.js';
 import { placeOrder, trackOrder } from '../src/modules/orders/orders.service.js';
 import request from 'supertest';
 import { API, ORIGIN } from './authHelpers.js';
@@ -258,18 +258,139 @@ describe('chuyển SHIPPING: mã vận đơn giả lập', () => {
     expect(events).toContain('REDELIVERING');
   });
 
-  it('generateUniqueTrackingNumber thử lại khi trùng mã đã có', async () => {
-    const code = await toProcessing('s6');
-    const first = await patchStatus(code, { fromStatus: 'PROCESSING', toStatus: 'SHIPPING' });
-    const taken = first.body.data.trackingNumber as string; // BBL-YYYYMMDD-XXXXXX
-    const suffix = taken.slice(-6);
-    const alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-    // Lần 1 sinh đúng mã đã có (trùng), lần 2 sinh mã khác.
-    const seq = [...suffix.split('').map((c) => alphabet.indexOf(c)), 0, 0, 0, 0, 0, 0];
+  const alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  const idx = (suffix: string) => suffix.split('').map((c) => alphabet.indexOf(c));
+  const oneMore = async (key: string) => {
+    const code = await toProcessing(key);
+    const row = await prisma.order.findUniqueOrThrow({ where: { code } });
+    return { code, row };
+  };
+
+  it('D-068: mã giả sinh trùng (P2002) -> chạy lại transaction, lần sau mã khác', async () => {
+    const a = await toProcessing('s6');
+    const first = await patchStatus(a, { fromStatus: 'PROCESSING', toStatus: 'SHIPPING' });
+    const taken = dataOf(first).trackingNumber as string; // BBL-YYYYMMDD-XXXXXX
+    const { code } = await oneMore('s6b');
+    // Lần 1 sinh đúng mã đã có (trùng), lần 2 sinh 'AAAAAA'.
+    const seq = [...idx(taken.slice(-6)), 0, 0, 0, 0, 0, 0];
     let i = 0;
-    const out = await generateUniqueTrackingNumber(prisma, 'STANDARD', new Date(), () => seq[i++]!);
-    expect(out.endsWith('-AAAAAA')).toBe(true);
-    expect(out).not.toBe(taken);
+    const dto = await updateOrderStatus({
+      rawCode: code,
+      input: {
+        fromStatus: 'PROCESSING',
+        toStatus: 'SHIPPING',
+        note: undefined,
+        trackingNumber: undefined,
+        carrier: undefined,
+      },
+      actorId: staff.id,
+      role: 'STAFF',
+      ip: null,
+      randomInt: () => seq[i++]!,
+    });
+    expect(dto.trackingNumber?.endsWith('-AAAAAA')).toBe(true);
+    expect(dto.trackingNumber).not.toBe(taken);
+    expect(i).toBe(12);
+    // Đơn cũ không bị đổi.
+    const old = await prisma.order.findUniqueOrThrow({ where: { code: a } });
+    expect(old.trackingNumber).toBe(taken);
+  });
+
+  it('D-068: sinh trùng liên tục -> hết số lần thử -> 500 INTERNAL_ERROR, đơn không đổi', async () => {
+    const a = await toProcessing('s7');
+    const first = await patchStatus(a, { fromStatus: 'PROCESSING', toStatus: 'SHIPPING' });
+    const taken = dataOf(first).trackingNumber as string;
+    const { code } = await oneMore('s7b');
+    const same = idx(taken.slice(-6));
+    let i = 0;
+    await expect(
+      updateOrderStatus({
+        rawCode: code,
+        input: {
+          fromStatus: 'PROCESSING',
+          toStatus: 'SHIPPING',
+          note: undefined,
+          trackingNumber: undefined,
+          carrier: undefined,
+        },
+        actorId: staff.id,
+        role: 'STAFF',
+        ip: null,
+        randomInt: () => same[i++ % 6]!,
+      }),
+    ).rejects.toMatchObject({ status: 500, code: 'INTERNAL_ERROR' });
+    expect(i).toBe(8 * 6);
+    const row = await prisma.order.findUniqueOrThrow({ where: { code } });
+    expect(row.status).toBe('PROCESSING');
+    expect(row.trackingNumber).toBeNull();
+  });
+
+  it('D-068: staff nhập mã đã dùng cho đơn khác -> 409 TRACKING_NUMBER_TAKEN, đơn không đổi', async () => {
+    const a = await toProcessing('s8');
+    expect(
+      (
+        await patchStatus(a, {
+          fromStatus: 'PROCESSING',
+          toStatus: 'SHIPPING',
+          trackingNumber: 'DUP-D068-1',
+        })
+      ).status,
+    ).toBe(200);
+    const { code } = await oneMore('s8b');
+    const res = await patchStatus(code, {
+      fromStatus: 'PROCESSING',
+      toStatus: 'SHIPPING',
+      trackingNumber: 'DUP-D068-1',
+    });
+    expect(res.status).toBe(409);
+    expect(errOf(res)).toMatchObject({
+      code: 'TRACKING_NUMBER_TAKEN',
+      details: { field: 'trackingNumber' },
+    });
+    const row = await prisma.order.findUniqueOrThrow({ where: { code } });
+    expect(row.status).toBe('PROCESSING');
+    expect(row.trackingNumber).toBeNull();
+    // Sau lỗi, đơn vẫn chuyển được với mã khác.
+    const ok = await patchStatus(code, {
+      fromStatus: 'PROCESSING',
+      toStatus: 'SHIPPING',
+      trackingNumber: 'DUP-D068-2',
+    });
+    expect(ok.status).toBe(200);
+  });
+
+  it('D-068: giao lại bằng chính mã của đơn đó không bị coi là trùng', async () => {
+    const a = await toProcessing('s9');
+    const one = await patchStatus(a, {
+      fromStatus: 'PROCESSING',
+      toStatus: 'SHIPPING',
+      trackingNumber: 'SELF-D068-1',
+    });
+    expect(one.status).toBe(200);
+    await patchStatus(a, { fromStatus: 'SHIPPING', toStatus: 'FAILED_DELIVERY', note: 'Vắng nhà' });
+    const again = await patchStatus(a, {
+      fromStatus: 'FAILED_DELIVERY',
+      toStatus: 'SHIPPING',
+      trackingNumber: 'SELF-D068-1',
+    });
+    expect(again.status).toBe(200);
+  });
+
+  it('D-068: mã rỗng/khoảng trắng chuẩn hóa thành "không nhập" (server sinh mã giả), không 400', async () => {
+    for (const [key, blank] of [
+      ['s10', ''],
+      ['s11', '   '],
+      ['s12', null],
+    ] as const) {
+      const code = await toProcessing(key);
+      const res = await patchStatus(code, {
+        fromStatus: 'PROCESSING',
+        toStatus: 'SHIPPING',
+        trackingNumber: blank,
+      });
+      expect(res.status, key).toBe(200);
+      expect(dataOf(res).trackingNumber).toMatch(/^BBL-\d{8}-[A-HJKMNP-Z2-9]{6}$/);
+    }
   });
 });
 

@@ -86,6 +86,7 @@ updates:
       docker-minor-patch:
         update-types: [minor, patch]
 
+  # D-067: `uses:` ghim full SHA kèm comment phiên bản (`@<sha> # v7.0.1`); Dependabot cập nhật cả SHA lẫn comment.
   - package-ecosystem: github-actions
     directory: /
     schedule:

@@ -69,6 +69,11 @@
 - [D-063 Xác thực 2 lớp (TOTP) cho Staff và Admin](#d-063-xác-thực-2-lớp-totp-cho-staff-và-admin)
 - [D-064 SEO kỹ thuật: trang chủ ISR, ảnh OG, sitemap lastmod, canonical/noindex, JSON-LD](#d-064-seo-kỹ-thuật-trang-chủ-isr-ảnh-og-sitemap-lastmod-canonicalnoindex-json-ld)
 - [D-065 Quyền dữ liệu cá nhân: khách tự xóa (ẩn danh hóa) tài khoản và xuất dữ liệu](#d-065-quyền-dữ-liệu-cá-nhân-khách-tự-xóa-ẩn-danh-hóa-tài-khoản-và-xuất-dữ-liệu)
+- [D-066 Demo chạy bằng một lệnh (docker-compose.demo.yml)](#d-066-demo-chạy-bằng-một-lệnh-docker-composedemoyml)
+- [D-067 CI supply-chain: ghim SHA Actions và Trivy chỉ báo cáo](#d-067-ci-supply-chain-ghim-sha-actions-và-trivy-chỉ-báo-cáo)
+- [D-068 Mã vận đơn duy nhất ở DB](#d-068-mã-vận-đơn-duy-nhất-ở-db)
+- [D-069 robots.txt không chặn trang noindex](#d-069-robotstxt-không-chặn-trang-noindex)
+- [D-070 Bắt buộc 2FA cho Admin bằng cờ REQUIRE_ADMIN_2FA](#d-070-bắt-buộc-2fa-cho-admin-bằng-cờ-require_admin_2fa)
 
 ---
 
@@ -1026,7 +1031,7 @@
 - **Hệ quả/rủi ro:**
   - Ngày dự kiến theo ngày lịch nên có thể rơi vào chủ nhật/ngày lễ; chấp nhận vì chỉ là ước tính (không có lịch làm việc).
   - Đơn tạo trước migration có `etaFrom`/`etaTo` null: FE không hiện "Dự kiến giao", mốc `OUT_FOR_DELIVERY` tính theo `+24 giờ`.
-  - Mã vận đơn giả không có ràng buộc unique ở DB (chỉ kiểm trùng ở ứng dụng trong transaction đang giữ khóa đơn); xác suất trùng giữa hai đơn cùng ngày ~ 1/887 triệu, chấp nhận cho demo. Chưa thêm index `trackingNumber`: kiểm trùng quét bảng `Order` tại thời điểm chuyển SHIPPING, đủ nhanh ở quy mô demo.
+  - (Cập nhật D-068: nay đã có chỉ mục unique ở DB.) Mã vận đơn giả không có ràng buộc unique ở DB (chỉ kiểm trùng ở ứng dụng trong transaction đang giữ khóa đơn); xác suất trùng giữa hai đơn cùng ngày ~ 1/887 triệu, chấp nhận cho demo. Chưa thêm index `trackingNumber`: kiểm trùng quét bảng `Order` tại thời điểm chuyển SHIPPING, đủ nhanh ở quy mô demo.
   - `shipment` tính theo đồng hồ máy chủ khi gọi API (không lưu): cùng một đơn hiện nhiều mốc hơn theo thời gian; test dùng đồng hồ tiêm.
   - Staff đã nhập mã/hãng thật vẫn thấy khối hành trình mô phỏng (cùng nhãn "giả lập").
 - **Docs bị ảnh hưởng:** `api-contract.md` 0.21 (§9, §9.1, §9.5, §9.7, §10, §11, §12.1, §14.9), `db-schema.md` 0.11, `testing.md`, `wave2-plan.md`.
@@ -1091,3 +1096,78 @@
   8. **FE:** `/tai-khoan` thêm mục "Dữ liệu cá nhân" (nút tải; nút "Xóa tài khoản" chỉ CUSTOMER mở hộp thoại nêu hậu quả, ô mật khẩu + ô gõ cụm xác nhận, nút bật khi khớp, lỗi `ACTIVE_ORDERS_EXIST` liệt kê mã đơn có liên kết). Thành công: dọn phiên cục bộ (`endSession`, không gọi lại `/auth/logout`) và về `/?tai-khoan=da-xoa` hiện thông báo đóng được. Admin danh sách/chi tiết người dùng hiện nhãn "Đã xóa" (thay "Đã khóa"), ẩn các nút khóa/đổi vai trò; thao tác ghi của Admin trên tài khoản đã xóa -> 409 `ACCOUNT_DELETED`.
 - **Hệ quả/rủi ro:** doanh thu/số khách/cơ cấu tỉnh trong analytics KHÔNG đổi (kiểm bằng test so trước/sau), top khách hiện "Người dùng đã xóa"; đơn guest cùng SĐT cũ không bị chạm (không có liên kết tài khoản); bản sao lưu DB cũ vẫn chứa dữ liệu trước khi xóa (ngoài phạm vi); `AuditLog.ip` giữ nguyên (chưa có chính sách thời hạn, thuộc phần pháp lý của R-03); GET /me/export dùng bộ nhớ khi có nhiều đơn nên giới hạn 1000.
 - **Docs bị ảnh hưởng:** `api-contract.md` 0.24 (§2, §6.6, §14.4, §14.10), `db-schema.md` 0.13, `testing.md`, `roadmap-next.md` (R-03), `wave2-plan.md`, `README.md`.
+
+
+## D-066 Demo chạy bằng một lệnh (docker-compose.demo.yml)
+
+- **Ngày:** 2026-11-23 · **Người chốt:** Tech Lead
+- **Trạng thái:** Áp dụng.
+- **Bối cảnh:** Người xem portfolio cần thấy site có dữ liệu mà không cài Node/Postgres, không đụng môi trường dev của tác giả.
+- **Quyết định:**
+  1. **Một lệnh:** `docker compose -f docker-compose.demo.yml up --build` (dừng và xóa: `down -v`). File có `name: beanbox-demo` nên container, network, volume (`beanbox-demo_pgdata`) tách hẳn dev/prod. Cổng host: web `127.0.0.1:3300`, Mailpit UI `127.0.0.1:8026`; DB và backend không publish cổng.
+  2. **Dịch vụ:** `db` (postgres:17, `shm_size: 256mb`), `mailpit`, `init` (chạy một lần, `restart: "no"`), `backend` (target `runtime`, `depends_on: init: service_completed_successfully`), `frontend` (build production, `API_INTERNAL_URL=http://backend:4000`, `NEXT_PUBLIC_SITE_URL=http://localhost:3300`). Frontend build được khi backend chưa chạy nhờ ISR chịu lỗi (D-064).
+  3. **`init`:** stage mới `demo-tools` trong `backend/Dockerfile` (từ `tools`, thêm `COPY scripts ./scripts`), chạy `scripts/demo-init.sh`: từ chối nếu `NODE_ENV=production`; `prisma migrate deploy`; seed (upsert, chạy lại được); generator `--orders 1500 --days 90 --seed 42 --skip-if-exists`. Cờ `--skip-if-exists` mới: nếu đã có đơn `demo-42-%` thì thoát 0, nên `up` lần sau không sinh thêm (đã kiểm: số đơn trước và sau `down`/`up` bằng nhau). Generator chạy với `env -u DATABASE_URL` và `DEMO_DATABASE_URL` trỏ cùng DB, vì rào `demoDbGuard` từ chối khi hai biến trùng.
+  4. **Rào generator:** chỉ chặn `localhost`/`127.0.0.1`/`::1`/`0.0.0.0` cổng 5432 (DB dev trên máy host); `db:5432` trong mạng compose vốn đã được chấp nhận, nay có test khẳng định. Không đổi logic rào.
+  5. **`scripts/` và image production:** bỏ dòng `scripts` khỏi `backend/.dockerignore` để stage `demo-tools` COPY được. Stage `runtime` chỉ COPY có chọn lọc nên KHÔNG chứa `scripts/` (đã kiểm bằng `ls /app` trên image build riêng `--target runtime`). Stage `runtime` không đổi.
+  6. **Backend demo chạy `NODE_ENV=development`, không phải production:** `PAYMENT_MOCKS_ENABLED=true` và `COOKIE_SECURE=false` (http localhost) bị `parseEnv` từ chối ở production, nên demo bắt buộc không phải production. Backend với `NODE_ENV=production` + cấu hình demo thoát ngay với lỗi env (đã kiểm); `init` thoát 1 với thông báo rõ.
+  7. **Logger:** `pino-pretty` là devDependency, image runtime không có nên `NODE_ENV=development` làm backend sập (`unable to determine transport target`). `src/lib/logger.ts` nay chỉ bật pretty khi `pino-pretty` resolve được, nếu không in JSON. Không đổi hành vi dev/production.
+  8. **Cấu hình demo** (đều trong compose, tiền tố `demo-only-`, công khai): `JWT_ACCESS_SECRET`, `INTERNAL_API_SECRET`, `PAYMENT_MOCK_SECRET`, mật khẩu DB, mật khẩu seed `Demo-only-{Admin,Staff,Customer}-2026`, `TOTP_ENCRYPTION_KEY` = base64 của `demo-only-totp-key-0123456789abc` (32 byte; production chỉ từ chối tiền tố `beanbox-dev-`). `PAYMENT_MOCKS_ENABLED`, `BANK_TRANSFER_ENABLED`, `JOBS_ENABLED` bật; không đặt `STRIPE_*`, `VNPAY_*`, `TURNSTILE_*`; `REQUIRE_ADMIN_2FA=false`; `AUTH_RATE_LIMIT_PER_MIN=20`; SMTP tới `mailpit:1025`. `.gitleaks.toml` thêm allowlist theo cặp đường dẫn + giá trị (`demo-only-...`, khóa TOTP demo).
+  9. **CI:** job `ops-lint` chạy `docker compose -f docker-compose.demo.yml config -q`.
+- **Hệ quả/rủi ro:** Stripe vẫn hiện ở checkout nhưng bị khóa với nhãn "Chưa khả dụng" (hành vi UI sẵn có, D-060), không chọn được. Backend khởi động lại vẫn chạy `migrate deploy` (idempotent; init đã xong nên không đụng nhau). Seed upsert lại sản phẩm mỗi lần `up` nên dữ liệu sản phẩm seed về giá trị seed; đơn demo của người thử giữ nguyên. Mật khẩu công khai: KHÔNG dùng stack này để phục vụ người dùng thật. Mailpit dùng tag `latest` như compose dev.
+- **Docs bị ảnh hưởng:** `testing.md`, `deployment.md`, `wave3-plan.md`, `README.md`, `.gitleaks.toml`, `.github/workflows/ci.yml`.
+
+## D-067 CI supply-chain: ghim SHA Actions và Trivy chỉ báo cáo
+
+- **Ngày:** 2026-11-23 · **Người chốt:** Tech Lead (Đợt 3, mục 3B)
+- **Trạng thái:** Áp dụng. Hoàn tất phần "chưa ghim SHA, Trivy chưa làm" của D-055 (mục 5) và D-033.
+- **Bối cảnh:** `uses: actions/...@v7` là tag di động: tác giả action (hoặc kẻ chiếm tài khoản của họ) đổi nội dung tag là mã mới chạy trong CI của repo. Image Docker cũng có thể chứa thư viện đã biết lỗ hổng mà `npm audit` (chỉ nhìn lockfile) không thấy.
+- **Quyết định:**
+  1. **Ghim MỌI `uses:` vào full commit SHA kèm comment phiên bản**, đúng tag đang dùng (không nâng major): `actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1`, `actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0`, `actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2`; action mới `actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0` (cache DB Trivy). SHA lấy bằng `git ls-remote https://github.com/<owner>/<repo> refs/tags/<tag>` (ba tag `v7` đều là tag nhẹ nên SHA đã là commit; phiên bản chính xác lấy từ tag `vX.Y.Z` cùng SHA). Dependabot `github-actions` (đã có từ D-055, hằng tuần) cập nhật được cả SHA lẫn comment nên không đổi cấu hình, chỉ thêm ghi chú.
+  2. **Trivy chỉ báo cáo** trong job `docker`, sau khi build image (đã nằm trong docker daemon của runner): image `aquasec/trivy:0.76.2@sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb` (ghim phiên bản + digest, mount `docker.sock`), `image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 0 --no-progress --scanners vuln --format json`, một đoạn `node` dựng bảng Markdown (gói, bản đang dùng, bản vá, CVE, mức; tối đa 40 dòng mỗi image) ghi vào `$GITHUB_STEP_SUMMARY`. Bước có `continue-on-error: true` và `timeout-minutes: 8` nên lỗi mạng/DB Trivy không làm đỏ CI. DB Trivy cache bằng `actions/cache` (khóa theo `run_id`, `restore-keys` lấy bản gần nhất) để không tải lại mỗi lần. Chỉ quét `beanbox-backend:ci` và `beanbox-frontend:ci` (image Caddy/backup dựa trên image gốc bên thứ ba, nâng bằng Dependabot docker).
+  3. **Đo cục bộ** (build tạm backend `--target runtime` và frontend, Trivy 0.76.2, ngày 2026-11-23): backend HIGH 11 / CRITICAL 0; frontend HIGH 10 / CRITICAL 0; toàn bộ là gói npm trong `package.json` của image (`brace-expansion`, `ip-address`, `pacote`, `picomatch`, `sigstore`; backend thêm `effect`), đều có bản vá. Chỉ ghi nhận, chưa xử lý.
+  4. **actionlint** (`rhysd/actionlint` qua Docker) = 0 lỗi sau thay đổi.
+- **Hệ quả/rủi ro:** Tag di động không còn tự cập nhật: phụ thuộc PR Dependabot (có thể bị bỏ quên khi không ai xem repo). Tham chiếu image Trivy trong workflow KHÔNG được Dependabot cập nhật (nó chỉ quét Dockerfile), nâng tay. Trivy báo cáo không chặn nên cần xem Job Summary thủ công, giống `npm audit`. Chưa chạy trên runner GitHub thật (chưa push): lệnh Trivy đã thử cục bộ, đoạn `node` dựng bảng đã chạy thử với JSON thật, phần cache/`$GITHUB_STEP_SUMMARY` chỉ kiểm bằng actionlint.
+- **Docs bị ảnh hưởng:** `testing.md`, `roadmap-next.md` (R-07), `.github/workflows/ci.yml`, `.github/dependabot.yml`.
+
+## D-068 Mã vận đơn duy nhất ở DB
+
+- **Ngày:** 2026-11-23 · **Người chốt:** Tech Lead (Đợt 3, mục 3B)
+- **Trạng thái:** Áp dụng. Thay phần "không có ràng buộc unique, kiểm trùng ở ứng dụng" của D-062 (mục 3 và Hệ quả).
+- **Bối cảnh:** D-062 kiểm trùng mã vận đơn bằng truy vấn trong transaction giữ khóa MỘT đơn; hai đơn khác nhau chuyển SHIPPING cùng lúc vẫn có thể ghi cùng một mã (kể cả mã staff nhập tay, vốn không được kiểm trùng).
+- **Quyết định:**
+  1. **Migration `d068_tracking_number_unique`:** (a) `UPDATE "Order" SET "trackingNumber" = NULL WHERE btrim("trackingNumber") = ''`; (b) khối `DO` ... `RAISE EXCEPTION` nếu dữ liệu cũ có mã trùng, thông báo nêu vài mã trùng, câu SQL tìm mọi bản trùng và việc cần làm (sửa tay rồi chạy lại `prisma migrate deploy`), KHÔNG tự xóa/sửa dữ liệu; (c) `CREATE UNIQUE INDEX "Order_trackingNumber_key"`. Postgres coi các NULL là khác nhau nên nhiều đơn chưa có mã vẫn hợp lệ. Schema Prisma `trackingNumber String? @unique` (tên chỉ mục khớp quy ước Prisma nên `migrate diff` = không khác biệt, khác migration `constraints_and_partial_indexes` cũ vốn là CHECK/index một phần mà Prisma không biểu diễn được).
+  2. **Ứng dụng:** lỗi P2002 (đọc bằng `uniqueTarget` có sẵn của `orders.service`) khi staff nhập mã trùng -> 409 `TRACKING_NUMBER_TAKEN` (thông báo tiếng Việt, `details.field = "trackingNumber"`), đơn giữ nguyên trạng thái. Mã giả lập tự sinh: bỏ vòng truy vấn kiểm trùng; chạy lại cả transaction (tối đa 8 lần, như trước) khi gặp P2002, hết lượt -> 500 `INTERNAL_ERROR`. Phải chạy lại cả transaction vì Postgres hủy transaction sau lỗi unique (không thử lại được bên trong). Hàm `generateUniqueTrackingNumber` bị xóa. Giao lại bằng chính mã của đơn đó không bị coi là trùng (cùng dòng).
+  3. **Chuẩn hóa input:** `trackingNumber` được trim; chuỗi rỗng hoặc `null` = không nhập (server dùng mã đã có hoặc sinh mã giả lập). **Đổi hành vi so với 0.24:** `""` trước đây trả 400 "không được để trống".
+  4. **Test:** trùng -> 409 và đơn không đổi; rỗng/khoảng trắng/null -> sinh mã giả; thử lại khi sinh trùng (tiêm bộ số ngẫu nhiên); hết lượt -> 500 và đơn không đổi; giao lại cùng mã; migration trên DB test (trong transaction rồi rollback): chuẩn hóa rỗng -> NULL, dữ liệu trùng -> thông báo lỗi có hướng dẫn và không xóa dữ liệu, không trùng thì tạo được chỉ mục.
+- **Hệ quả/rủi ro:** Mã staff nhập như `GHN-123` phải thật sự duy nhất: hai đơn khác nhau dùng chung mã (ví dụ gộp kiện) sẽ bị chặn; chấp nhận vì mục đích của mã là tra cứu một đơn. Triển khai lên DB có dữ liệu trùng sẽ dừng ở migration cho tới khi sửa tay (chủ ý). Khi va chạm mã sinh tự động, transaction chạy lại nên truy vấn khóa đơn được gửi lại (hiếm, chi phí nhỏ).
+- **Docs bị ảnh hưởng:** `api-contract.md` 0.25 (§2, §12.1), `db-schema.md` 0.14, `testing.md`, `decisions.md` (D-062).
+
+## D-069 robots.txt không chặn trang noindex
+
+- **Ngày:** 2026-11-23 · **Người chốt:** Tech Lead (Đợt 3, mục 3B)
+- **Trạng thái:** Áp dụng. Bổ sung D-064 (noindex/canonical) và D-047 (so sánh sản phẩm là noindex).
+- **Bối cảnh:** `robots.txt` đang `Disallow` cả các trang đã có `<meta name="robots" content="noindex">`. Crawler không được tải trang bị disallow nên không thấy meta noindex; URL vẫn có thể được lập chỉ mục (chỉ URL, không nội dung) nếu nơi khác liên kết tới. noindex chỉ có tác dụng khi crawler đọc được trang.
+- **Quyết định:**
+  1. `lib/seo.ts` tách hai danh sách: `ROBOTS_DISALLOW_PATHS = ["/admin", "/api/"]` (không có giá trị cho crawler hoặc là API) và `NOINDEX_PATHS` (giỏ, so sánh, thanh toán, cổng thanh toán giả, đặt hàng thành công, tra cứu đơn, tìm kiếm, tài khoản, đăng nhập/đăng ký/quên và đặt lại mật khẩu, xác thực email). `PRIVATE_PATHS` còn là hợp của hai danh sách, chỉ dùng cho kiểm sitemap (không được xuất hiện trong sitemap). `robots.txt` chỉ dùng `ROBOTS_DISALLOW_PATHS`.
+  2. Mọi trang trong `NOINDEX_PATHS` đã có `robots: { index: false }` (tìm kiếm: `noindex, follow`); đã rà lại, `noindex.test.ts` thêm kiểm "mỗi đường dẫn trong `NOINDEX_PATHS` có module được kiểm". `/tim-kiem` được thêm vào danh sách (trước đó chưa nằm trong `PRIVATE_PATHS` dù đã noindex).
+  3. `/admin` vẫn nằm trong disallow và layout vẫn có noindex: khu quản trị yêu cầu đăng nhập, không có liên kết công khai; chặn crawl là đúng ý và không cần đọc noindex.
+  4. Test `robots.test.ts`: chỉ chặn `/admin` và `/api/`; không đường dẫn noindex nào bị chặn bởi tiền tố disallow; không chặn trang công khai; có sitemap.
+- **Hệ quả/rủi ro:** Crawler sẽ tải các trang noindex (giỏ, đăng nhập...) nên tốn chút băng thông; chấp nhận. Chưa kiểm bằng Google Search Console (chưa có domain công khai).
+- **Docs bị ảnh hưởng:** `testing.md`, `roadmap-next.md` (R-11).
+
+## D-070 Bắt buộc 2FA cho Admin bằng cờ REQUIRE_ADMIN_2FA
+
+- **Ngày:** 2026-11-23 · **Người chốt:** Chủ dự án (cờ, mặc định tắt) và Tech Lead (thiết kế)
+- **Trạng thái:** Áp dụng. Hoàn tất phần "bắt buộc thiết lập, chưa làm" của D-063 (mục 3).
+- **Bối cảnh:** 2FA của D-063 là tùy chọn để mọi luồng và E2E hiện có không đổi. Khi chạy thật nên ép Admin phải bật; chủ dự án chọn làm bằng cờ cấu hình, mặc định tắt.
+- **Quyết định:**
+  1. **Env `REQUIRE_ADMIN_2FA`** (`true`/`false`, mặc định `false` ở MỌI môi trường kể cả production; giá trị lạ bị `parseEnv` từ chối). Khuyến nghị `true` khi chạy thật (ghi ở `.env.example`, `.env.production.example`, `deployment.md`, `architecture.md` §8); truyền qua `docker-compose.yml` và `docker-compose.prod.yml`.
+  2. **Chặn ở router admin:** middleware `requireAdminTwoFactor` chạy sau `requireAuth` + `requireStaff` trong `createAdminRouter`: cờ bật và `role = ADMIN` và chưa bật 2FA -> 403 **`ADMIN_TWO_FACTOR_REQUIRED`** ("Cần bật xác thực 2 lớp cho tài khoản Admin trước khi dùng khu quản trị"), `Cache-Control: no-store` như mọi route admin. `authenticate()` đọc thêm `twoFactorEnabledAt` trong CÙNG truy vấn user vốn đã có mỗi request (không thêm truy vấn), đặt `req.auth.twoFactorEnabled`. Cờ và trạng thái được đọc mỗi request nên có hiệu lực ngay (bật 2FA xong gọi lại được ngay, không cần đăng nhập lại).
+  3. **Mã lỗi:** `TWO_FACTOR_SETUP_REQUIRED` của D-063 là 409 "chưa gọi setup/secret chờ hết hạn" (ý nghĩa khác) nên KHÔNG dùng lại; mã mới `ADMIN_TWO_FACTOR_REQUIRED` (403).
+  4. **Không bị chặn:** `/me`, `/me/2fa/*`, `/auth/*` (Admin cần chúng để bật 2FA); STAFF; CUSTOMER (vẫn 403 `FORBIDDEN` do `requireStaff`); đăng nhập không đổi.
+  5. **Cờ cho FE:** `User` thêm `twoFactorRequired: boolean` (= cờ bật và ADMIN và chưa bật 2FA) ở mọi response cấp phiên và `GET/PATCH /me`, tính trong `toUserDto`. Dùng trường trên `User` thay vì endpoint settings mới để không thêm route.
+  6. **FE:** `AdminGuard` khi `user.twoFactorRequired` hiện màn hình "Cần bật xác thực 2 lớp" (`role="alert"`) với nút tới `/tai-khoan#account-2fa`, KHÔNG chuyển hướng tự động (không vòng lặp) và không render menu/nội dung admin. Sau khi bật 2FA, `TwoFactorSection` gọi `reloadUser` nên cờ về `false` và Admin vào được.
+  7. **Test:** `adminTwoFactorRequired.integration.test.ts` (cờ tắt: hành vi cũ + `twoFactorRequired=false`; cờ bật: ADMIN chưa bật 403 trên 5 route admin, ADMIN đã bật 200, STAFF 200, 401 khi không token, `/me` và `/me/2fa/setup` vẫn 200, đăng nhập vẫn 200, tắt lại cờ vào được ngay), `envRequireAdmin2fa.test.ts`, Vitest `AdminGuard`. E2E giữ cờ tắt.
+  8. **Bổ sung (kiểm tổng Đợt 3):** cờ có thể bật khi phiên đang mở (`user.twoFactorRequired` trong bộ nhớ còn `false`). `ApiClient` phát sự kiện `bb:admin:2fa-required` khi nhận 403 `ADMIN_TWO_FACTOR_REQUIRED`; `AdminGuard` nghe sự kiện và hiện cùng màn hình hướng dẫn nếu `user.twoFactorEnabled` là `false` (không chuyển hướng, không vòng lặp; rời khỏi `/admin` thì trạng thái tự xóa). `adminErrorMessage` cũng có câu riêng cho mã này.
+- **Hệ quả/rủi ro:** Bật cờ khi Admin duy nhất chưa bật 2FA thì tự khóa khỏi khu quản trị: quy trình ghi ở `deployment.md` (bật 2FA trước, đặt cờ sau; hoặc đặt cờ về `false` và khởi động lại). Cờ chỉ là cấu hình, không ghi audit. Admin đặt lại 2FA của Admin khác làm người đó bị chặn lại ngay (đúng ý). FE dựa vào `user` trong bộ nhớ: nếu cờ server đổi khi phiên đang mở, người dùng thấy lỗi 403 chung ở trang admin cho tới khi tải lại (chưa có xử lý riêng cho mã này trong từng trang admin).
+- **Docs bị ảnh hưởng:** `api-contract.md` 0.25 (§2, §5, §12.0), `architecture.md` §8, `deployment.md`, `testing.md`, `roadmap-next.md` (R-22), `.env.example`, `.env.production.example`, `docker-compose*.yml`.

@@ -2,7 +2,7 @@
  * Sinh đơn hàng DEMO/tải để đo hiệu năng phân tích kinh doanh và chụp ảnh README.
  *
  * Chạy (trong backend/), CHỈ trên DB tạm đã `prisma migrate deploy` + seed:
- *   DEMO_DATABASE_URL=postgresql://... npx tsx scripts/generate-demo-orders.ts --orders 100000 --days 365 [--seed 42] [--reset]
+ *   DEMO_DATABASE_URL=postgresql://... npx tsx scripts/generate-demo-orders.ts --orders 100000 --days 365 [--seed 42] [--reset] [--skip-if-exists]
  *
  * Dữ liệu sinh bằng SQL tập hợp theo lô (generate_series / INSERT ... SELECT), không vòng lặp từng đơn.
  * KHÔNG cập nhật tồn kho, InventoryMovement, soldCount, CouponRedemption, usedCount: đây là dữ liệu
@@ -500,8 +500,13 @@ async function main() {
       const exist = await prisma.$queryRawUnsafe<Array<{ n: number }>>(
         `SELECT count(*)::int AS n FROM "Order" WHERE "idempotencyKey" LIKE ${lit(`demo-${args.seed}-%`)}`,
       );
-      if ((exist[0]?.n ?? 0) > 0)
+      if ((exist[0]?.n ?? 0) > 0) {
+        if (args.skipIfExists) {
+          log(`đã có ${exist[0]?.n} đơn demo seed ${args.seed}, bỏ qua (--skip-if-exists)`);
+          return;
+        }
         throw new Error(`Đã có dữ liệu demo seed ${args.seed}. Dùng --reset hoặc --seed khác.`);
+      }
     }
 
     let done = 0;

@@ -1,6 +1,7 @@
 import type { Role } from '../generated/prisma/client.js';
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import { asyncHandler } from '../lib/asyncHandler.js';
+import { env } from '../config/env.js';
 import { AppError } from '../lib/errors.js';
 import { prisma } from '../lib/prisma.js';
 import { verifyAccessToken } from '../lib/tokens.js';
@@ -28,6 +29,7 @@ async function authenticate(req: Request): Promise<void> {
       role: true,
       status: true,
       deletedAt: true,
+      twoFactorEnabledAt: true,
       refreshTokens: {
         where: { familyId: claims.sid, revokedAt: null, expiresAt: { gt: new Date() } },
         select: { id: true },
@@ -45,7 +47,12 @@ async function authenticate(req: Request): Promise<void> {
   if (user.refreshTokens.length === 0) {
     throw new AppError(401, 'UNAUTHORIZED', 'Phiên đăng nhập đã hết hạn');
   }
-  req.auth = { userId: user.id, role: user.role, sessionId: claims.sid };
+  req.auth = {
+    userId: user.id,
+    role: user.role,
+    sessionId: claims.sid,
+    twoFactorEnabled: user.twoFactorEnabledAt !== null,
+  };
 }
 
 export const requireAuth: RequestHandler = asyncHandler(async (req, _res, next) => {
@@ -78,3 +85,21 @@ export function requireRole(...roles: Role[]): RequestHandler {
 
 export const requireStaff = requireRole('STAFF', 'ADMIN');
 export const requireAdmin = requireRole('ADMIN');
+
+/**
+ * D-070: khi REQUIRE_ADMIN_2FA=true, ADMIN chưa bật 2FA bị chặn ở mọi route `/admin/*`
+ * (403 ADMIN_TWO_FACTOR_REQUIRED). STAFF không bị áp. Đọc env mỗi request để test bật/tắt được.
+ */
+export const requireAdminTwoFactor: RequestHandler = (req, _res, next) => {
+  if (env.REQUIRE_ADMIN_2FA && req.auth?.role === 'ADMIN' && !req.auth.twoFactorEnabled) {
+    next(
+      new AppError(
+        403,
+        'ADMIN_TWO_FACTOR_REQUIRED',
+        'Cần bật xác thực 2 lớp cho tài khoản Admin trước khi dùng khu quản trị',
+      ),
+    );
+    return;
+  }
+  next();
+};

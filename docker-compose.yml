@@ -53,6 +53,7 @@ services:
       INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:-}
       # D-063: bắt buộc khi NODE_ENV=production (32 byte: openssl rand -base64 32); khóa mẫu dev bị từ chối.
       TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:-}
+      REQUIRE_ADMIN_2FA: ${REQUIRE_ADMIN_2FA:-false}
       WEB_APP_URL: ${WEB_APP_URL:-http://localhost:3000}
       SMTP_HOST: mailpit
       SMTP_PORT: '1025'

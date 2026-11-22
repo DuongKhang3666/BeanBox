@@ -1,5 +1,5 @@
 import type { MetadataRoute } from "next";
-import { PRIVATE_PATHS } from "@/lib/seo";
+import { ROBOTS_DISALLOW_PATHS } from "@/lib/seo";
 import { SITE_URL } from "@/lib/site";
 
 export default function robots(): MetadataRoute.Robots {
@@ -8,7 +8,7 @@ export default function robots(): MetadataRoute.Robots {
       {
         userAgent: "*",
         allow: "/",
-        disallow: [...PRIVATE_PATHS],
+        disallow: [...ROBOTS_DISALLOW_PATHS],
       },
     ],
     sitemap: `${SITE_URL}/sitemap.xml`,

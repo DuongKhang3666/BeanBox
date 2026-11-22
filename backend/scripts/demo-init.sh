@@ -1,0 +1,22 @@
+#!/bin/sh
+# Khởi tạo demo một lệnh (D-066): migrate -> seed (idempotent) -> dữ liệu demo (chỉ khi chưa có). Thoát 0 khi xong.
+set -eu
+
+if [ "${NODE_ENV:-}" = "production" ]; then
+  echo "[demo-init] Từ chối chạy khi NODE_ENV=production: stack demo chỉ dành cho máy local." >&2
+  exit 1
+fi
+: "${DATABASE_URL:?[demo-init] Thiếu DATABASE_URL}"
+
+echo "[demo-init] 1/3 prisma migrate deploy"
+node_modules/.bin/prisma migrate deploy
+
+echo "[demo-init] 2/3 seed (tài khoản, danh mục, sản phẩm; chạy lại an toàn)"
+node_modules/.bin/tsx prisma/seed.ts
+
+echo "[demo-init] 3/3 dữ liệu đơn hàng demo (bỏ qua nếu đã có)"
+# Generator chỉ đọc DEMO_DATABASE_URL và từ chối nếu trùng DATABASE_URL, nên gỡ DATABASE_URL khỏi môi trường của nó.
+env -u DATABASE_URL DEMO_DATABASE_URL="$DATABASE_URL" \
+  node_modules/.bin/tsx scripts/generate-demo-orders.ts --orders 1500 --days 90 --seed 42 --skip-if-exists
+
+echo "[demo-init] xong"

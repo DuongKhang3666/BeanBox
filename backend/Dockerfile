@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# Stage cuối (runtime) là mặc định. Stage `tools` dùng cho service seed (D-031).
+# Stage cuối (runtime) là mặc định. Stage `tools` dùng cho service seed (D-031); `demo-tools` cho demo một lệnh (D-066).
 FROM node:22-bookworm-slim AS base
 RUN apt-get update -y && apt-get install -y --no-install-recommends openssl ca-certificates \
   && rm -rf /var/lib/apt/lists/*
@@ -30,6 +30,12 @@ ENV CHECKPOINT_DISABLE=1
 COPY data ./data
 USER node
 CMD ["node_modules/.bin/tsx", "prisma/seed.ts"]
+
+# Khởi tạo demo một lệnh (D-066): tools + scripts/ (generator, demo-init.sh). Chỉ docker-compose.demo.yml dùng.
+# scripts/ chỉ được COPY ở stage này, nên image runtime production không chứa nó (kiểm bằng docker run ... ls).
+FROM tools AS demo-tools
+COPY scripts ./scripts
+CMD ["sh", "scripts/demo-init.sh"]
 
 FROM base AS runtime
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=4000 CHECKPOINT_DISABLE=1

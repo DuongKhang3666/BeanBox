@@ -15,6 +15,15 @@ describe('resolveDemoDatabaseUrl (rào an toàn script sinh dữ liệu demo)', 
     expect(resolveDemoDatabaseUrl({ DEMO_DATABASE_URL: url(55442) }, {})).toBe(url(55442));
   });
 
+  it('chấp nhận host nội bộ compose (db:5432) và vẫn chặn khi trùng DATABASE_URL (D-066)', () => {
+    const inCompose = url(5432, 'beanbox', 'db');
+    expect(resolveDemoDatabaseUrl({ DEMO_DATABASE_URL: inCompose }, {})).toBe(inCompose);
+    // init demo phải gỡ DATABASE_URL khỏi môi trường của generator; nếu để nguyên thì rào từ chối
+    expect(() =>
+      resolveDemoDatabaseUrl({ DEMO_DATABASE_URL: inCompose, DATABASE_URL: inCompose }, {}),
+    ).toThrow(/trùng/);
+  });
+
   it('chấp nhận host từ xa cổng 5432 (không phải DB dev cục bộ)', () => {
     const remote = url(5432, 'demo', 'db.internal.example');
     expect(resolveDemoDatabaseUrl({ DEMO_DATABASE_URL: remote }, {})).toBe(remote);
@@ -97,6 +106,11 @@ describe('parseDemoArgs', () => {
     expect(
       parseDemoArgs(['--orders', '100000', '--days', '365', '--seed', '7', '--reset']),
     ).toMatchObject({ orders: 100000, days: 365, seed: 7, reset: true });
+  });
+
+  it('--skip-if-exists mặc định tắt, bật khi truyền', () => {
+    expect(parseDemoArgs([]).skipIfExists).toBe(false);
+    expect(parseDemoArgs(['--skip-if-exists']).skipIfExists).toBe(true);
   });
 
   it('tham số sai -> lỗi tiếng Việt', () => {

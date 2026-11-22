@@ -69,12 +69,15 @@ afterAll(async () => {
   await prisma.$disconnect();
 });
 
+/** Mã vận đơn riêng cho từng đơn (D-068: unique toàn bảng). */
+const trkOf = (code: string) => `TRK-${code.replace(/[^A-Za-z0-9]/g, '')}`;
+
 /** Đưa đơn tới trạng thái mong muốn qua API (hợp lệ từng bước). */
 async function advance(code: string, path: string[]) {
   let cur = 'PENDING';
   for (const to of path) {
     const body: Record<string, unknown> = { fromStatus: cur, toStatus: to };
-    if (to === 'SHIPPING') body.trackingNumber = 'TRK-1';
+    if (to === 'SHIPPING') body.trackingNumber = trkOf(code);
     if (to === 'FAILED_DELIVERY') body.note = 'Khách không nghe máy';
     const res = await patchStatus(code, body);
     expect(res.status, JSON.stringify(res.body)).toBe(200);
@@ -525,7 +528,7 @@ describe('PATCH /admin/orders/:code/status', () => {
     // Không gửi tracking: giữ nguyên
     const keep = await patchStatus(code, { fromStatus: 'FAILED_DELIVERY', toStatus: 'SHIPPING' });
     expect(keep.status).toBe(200);
-    expect(dataOf(keep)).toMatchObject({ trackingNumber: 'TRK-1', status: 'SHIPPING' });
+    expect(dataOf(keep)).toMatchObject({ trackingNumber: trkOf(code), status: 'SHIPPING' });
 
     await patchStatus(code, { fromStatus: 'SHIPPING', toStatus: 'FAILED_DELIVERY', note: 'Lần 2' });
     const over = await patchStatus(code, {
@@ -543,7 +546,7 @@ describe('PATCH /admin/orders/:code/status', () => {
     });
     expect(log.diff).toEqual({
       status: ['FAILED_DELIVERY', 'SHIPPING'],
-      trackingNumber: ['TRK-1', 'NEW-9'],
+      trackingNumber: [trkOf(code), 'NEW-9'],
       carrier: [null, 'VTP'],
     });
   });

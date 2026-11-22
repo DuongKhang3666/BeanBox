@@ -491,7 +491,7 @@ model Order {
   couponId           String?
   couponCode         String?
   note               String?
-  trackingNumber     String?
+  trackingNumber     String?        @unique // D-068: NULL được phép nhiều; mã giả lập/nhập tay không trùng
   carrier            String?
   cancelReason       String?
   etaFrom            DateTime?      @db.Date // D-062: ngày giao dự kiến sớm nhất (ngày lịch VN), snapshot lúc đặt

@@ -1,6 +1,7 @@
 # BeanBox – API Contract
 
-> Phiên bản 0.24 · 2026-11-22 · **Nguồn sự thật cho FE và BE.** Đổi contract phải sửa file này trước và nêu trong báo cáo.
+> Phiên bản 0.25 · 2026-11-23 · **Nguồn sự thật cho FE và BE.** Đổi contract phải sửa file này trước và nêu trong báo cáo.
+> Thay đổi 0.25 (D-068, D-070; Đợt 3 mục 3B): (1) §5 `User` (mọi response cấp phiên, `GET/PATCH /me`) thêm `twoFactorRequired: boolean` = `REQUIRE_ADMIN_2FA` bật VÀ role `ADMIN` VÀ chưa bật 2FA (FE dùng để hiện màn hình "Cần bật xác thực 2 lớp"). (2) §2 mã lỗi mới `403 ADMIN_TWO_FACTOR_REQUIRED`: khi `REQUIRE_ADMIN_2FA=true`, ADMIN chưa bật 2FA gọi BẤT KỲ route `/admin/*` nhận 403 mã này (kiểm sau xác thực và phân quyền Staff+, nên không có token vẫn 401, CUSTOMER vẫn 403 `FORBIDDEN`); `/me`, `/me/2fa/*`, `/auth/*` không bị ảnh hưởng; STAFF không bị áp; đăng nhập không đổi. Mã `TWO_FACTOR_SETUP_REQUIRED` của D-063 (409, "chưa gọi setup") KHÁC nghĩa nên không dùng lại. (3) §2 mã lỗi mới `409 TRACKING_NUMBER_TAKEN`; §12.1 `trackingNumber` được chuẩn hóa (trim; chuỗi rỗng hoặc `null` = không nhập, KHÔNG còn 400 như 0.24) và mã vận đơn là duy nhất toàn bảng đơn. (4) Migration `d068_tracking_number_unique`. Env mới `REQUIRE_ADMIN_2FA` (mặc định false). Không thêm route.
 > Thay đổi 0.24 (D-065; Đợt 2 mục 5, quyền dữ liệu cá nhân): (1) §6.6 mới: `DELETE /me` (CUSTOMER tự xóa/ẩn danh hóa tài khoản, body `{ password, confirmText }`, 204) và `GET /me/export` (mọi role, tải file JSON, limiter riêng 5 lần/giờ/người dùng). (2) §2 mã lỗi mới `409 ACTIVE_ORDERS_EXIST` và `409 ACCOUNT_DELETED`; dùng lại `INVALID_PASSWORD`, `ACCOUNT_LOCKED`, `FORBIDDEN`, `VALIDATION_ERROR`, `RATE_LIMITED`. (3) §14.4 action audit mới `user.self_delete`, `user.export`. (4) §14.10 item người dùng admin thêm `deleted: boolean`; PATCH status/role và reset 2FA trên tài khoản đã xóa -> 409 `ACCOUNT_DELETED`. (5) Tên tác giả đánh giá của tài khoản đã xóa là "Người dùng đã xóa" (§14.1). (6) Migration `d065_user_deleted_at` thêm `User.deletedAt` (nullable). Không đổi route hiện có.
 > Thay đổi 0.23 (D-064; Đợt 2 mục 4, SEO): `ProductListItem` (§4, trả bởi `GET /products` §4.3 và mọi endpoint dùng chung kiểu này: bought-together, wishlist, ...) thêm `updatedAt` (ISO 8601 UTC, = `Product.updatedAt`). Thay đổi CỘNG THÊM, không đổi trường hiện có, không cần migration. FE dùng làm `lastmod` của sitemap. Lưu ý: `Product.updatedAt` đổi khi sửa sản phẩm, không nhất thiết khi đổi biến thể/tồn kho.
 > Thay đổi 0.22 (D-063; Đợt 2 mục 3, xác thực 2 lớp TOTP cho Staff/Admin): (1) `User` (§5) thêm `twoFactorEnabled: boolean` (mọi response cấp phiên và `GET/PATCH /me`). (2) §5.2 `POST /auth/login`: khi mật khẩu đúng và user đã bật 2FA, 200 trả **hình dạng khác** `{ data: { twoFactorRequired: true, challengeToken, expiresAt } }`, KHÔNG có cookie `bb_rt`, access token hay `user`; user chưa bật 2FA không đổi. (3) §5.9 mới `POST /auth/login/2fa` `{ challengeToken, code | backupCode }` (đúng một trong hai) -> phiên như login thường; limiter nhóm auth. (4) §6.5 mới `/me/2fa/setup|enable|disable|backup-codes` (Staff+; CUSTOMER 403). (5) §14.10 mới `POST /admin/users/:id/2fa/reset` (Admin); item/chi tiết người dùng admin thêm `twoFactorEnabled`. (6) §2 mã lỗi mới: `TWO_FACTOR_INVALID` (401 ở đăng nhập, 400 ở `/me/2fa/*`), `TWO_FACTOR_CHALLENGE_INVALID` (401), `TWO_FACTOR_SETUP_REQUIRED` (409), `TWO_FACTOR_NOT_ENABLED` (409), `TWO_FACTOR_UNAVAILABLE` (503); dùng lại `INVALID_PASSWORD`, `CONFLICT`, `CANNOT_MODIFY_SELF`, `ACCOUNT_LOCKED`, `FORBIDDEN`. (7) §12.0/§14.4 action audit mới `user.2fa.enable|disable|backup_regenerate|backup_used|reset`. (8) Migration `d063_two_factor`: cột `User.twoFactor*`, bảng `TwoFactorBackupCode`, `TwoFactorChallenge`. Env mới `TOTP_ENCRYPTION_KEY` (bắt buộc ở production, `architecture.md` §8). Không đổi route hiện có ngoài hình dạng response bước 1 của `/auth/login` cho user đã bật 2FA.
@@ -50,6 +51,7 @@
 10. [Quy tắc tính giá](#10-quy-tắc-tính-giá)
 11. [Máy trạng thái đơn hàng](#11-máy-trạng-thái-đơn-hàng)
 12. [Admin (M4)](#12-admin-m4)
+    - 12.0 Quy ước chung (kể cả bắt buộc 2FA cho Admin) · 12.1 Đơn hàng (mã vận đơn duy nhất)
 13. [Thanh toán online, mã giảm giá admin, hoàn tiền (M5)](#13-thanh-toán-online-mã-giảm-giá-admin-hoàn-tiền-m5)
     - 13.10 Cổng giả (VNPay giả, `/mock-gateway`) · 13.11 MoMo giả
 14. [Hoàn thiện v1 (M6, M6b)](#14-hoàn-thiện-v1-m6-m6b)
@@ -132,6 +134,8 @@ Phân trang: query `page` (>= 1, mặc định 1), `pageSize` (1–100, mặc đ
 | 401  | `INVALID_REFRESH_TOKEN`      | Refresh token thiếu/sai/hết hạn/đã thu hồi (kể cả phát hiện reuse); cookie bị xóa                                                                                                            |
 | 401  | `TWO_FACTOR_INVALID`         | Đăng nhập bước 2: mã TOTP/mã dự phòng sai, hoặc bước đã dùng (chống dùng lại); thông báo chung; tính vào `failedLoginCount`/khóa tạm (§5.9)                                                  |
 | 401  | `TWO_FACTOR_CHALLENGE_INVALID` | Thử thách đăng nhập 2 bước không tồn tại, hết hạn (5 phút), đã dùng, hoặc hết 5 lượt thử; phải đăng nhập lại (§5.9)                                                                        |
+| 403  | `ADMIN_TWO_FACTOR_REQUIRED`  | `REQUIRE_ADMIN_2FA=true` và ADMIN chưa bật 2FA gọi `/admin/*`; bật 2FA ở `/me/2fa/*` (§6.5) rồi gọi lại (D-070)                                                                  |
+| 409  | `TRACKING_NUMBER_TAKEN`      | Mã vận đơn đã dùng cho đơn khác (`PATCH /admin/orders/:code/status`, §12.1); `details.field = "trackingNumber"` (D-068)                                                          |
 | 409  | `TWO_FACTOR_SETUP_REQUIRED`  | Chưa gọi `setup` hoặc secret chờ đã quá 10 phút khi `enable` (§6.5)                                                                                                                         |
 | 409  | `TWO_FACTOR_NOT_ENABLED`     | Thao tác cần 2FA đang bật (`disable`, `backup-codes`, admin reset) nhưng chưa bật (§6.5, §14.10)                                                                                            |
 | 503  | `TWO_FACTOR_UNAVAILABLE`     | Chưa cấu hình/sai `TOTP_ENCRYPTION_KEY`: không bật được 2FA, và user đã bật 2FA không đăng nhập được (không bỏ qua bước 2; D-063)                                                            |
@@ -533,11 +537,14 @@ Lược đồ User trả ra (không bao giờ có `passwordHash`):
   "role": "CUSTOMER",
   "emailVerified": false,
   "twoFactorEnabled": false,
+  "twoFactorRequired": false,
   "createdAt": "2026-11-10T08:30:00.000Z"
 }
 ```
 
 `twoFactorEnabled` (0.22, D-063): đã bật xác thực 2 lớp; chỉ là cờ, không lộ gì khác về 2FA.
+
+`twoFactorRequired` (0.25, D-070): `true` khi server bật `REQUIRE_ADMIN_2FA`, user là `ADMIN` và `twoFactorEnabled = false` (mọi `/admin/*` sẽ trả 403 `ADMIN_TWO_FACTOR_REQUIRED` cho tới khi bật 2FA ở §6.5). Luôn `false` với STAFF/CUSTOMER và khi cờ tắt (mặc định).
 
 Ràng buộc mật khẩu: 8–72 ký tự, có ít nhất 1 chữ và 1 số.
 Các endpoint cấp phiên trả `{ "data": { "user": {..}, "accessToken": "<jwt>", "expiresIn": 900 } }` và `Set-Cookie: bb_rt=...`. Cookie `bb_rt` có `Max-Age` 7 ngày; mỗi lần refresh cấp token mới hạn 7 ngày tính từ lúc refresh (hạn trượt). Đăng ký/đăng nhập tạo family mới.
@@ -1302,6 +1309,7 @@ Quyền: S = Staff+ (STAFF hoặc ADMIN), AD = Admin. Quyết định nền: D-0
 ### 12.0 Quy ước chung admin
 
 - **Chặn quyền ở cấp router.** Mọi `/admin/*` mount dưới một router dùng `requireAuth` + `requireStaff`; role luôn đọc lại từ DB mỗi request (§1). Thiếu/sai token -> 401 `UNAUTHORIZED`; CUSTOMER -> 403 `FORBIDDEN`; user DISABLED -> 403 `ACCOUNT_DISABLED`. Endpoint ghi chú **Admin** thêm `requireAdmin` (STAFF -> 403 `FORBIDDEN`).
+- **Bắt buộc 2FA cho Admin (0.25, D-070).** Sau `requireAuth` + `requireStaff`, nếu env `REQUIRE_ADMIN_2FA=true` và người gọi là `ADMIN` chưa bật 2FA -> 403 `ADMIN_TWO_FACTOR_REQUIRED` ở MỌI `/admin/*` (đọc cờ và trạng thái 2FA mỗi request, có hiệu lực ngay). `STAFF` không bị áp. Mặc định tắt.
 - Admin xem được `stock` chính xác và `id` nội bộ. Phân trang theo §1. Tài nguyên không tồn tại -> 404 `NOT_FOUND`. ID trong path phải là chuỗi 1–50 ký tự `[a-z0-9]` (cuid), sai định dạng -> 404.
 - **Audit log (FR-ADM-11).** MỌI thao tác ghi của admin ghi 1 dòng `AuditLog` trong CÙNG transaction với thay đổi: `actorId`, `action`, `entity`, `entityId`, `diff`, `ip` (`req.ip`). `diff` chỉ chứa trường thay đổi, dạng `{ "field": [old, new] }`; tạo mới: `{ "field": [null, new] }` cho các trường chính. Không chứa mật khẩu/token; với đơn hàng không ghi địa chỉ/SĐT. Danh sách `action`: `order.status`, `inventory.adjust`, `product.create|update|delete`, `variant.create|update|delete`, `image.create|update|delete|reorder`, `category.create|update|delete`, `brand.create|update|delete`, `upload.create`; từ 0.6 thêm `coupon.create|update|delete`, `payment.refund` (§13) và `payment.late` (actorId null, hệ thống ghi, §13.5); từ 0.7 thêm `review.hide|show|reply|reply_delete` (§14.1) và `product.restore` (§14.6); từ 0.8 thêm `settings.update` (§14.9), `user.status|role` (§14.10) và `contact.update` (§14.11); từ 0.17 thêm `analytics.export` (entity `analytics`, §16.4); từ 0.22 thêm `user.2fa.enable|disable|backup_regenerate|backup_used|reset` (entity `User`, §6.5, §5.9, §14.10; `actorId` là chính user, trừ `reset` là Admin).
 - **Rate limit.** Chung 100/phút/IP (§1); `POST /admin/uploads` thêm 30/phút/IP (store riêng); từ 0.17 `GET /admin/analytics/export` thêm 10/phút/IP (store riêng, §16.4).
@@ -1360,7 +1368,7 @@ Nhân viên xác nhận ĐÃ NHẬN tiền chuyển khoản (tự kiểm sao kê
 
 #### `PATCH /admin/orders/:code/status`
 
-Body: `toStatus` (OrderStatus, bắt buộc), `fromStatus` (OrderStatus, bắt buộc – trạng thái admin đang thấy), `note` (string <= 500, tùy chọn), `trackingNumber` (1–50, `^[A-Za-z0-9-]+$`), `carrier` (1–50).
+Body: `toStatus` (OrderStatus, bắt buộc), `fromStatus` (OrderStatus, bắt buộc – trạng thái admin đang thấy), `note` (string <= 500, tùy chọn), `trackingNumber` (<= 50, `^[A-Za-z0-9-]+$`; từ 0.25 được trim, chuỗi rỗng/`null` coi như không nhập; **duy nhất** giữa các đơn: trùng đơn khác -> 409 `TRACKING_NUMBER_TAKEN`, giao lại bằng chính mã của đơn đó không bị coi là trùng; mã giả lập tự sinh trùng thì server tự thử lại tối đa 8 lần rồi mới 500), `carrier` (1–50).
 
 Quy tắc, kiểm theo thứ tự:
 
@@ -1377,6 +1385,7 @@ Tác dụng phụ (cùng transaction):
 - `-> CANCELLED`: gọi hàm dùng chung `cancelOrderTx` (actor = role, `actorId`, `reason` = `note` hoặc mặc định "Cửa hàng hủy đơn"): hoàn kho `ORDER_RELEASE`, hoàn lượt mã (D-004). Đơn online đã `PAID`: `paymentStatus` giữ `PAID` cho tới khi admin ghi nhận hoàn tiền (§13.7).
 - `-> CONFIRMED`: `confirmedAt = now`.
 - `-> DELIVERED`: `deliveredAt = now`; đơn COD -> `paymentStatus = PAID`, `paidAt = now`; `Product.soldCount += quantity` theo `productId` (khóa Product theo `id` tăng dần).
+- Từ 0.25 (D-068) lỗi unique của `Order.trackingNumber` được bắt (Prisma P2002) và trả 409 `TRACKING_NUMBER_TAKEN` thay vì 500; transaction bị hủy nên đơn không đổi trạng thái.
 - Mọi chuyển dùng `UPDATE ... WHERE id AND status = fromStatus` (0 dòng -> 409 `CONFLICT` như bước 1), ghi `OrderStatusHistory` (`actorId`, `note`) và AuditLog `order.status` với diff `{ "status": [from, to], "trackingNumber"?: [...], "carrier"?: [...] }`.
 
 200 `{ data: AdminOrder }`. Từ M5 hệ thống gửi email đổi trạng thái nền sau commit (§13.9, D-016); M4 không gửi.

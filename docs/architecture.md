@@ -167,6 +167,7 @@ Quy tắc phân lớp backend: `routes` (khai báo + middleware) -> `controller`
 | `TRUST_PROXY` | mặc định `loopback`; Docker dùng `uniquelocal`; cấm `true` (D-009) |
 | `INTERNAL_API_SECRET` (backend + frontend server) | chuỗi >= 32 ký tự; SSR gửi qua `X-Internal-Secret`; chỉ ở server, không bao giờ `NEXT_PUBLIC_` (D-009). Tùy chọn ở dev, BẮT BUỘC khi `NODE_ENV=production` (thiếu thì backend không khởi động; D-026) |
 | `TOTP_ENCRYPTION_KEY` | khóa AES-256-GCM (32 byte, dạng hex 64 ký tự hoặc base64) mã hóa secret TOTP của 2FA (D-063). Tùy chọn ở dev: thiếu thì setup 2FA trả 503 `TWO_FACTOR_UNAVAILABLE` và user đã bật 2FA không đăng nhập được. BẮT BUỘC ở production; khóa mẫu bắt đầu bằng `beanbox-dev-` bị từ chối. Không đổi/mất khóa sau khi có người bật 2FA (chưa hỗ trợ xoay khóa) |
+| `REQUIRE_ADMIN_2FA` | `true`/`false`, mặc định `false` ở mọi môi trường (D-070): bắt ADMIN bật 2FA mới dùng được `/admin/*` |
 | `WEB_APP_URL` | gốc link trong email, mặc định `http://localhost:3000`; không dựng link từ header Host/Origin |
 | `JOBS_ENABLED` | mặc định `true`; bật/tắt job nền dọn dẹp (§7); luôn tắt khi `NODE_ENV=test` |
 | `COOKIE_SECURE` | mặc định `true` khi production; `false` ở production bị từ chối lúc khởi động (D-045) |

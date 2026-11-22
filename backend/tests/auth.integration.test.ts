@@ -60,6 +60,7 @@ describe('POST /auth/register', () => {
       role: 'CUSTOMER',
       emailVerified: false,
       twoFactorEnabled: false,
+      twoFactorRequired: false,
     });
     expect(Object.keys(user).sort()).toEqual(
       [
@@ -73,6 +74,7 @@ describe('POST /auth/register', () => {
         'phone',
         'role',
         'twoFactorEnabled',
+        'twoFactorRequired',
       ].sort(),
     );
     expect(JSON.stringify(res.body)).not.toMatch(/passwordHash|argon2/);

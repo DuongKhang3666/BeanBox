@@ -42,8 +42,8 @@ jobs:
       INTERNAL_API_SECRET: ci-only-internal-0123456789abcdefghijklm
       PGPASSWORD: ci-pg-password
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
@@ -89,7 +89,7 @@ jobs:
           " >> "$GITHUB_STEP_SUMMARY"
       - name: Upload báo cáo coverage backend (html)
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage-backend
           path: backend/coverage
@@ -104,8 +104,8 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
@@ -128,7 +128,7 @@ jobs:
           " >> "$GITHUB_STEP_SUMMARY"
       - name: Upload báo cáo coverage frontend (html)
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage-frontend
           path: frontend/coverage
@@ -176,8 +176,8 @@ jobs:
       SEED_STAFF_PASSWORD: CiStaff12345
       SEED_CUSTOMER_PASSWORD: CiCustomer12345
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
@@ -204,7 +204,7 @@ jobs:
         run: npm run test:e2e
       - name: Upload báo cáo Playwright khi lỗi
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: playwright-report
           path: |
@@ -217,7 +217,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - name: Quét lịch sử git bằng gitleaks
@@ -231,8 +231,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
       - name: npm audit (chỉ báo cáo, không làm fail)
@@ -268,7 +268,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Build image backend
         run: docker build --target runtime -t beanbox-backend:ci backend
       - name: Build image frontend
@@ -281,6 +281,47 @@ jobs:
         run: >-
           docker run --rm --entrypoint sh beanbox-backup:ci
           -c 'rclone version && age --version && pg_dump --version'
+      # D-067: Trivy chỉ BÁO CÁO (không chặn CI): HIGH/CRITICAL đã có bản vá, ghi bảng vào Job Summary.
+      - name: Cache cơ sở dữ liệu Trivy
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/trivy
+          key: trivy-db-${{ github.run_id }}
+          restore-keys: trivy-db-
+      - name: Trivy quét image backend/frontend (chỉ báo cáo)
+        continue-on-error: true
+        timeout-minutes: 8
+        env:
+          # Ghim phiên bản + digest; Dependabot không cập nhật tham chiếu này, nâng tay khi cần.
+          TRIVY_IMAGE: aquasec/trivy:0.76.2@sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb
+        run: |
+          mkdir -p "$HOME/.cache/trivy"
+          echo "## Trivy (HIGH/CRITICAL đã có bản vá, chỉ báo cáo)" >> "$GITHUB_STEP_SUMMARY"
+          for img in beanbox-backend:ci beanbox-frontend:ci; do
+            docker run --rm \
+              -v /var/run/docker.sock:/var/run/docker.sock \
+              -v "$HOME/.cache/trivy:/root/.cache/trivy" \
+              "$TRIVY_IMAGE" image --severity HIGH,CRITICAL --ignore-unfixed \
+              --exit-code 0 --no-progress --scanners vuln --format json --quiet "$img" \
+              > "$RUNNER_TEMP/trivy.json" || echo '{}' > "$RUNNER_TEMP/trivy.json"
+            IMG="$img" TRIVY_JSON="$RUNNER_TEMP/trivy.json" node -e "
+              const j = JSON.parse(require('fs').readFileSync(process.env.TRIVY_JSON, 'utf8'));
+              const rows = [];
+              for (const r of j.Results || []) {
+                for (const v of r.Vulnerabilities || []) {
+                  rows.push([v.PkgName, v.InstalledVersion, v.FixedVersion || '', v.VulnerabilityID, v.Severity]);
+                }
+              }
+              const n = (s) => rows.filter((r) => r[4] === s).length;
+              const out = ['', '### ' + process.env.IMG, '', 'CRITICAL: ' + n('CRITICAL') + ' · HIGH: ' + n('HIGH'), ''];
+              if (rows.length > 0) {
+                out.push('| Gói | Đang dùng | Bản vá | CVE | Mức |', '|---|---|---|---|---|');
+                for (const r of rows.slice(0, 40)) out.push('| ' + r.join(' | ') + ' |');
+                if (rows.length > 40) out.push('', '(còn ' + (rows.length - 40) + ' dòng nữa, xem log bước này)');
+              }
+              console.log(out.join(String.fromCharCode(10)));
+            " >> "$GITHUB_STEP_SUMMARY"
+          done
       - name: Selftest backup off-site (D-043)
         timeout-minutes: 5
         run: >-
@@ -294,7 +335,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: shellcheck (deploy/backup, deploy/monitoring)
         run: >-
           docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.10.0
@@ -315,3 +356,5 @@ jobs:
           docker compose -f docker-compose.prod.yml --env-file "$RUNNER_TEMP/ci.env" config -q
           docker compose -f docker-compose.prod.yml --env-file "$RUNNER_TEMP/ci.env" \
             --profile backup --profile tools config -q
+      - name: docker compose config (demo một lệnh, D-066)
+        run: docker compose -f docker-compose.demo.yml config -q

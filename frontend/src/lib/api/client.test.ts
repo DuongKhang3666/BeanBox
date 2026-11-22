@@ -1,4 +1,5 @@
 import {
+  ADMIN_2FA_REQUIRED_EVENT,
   ApiClient,
   ApiError,
   DEFAULT_DOWNLOAD_NAME,
@@ -62,6 +63,24 @@ describe("ApiClient", () => {
       message: "Dữ liệu không hợp lệ",
       details,
     });
+  });
+
+  it("D-070: 403 ADMIN_TWO_FACTOR_REQUIRED phát sự kiện cho AdminGuard; lỗi 403 khác thì không", async () => {
+    const mk = (code: string) =>
+      new ApiClient({
+        fetchImpl: (async () =>
+          json(403, { error: { code, message: "x", details: null } })) as unknown as typeof fetch,
+        getCartToken: () => null,
+      });
+    const onEvent = vi.fn();
+    window.addEventListener(ADMIN_2FA_REQUIRED_EVENT, onEvent);
+    await expect(mk("FORBIDDEN").get("/admin/dashboard")).rejects.toMatchObject({ status: 403 });
+    expect(onEvent).not.toHaveBeenCalled();
+    await expect(mk("ADMIN_TWO_FACTOR_REQUIRED").get("/admin/dashboard")).rejects.toMatchObject({
+      code: "ADMIN_TWO_FACTOR_REQUIRED",
+    });
+    expect(onEvent).toHaveBeenCalledTimes(1);
+    window.removeEventListener(ADMIN_2FA_REQUIRED_EVENT, onEvent);
   });
 
   it("lỗi mạng thành ApiError NETWORK_ERROR", async () => {

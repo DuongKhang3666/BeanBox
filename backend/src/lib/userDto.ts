@@ -1,3 +1,4 @@
+import { env } from '../config/env.js';
 import type { Role } from '../generated/prisma/client.js';
 
 export interface UserDto {
@@ -11,6 +12,8 @@ export interface UserDto {
   emailVerified: boolean;
   /** D-063: đã bật xác thực 2 lớp (chỉ cờ, không lộ gì khác). */
   twoFactorEnabled: boolean;
+  /** D-070: true khi REQUIRE_ADMIN_2FA bật, user là ADMIN và chưa bật 2FA (/admin/* sẽ trả 403). */
+  twoFactorRequired: boolean;
   createdAt: string;
 }
 
@@ -40,6 +43,8 @@ export function toUserDto(user: UserDtoSource): UserDto {
     role: user.role,
     emailVerified: user.emailVerifiedAt !== null,
     twoFactorEnabled: user.twoFactorEnabledAt !== null,
+    twoFactorRequired:
+      env.REQUIRE_ADMIN_2FA && user.role === 'ADMIN' && user.twoFactorEnabledAt === null,
     createdAt: user.createdAt.toISOString(),
   };
 }

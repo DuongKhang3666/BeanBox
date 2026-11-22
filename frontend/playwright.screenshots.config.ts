@@ -155,6 +155,17 @@ export default defineConfig({
         // (kể cả Mailpit dev ở 1025).
         SMTP_HOST: "127.0.0.1",
         SMTP_PORT: "9",
+        // Cổng thanh toán giả + chuyển khoản VietQR demo + 2FA (D-060, D-061, D-063). Khóa 2FA là khóa
+        // dev ASCII dựng lúc chạy (32 byte, chỉ dùng cho DB tạm); production từ chối khóa dạng `beanbox-dev-`.
+        PAYMENT_MOCKS_ENABLED: "true",
+        BANK_TRANSFER_ENABLED: "true",
+        TOTP_ENCRYPTION_KEY: Buffer.from("beanbox-dev-totp-key-screenshots").toString("base64"),
+        // Không dùng nhà cung cấp thật dù backend/.env có khai báo: xóa khỏi env của backend ảnh.
+        VNPAY_TMN_CODE: "",
+        VNPAY_HASH_SECRET: "",
+        VNPAY_RETURN_URL: "",
+        STRIPE_SECRET_KEY: "",
+        STRIPE_WEBHOOK_SECRET: "",
       },
     },
     {

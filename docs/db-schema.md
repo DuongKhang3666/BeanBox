@@ -1,6 +1,7 @@
 # BeanBox – Thiết kế cơ sở dữ liệu
 
-> Phiên bản 0.13 · 2026-11-22 · PostgreSQL + Prisma 7 (D-036).
+> Phiên bản 0.14 · 2026-11-23 · PostgreSQL + Prisma 7 (D-036).
+> Thay đổi 0.14: MIGRATION mới `d068_tracking_number_unique` (D-068): `Order.trackingNumber` thành `@unique` (chỉ mục `Order_trackingNumber_key`; NULL được phép nhiều bản). Migration (1) chuẩn hóa `''`/chỉ khoảng trắng thành NULL, (2) chạy khối `DO $$ ... RAISE EXCEPTION` nếu dữ liệu cũ có mã trùng (thông báo liệt kê vài mã trùng và câu SQL tìm mọi bản trùng; KHÔNG tự xóa/sửa dữ liệu), (3) `CREATE UNIQUE INDEX`. Tên chỉ mục trùng quy ước Prisma nên `prisma migrate diff` không báo drift. Lỗi unique -> 409 `TRACKING_NUMBER_TAKEN` (staff nhập) hoặc thử lại (mã sinh tự động), `api-contract.md` §12.1.
 > Thay đổi 0.13: MIGRATION mới `d065_user_deleted_at` (D-065): `User.deletedAt TIMESTAMP(3)` nullable, đặt khi khách tự xóa tài khoản (ẩn danh hóa, `api-contract.md` §6.6). Khác `status = DISABLED` do admin khóa; tài khoản đã xóa cũng được đặt `DISABLED` để chặn đăng nhập/refresh. Không đổi ràng buộc/index khác. Sau khi xóa: `email` = `deleted-<id>@deleted.invalid` (vẫn unique), `Order.contactPhone` = `""` (cột NOT NULL, không có CHECK), `shippingAddress` JSON ẩn tên/SĐT/line1 nhưng giữ tỉnh/phường, `Order.userId` giữ nguyên (analytics không đổi).
 > Thay đổi 0.12: MIGRATION mới `d063_two_factor` (D-063): `User` thêm `twoFactorEnabledAt`, `twoFactorSecretEnc` (secret TOTP mã hóa AES-256-GCM `v1:<iv>:<tag>:<ct>`), `twoFactorPendingSecretEnc` + `twoFactorPendingAt` (secret đang setup, chưa xác nhận, hết hạn 10 phút), `twoFactorLastStep Int?` (bước TOTP đã dùng, chống replay); bảng mới `TwoFactorBackupCode` (băm SHA-256, `usedAt`, unique `userId+codeHash`) và `TwoFactorChallenge` (token đăng nhập bước 2: `tokenHash` unique, `attempts`, `usedAt`, `expiresAt`); cả hai FK cascade theo `User`.
 > Thay đổi 0.11: MIGRATION mới `d062_order_eta` (D-062): `Order.etaFrom DATE?` và `Order.etaTo DATE?` (kiểu `@db.Date`: ngày giao dự kiến sớm/muộn nhất theo NGÀY LỊCH Việt Nam, lưu dạng ngày thuần, snapshot lúc đặt do server tính; `null` với đơn tạo trước migration; không thêm index). Setting mới `shipping.eta` (JSON, không cần migration, §6). Hành trình vận chuyển giả lập KHÔNG có bảng riêng: tính từ `OrderStatusHistory` + `etaTo` + `deliveredAt` khi trả API.
@@ -526,7 +527,7 @@ model Order {
   couponId        String?
   couponCode      String?
   note            String?
-  trackingNumber  String?
+  trackingNumber  String?   @unique // D-068: NULL được phép nhiều bản
   carrier         String?
   cancelReason    String?
   etaFrom         DateTime? @db.Date // D-062: ngày giao dự kiến sớm nhất (ngày lịch VN), snapshot lúc đặt

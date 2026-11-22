@@ -12,7 +12,7 @@ Chủ dự án chốt: BeanBox là dự án portfolio/CV, chỉ chạy localhost
 - Phần pháp lý của R-03 (đồng ý, chính sách bảo mật, thời hạn lưu theo luật) là NGOÀI PHẠM VI. Phần kỹ thuật của R-03 (xóa/xuất tài khoản) đã làm ở Đợt 2 (D-065).
 - Vận chuyển nếu làm sẽ là giả lập (không tích hợp hãng thật); không làm nhận tại cửa hàng (R-37).
 - R-08 không làm bảng tổng hợp (R-19).
-- Việc để sau: ghim SHA cho GitHub Actions (R-07 chỉ ghim theo tag).
+- Ghim SHA cho GitHub Actions và Trivy chỉ báo cáo: đã làm ở Đợt 3 (D-067).
 
 ## Quy ước
 
@@ -172,7 +172,7 @@ Nhãn "(chưa xác minh)" nghĩa là chưa kiểm chứng được trong lần r
 - **Rủi ro:** Thêm bảng/migration nếu làm outbox.
 
 ### R-07 CI: coverage, kiểm format, Dependabot
-- **Trạng thái:** Đã làm (Đợt 1), xem D-055 (coverage + ngưỡng, `format:check`, Dependabot). Chưa làm: ghim SHA Actions, Trivy.
+- **Trạng thái:** Đã làm (Đợt 1), xem D-055 (coverage + ngưỡng, `format:check`, Dependabot). Đợt 3 (D-067): đã ghim SHA mọi `uses:` (kèm comment phiên bản) và thêm Trivy chỉ báo cáo (HIGH/CRITICAL, `--ignore-unfixed`, ghi Job Summary, `continue-on-error`); chưa chạy trên runner GitHub thật.
 - **Nhóm:** CI/Test.
 - **Mô tả:** Đề xuất `@vitest/coverage-v8` báo cáo + ngưỡng không cho tụt, `format:check` (`prettier --check`) trong CI, Dependabot (npm, Docker, Actions) gom nhóm; cân nhắc Trivy cho image ở chế độ báo cáo.
 - **Lý do / bằng chứng:**
@@ -219,7 +219,7 @@ Nhãn "(chưa xác minh)" nghĩa là chưa kiểm chứng được trong lần r
 - **Rủi ro:** HTML cũ tối đa 60 giây.
 
 ### R-11 SEO kỹ thuật
-- **Trạng thái:** Đã làm (Đợt 2, D-064): ảnh OG, canonical trang chủ và `?page=N`, noindex URL có lọc, sitemap `lastmod` (`updatedAt`), JSON-LD (`logo`, `itemCondition`, `ItemList`). Cố ý KHÔNG làm `shippingDetails`/`hasMerchantReturnPolicy` (dữ liệu demo). Chưa làm: logo thương hiệu riêng, Rich Results Test thực tế (cần domain công khai), chỉnh `robots.txt` cho trang noindex.
+- **Trạng thái:** Đã làm (Đợt 2, D-064): ảnh OG, canonical trang chủ và `?page=N`, noindex URL có lọc, sitemap `lastmod` (`updatedAt`), JSON-LD (`logo`, `itemCondition`, `ItemList`). Cố ý KHÔNG làm `shippingDetails`/`hasMerchantReturnPolicy` (dữ liệu demo). Chưa làm: logo thương hiệu riêng, Rich Results Test thực tế (cần domain công khai), Đợt 3 (D-069): `robots.txt` chỉ chặn `/admin` và `/api/`, không chặn trang noindex.
 - **Nhóm:** SEO.
 - **Mô tả:**
   - Thêm ảnh OG mặc định/`opengraph-image`; OG danh mục có ảnh; trang chủ thêm canonical.
@@ -349,6 +349,7 @@ Nhãn "(chưa xác minh)" nghĩa là chưa kiểm chứng được trong lần r
 - **Rủi ro:** Dữ liệu import sai làm hỏng slug/biến thể.
 
 ### R-22 Xác thực 2 lớp cho Admin
+- **Trạng thái:** Đã làm: TOTP tùy chọn cho Staff/Admin + mã dự phòng (Đợt 2, D-063); bắt buộc cho Admin bằng cờ `REQUIRE_ADMIN_2FA`, mặc định tắt (Đợt 3, D-070). Khuyến nghị bật khi chạy thật.
 - **Nhóm:** Bảo mật.
 - **Mô tả:** TOTP bắt buộc với ADMIN + mã khôi phục.
 - **Lý do / bằng chứng:** User chưa có trường TOTP; chỉ 3 vai trò.

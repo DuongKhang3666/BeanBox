@@ -7,6 +7,8 @@ export function adminErrorMessage(err: unknown): string {
   switch (err.code) {
     case "FORBIDDEN":
       return "Bạn không đủ quyền thực hiện thao tác này.";
+    case "ADMIN_TWO_FACTOR_REQUIRED":
+      return "Cần bật xác thực 2 lớp cho tài khoản Admin trước khi dùng khu quản trị.";
     case "ACCOUNT_DISABLED":
       return "Tài khoản của bạn đã bị khóa.";
     case "UNAUTHORIZED":
@@ -15,6 +17,8 @@ export function adminErrorMessage(err: unknown): string {
       return "Không tìm thấy dữ liệu.";
     case "CONFLICT":
       return "Đơn hàng vừa được cập nhật, vui lòng tải lại.";
+    case "TRACKING_NUMBER_TAKEN":
+      return "Mã vận đơn này đã được dùng cho đơn khác. Hãy nhập mã khác hoặc để trống để hệ thống tự sinh mã giả.";
     case "INVALID_STATUS_TRANSITION":
       return "Không thể chuyển đơn sang trạng thái này. Đơn hàng có thể vừa được cập nhật.";
     case "VALIDATION_ERROR":

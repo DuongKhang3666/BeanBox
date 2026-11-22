@@ -67,14 +67,17 @@ export const updateOrderStatusSchema = z.object({
   toStatus: z.enum(ORDER_STATUSES, { error: 'Trạng thái đích không hợp lệ' }),
   fromStatus: z.enum(ORDER_STATUSES, { error: 'Trạng thái hiện tại không hợp lệ' }),
   note: optionalText(500, 'Ghi chú tối đa 500 ký tự'),
+  // D-068: chuẩn hóa trim; rỗng/null -> undefined (server dùng mã đã có hoặc sinh mã giả lập).
   trackingNumber: z
     .string({ error: 'Mã vận đơn không hợp lệ' })
     .trim()
-    .min(1, 'Mã vận đơn không được để trống')
     .max(50, 'Mã vận đơn tối đa 50 ký tự')
-    .regex(/^[A-Za-z0-9-]+$/, 'Mã vận đơn chỉ gồm chữ, số và dấu gạch ngang')
+    .refine(
+      (v) => v === '' || /^[A-Za-z0-9-]+$/.test(v),
+      'Mã vận đơn chỉ gồm chữ, số và dấu gạch ngang',
+    )
     .nullish()
-    .transform((v) => v ?? undefined),
+    .transform((v) => (v === '' || v == null ? undefined : v)),
   carrier: z
     .string({ error: 'Đơn vị vận chuyển không hợp lệ' })
     .trim()

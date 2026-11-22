@@ -54,6 +54,7 @@ services:
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?Đặt JWT_ACCESS_SECRET (>= 32 ký tự) trong .env.production}
       INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:?Đặt INTERNAL_API_SECRET (>= 32 ký tự) trong .env.production}
       TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:?Đặt TOTP_ENCRYPTION_KEY (32 byte, tạo bằng openssl rand -base64 32) trong .env.production}
+      REQUIRE_ADMIN_2FA: ${REQUIRE_ADMIN_2FA:-false}
       WEB_APP_URL: ${PUBLIC_URL:?Đặt PUBLIC_URL (https://domain) trong .env.production}
       FRONTEND_ORIGINS: ${PUBLIC_URL}
       COOKIE_SECURE: ${COOKIE_SECURE:-true}

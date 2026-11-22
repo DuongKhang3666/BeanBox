@@ -1,0 +1,118 @@
+# Demo chạy bằng MỘT lệnh (D-066), chỉ dành cho máy local:
+#   docker compose -f docker-compose.demo.yml up --build        # PowerShell và Git Bash giống nhau
+#   docker compose -f docker-compose.demo.yml down -v           # dừng và xóa sạch dữ liệu demo
+# Web http://localhost:3300 | Mailpit http://localhost:8026. Không đụng compose dev (3000/4000/5432/8025) hay prod.
+# Mọi giá trị "secret" bên dưới là giá trị demo công khai (tiền tố demo-only-), KHÔNG dùng ở nơi khác.
+# Backend chạy NODE_ENV=development vì cổng thanh toán giả (PAYMENT_MOCKS_ENABLED) bị cấm ở production;
+# init và backend đều từ chối chạy nếu NODE_ENV=production.
+name: beanbox-demo
+
+x-demo-secrets: &demo-secrets
+  JWT_ACCESS_SECRET: demo-only-jwt-access-secret-0123456789abcdef
+  INTERNAL_API_SECRET: demo-only-internal-api-secret-0123456789abcd
+
+services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    init: true
+    # /dev/shm mặc định 64MB không đủ cho truy vấn phân tích song song (D-054)
+    shm_size: 256mb
+    environment:
+      POSTGRES_USER: beanbox
+      POSTGRES_PASSWORD: demo-only-db-password
+      POSTGRES_DB: beanbox
+    # Không publish cổng: chỉ các service trong project này truy cập được
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U beanbox -d beanbox']
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:8026:8025' # Web UI xem email đặt hàng/hủy; SMTP chỉ trong mạng nội bộ
+
+  # Chạy một lần: migrate -> seed -> sinh đơn demo (nếu chưa có). Thoát 0 thì backend mới khởi động.
+  init:
+    build:
+      context: ./backend
+      target: demo-tools
+    restart: 'no'
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://beanbox:demo-only-db-password@db:5432/beanbox
+      SEED_ADMIN_PASSWORD: Demo-only-Admin-2026
+      SEED_STAFF_PASSWORD: Demo-only-Staff-2026
+      SEED_CUSTOMER_PASSWORD: Demo-only-Customer-2026
+
+  backend:
+    build:
+      context: ./backend
+      target: runtime
+    restart: unless-stopped
+    init: true
+    depends_on:
+      init:
+        condition: service_completed_successfully
+      mailpit:
+        condition: service_started
+    environment:
+      <<: *demo-secrets
+      NODE_ENV: development # xem ghi chú đầu file
+      HOST: 0.0.0.0
+      PORT: '4000'
+      TRUST_PROXY: uniquelocal
+      DATABASE_URL: postgresql://beanbox:demo-only-db-password@db:5432/beanbox
+      WEB_APP_URL: http://localhost:3300
+      FRONTEND_ORIGINS: http://localhost:3300
+      COOKIE_SECURE: 'false' # http://localhost, không có HTTPS
+      JOBS_ENABLED: 'true'
+      SMTP_HOST: mailpit
+      SMTP_PORT: '1025'
+      # Thanh toán: chỉ cổng giả + chuyển khoản demo. KHÔNG đặt STRIPE_* và VNPAY_* (Stripe tắt, VNPay thật tắt).
+      PAYMENT_MOCKS_ENABLED: 'true'
+      PAYMENT_MOCK_SECRET: demo-only-payment-mock-secret-0123456789
+      BANK_TRANSFER_ENABLED: 'true'
+      # 2FA: khóa demo = base64 của chuỗi ASCII "demo-only-totp-key-0123456789abc" (32 byte); bật 2FA tùy chọn
+      TOTP_ENCRYPTION_KEY: ZGVtby1vbmx5LXRvdHAta2V5LTAxMjM0NTY3ODlhYmM=
+      REQUIRE_ADMIN_2FA: 'false'
+      # Không đặt TURNSTILE_*: tắt captcha. Nới nhẹ giới hạn đăng nhập cho người dùng thử.
+      AUTH_RATE_LIMIT_PER_MIN: '20'
+    # Không publish cổng: frontend gọi backend qua mạng nội bộ
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:4000/api/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        API_INTERNAL_URL: http://backend:4000
+        NEXT_PUBLIC_SITE_URL: http://localhost:3300
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      API_INTERNAL_URL: http://backend:4000
+      INTERNAL_API_SECRET: demo-only-internal-api-secret-0123456789abcd
+    ports:
+      - '127.0.0.1:3300:3000'
+
+volumes:
+  pgdata:

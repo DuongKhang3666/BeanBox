@@ -65,3 +65,17 @@ description = "Fixture test: secret base32 giả cho buildOtpauthUri"
 condition = "AND"
 paths = ['''^backend/tests/totp\.test\.ts$''']
 regexes = ['''ABCDEF234567''']
+
+# D-066: giá trị công khai của demo một lệnh (tiền tố demo-only-/Demo-only-), chỉ dùng trên máy local, không phải bí mật thật.
+[[allowlists]]
+description = "Giá trị demo công khai trong docker-compose.demo.yml và tài liệu demo"
+condition = "AND"
+paths = [
+  '''^docker-compose\.demo\.yml$''',
+  '''^README\.md$''',
+  '''^docs/(decisions|deployment|testing|wave3-plan)\.md$''',
+]
+regexes = [
+  '''[Dd]emo-only-[A-Za-z0-9-]+''',
+  '''ZGVtby1vbmx5LXRvdHAta2V5LTAxMjM0NTY3ODlhYmM=''',
+]

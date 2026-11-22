@@ -219,6 +219,8 @@ const schema = z
         }
       })
       .optional(),
+    // D-070: bắt buộc Admin bật 2FA mới dùng được /admin/*. Mặc định tắt ở mọi môi trường (demo).
+    REQUIRE_ADMIN_2FA: z.enum(['true', 'false']).optional(),
     SEED_ADMIN_PASSWORD: z.string().optional(),
     SEED_STAFF_PASSWORD: z.string().optional(),
     SEED_CUSTOMER_PASSWORD: z.string().optional(),
@@ -304,6 +306,7 @@ const schema = z
       SMTP_REQUIRE_TLS,
       PAYMENT_MOCKS_ENABLED,
       BANK_TRANSFER_ENABLED,
+      REQUIRE_ADMIN_2FA,
       PAYMENT_MOCK_SECRET,
       ...v
     }) => ({
@@ -316,6 +319,8 @@ const schema = z
           : undefined,
       PAYMENT_MOCK_SECRET_GENERATED: PAYMENT_MOCKS_ENABLED === 'true' && !PAYMENT_MOCK_SECRET,
       BANK_TRANSFER_ENABLED: BANK_TRANSFER_ENABLED === 'true',
+      /** D-070: mặc định false (chỉ bật tường minh). */
+      REQUIRE_ADMIN_2FA: REQUIRE_ADMIN_2FA === 'true',
       /** Mặc định false (TLS ngầm định chỉ bật tường minh). */
       SMTP_SECURE: SMTP_SECURE === 'true',
       /** Mặc định true khi production, false nơi khác; đặt tường minh thì theo giá trị đặt. */

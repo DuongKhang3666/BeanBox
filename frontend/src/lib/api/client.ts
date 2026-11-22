@@ -6,6 +6,8 @@ export { ApiError };
 
 export const CART_TOKEN_KEY = "bb_cart_token";
 export const AUTH_LOGOUT_EVENT = "bb:auth:logout";
+/** D-070: server trả 403 ADMIN_TWO_FACTOR_REQUIRED giữa phiên -> AdminGuard hiện màn hình bật 2FA. */
+export const ADMIN_2FA_REQUIRED_EVENT = "bb:admin:2fa-required";
 /** Cờ không nhạy cảm: trình duyệt này có thể còn phiên (cookie refresh httpOnly). Không chứa token. */
 export const SESSION_FLAG_KEY = "bb_has_session";
 export const REFRESH_LOCK_NAME = "bb-auth-refresh";
@@ -193,6 +195,11 @@ export class ApiClient {
       const err = (
         json as { error?: { code?: string; message?: string; details?: unknown } } | null
       )?.error;
+      if (res.status === 403 && err?.code === "ADMIN_TWO_FACTOR_REQUIRED") {
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent(ADMIN_2FA_REQUIRED_EVENT));
+        }
+      }
       throw new ApiError(
         res.status,
         err?.code ?? "UNKNOWN_ERROR",

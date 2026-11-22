@@ -78,7 +78,12 @@ describe('requireAuth', () => {
       .get('/me')
       .set(bearer(await tok('cust', 'CUSTOMER')));
     expect(r.status).toBe(200);
-    expect(r.body.auth).toEqual({ userId: ids.cust, role: 'CUSTOMER', sessionId: 'sess1' });
+    expect(r.body.auth).toEqual({
+      userId: ids.cust,
+      role: 'CUSTOMER',
+      sessionId: 'sess1',
+      twoFactorEnabled: false,
+    });
   });
   it('token hết hạn -> 401', async () => {
     const t = await new SignJWT({ role: 'CUSTOMER', sid: 's' })

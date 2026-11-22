@@ -11,5 +11,5 @@ tests
 uploads/*
 !uploads/seed
 src/generated
-# Script sinh dữ liệu demo (chỉ chạy tay trên DB tạm), không vào image
-scripts
+# `scripts/` (generator demo) có trong context để stage `demo-tools` COPY (D-066); stage runtime
+# chỉ COPY có chọn lọc nên image production không chứa scripts/.

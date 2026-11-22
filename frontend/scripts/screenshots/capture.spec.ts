@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { createRequire } from "node:module";
 import path from "node:path";
 import {
   expect,
@@ -10,14 +11,19 @@ import {
   type Page,
 } from "@playwright/test";
 import { API, seedPassword } from "../../e2e/helpers";
+import { base32Decode, freshCode } from "../../e2e/totp";
 
 /**
  * Chụp ảnh cho README vào docs/screenshots/*.png. Xem docs/screenshots/README.md và
  * playwright.screenshots.config.ts (an toàn DB/cổng). Giả định DB tạm VỪA migrate + seed (có thể thêm dữ liệu demo nhiều ngày bằng backend/scripts/generate-demo-orders.ts):
  * chạy lại cần DB mới. Chỉ dùng dữ liệu demo (tên, SĐT, email @example.com là giả).
- * Tổng đăng nhập: 1 admin + 1 customer (rate limit đăng nhập).
+ * Backend của script chạy với PAYMENT_MOCKS_ENABLED, BANK_TRANSFER_ENABLED và TOTP_ENCRYPTION_KEY dev
+ * (config đặt; Stripe/VNPay thật bị xóa khỏi env của tiến trình backend) để chụp cổng giả, QR chuyển
+ * khoản và 2FA. Đăng nhập: 1 admin + 1 customer (phiên dùng chung) + 1 staff 2FA riêng (rate limit
+ * đăng nhập 30/phút ở config ảnh).
  */
 const OUT_DIR = path.resolve(__dirname, "../../../docs/screenshots");
+const BACKEND_DIR = path.resolve(__dirname, "../../../backend");
 const CART_TOKEN_KEY = "bb_cart_token"; // khớp src/lib/api/client.ts
 const SESSION_FLAG_KEY = "bb_has_session"; // khớp src/lib/api/client.ts
 const DESKTOP = { width: 1440, height: 900 };
@@ -131,6 +137,24 @@ const GUESTS: Person[] = [
     phone: "0912000106",
     line1: "230 Lý Thường Kiệt",
   },
+  {
+    fullName: "Hoàng Thị Lan",
+    email: "thilan.hoang@example.com",
+    phone: "0912000107",
+    line1: "51 Nguyễn Trãi",
+  },
+  {
+    fullName: "Ngô Đức Minh",
+    email: "ducminh.ngo@example.com",
+    phone: "0912000108",
+    line1: "19 Hai Bà Trưng",
+  },
+  {
+    fullName: "Trương Bảo Châu",
+    email: "baochau.truong@example.com",
+    phone: "0912000109",
+    line1: "63 Lê Văn Sỹ",
+  },
 ];
 
 function shipping(p: Person) {
@@ -218,7 +242,11 @@ const STEPS: Record<string, { to: string; extra?: Record<string, string> }[]> = 
     { to: "DELIVERED" },
   ],
   CANCELLED: [{ to: "CANCELLED", extra: { note: "Khách đổi ý" } }],
+  // Không nhập mã vận đơn: server tự sinh mã giả lập (D-062).
+  SHIPPING_SIM: [{ to: "CONFIRMED" }, { to: "PROCESSING" }, { to: "SHIPPING" }],
 };
+
+let trackingSeq = 0;
 
 async function advance(
   request: APIRequestContext,
@@ -230,10 +258,64 @@ async function advance(
   for (const step of STEPS[target]!) {
     const res = await request.patch(`${API}/admin/orders/${code}/status`, {
       headers: { Authorization: `Bearer ${adminToken}` },
-      data: { fromStatus: from, toStatus: step.to, ...step.extra },
+      // Mã vận đơn là duy nhất ở DB (D-068): sinh mã riêng cho từng đơn.
+      data: {
+        fromStatus: from,
+        toStatus: step.to,
+        ...step.extra,
+        ...(step.extra?.trackingNumber
+          ? { trackingNumber: `GHN${9120054870 + ++trackingSeq}` }
+          : {}),
+      },
     });
     expect(res.status(), `PATCH ${code} ${from}->${step.to}`).toBe(200);
     from = step.to;
+  }
+}
+
+interface PgClient {
+  connect(): Promise<void>;
+  query(sql: string, params?: unknown[]): Promise<{ rowCount: number | null }>;
+  end(): Promise<void>;
+}
+
+/**
+ * Lùi mốc thời gian của một đơn (DB TẠM của script ảnh) để hành trình mô phỏng (D-062, tính từ lịch
+ * sử đơn so với đồng hồ hiện tại) có đủ vài mốc. Dùng `pg` của backend; chỉ dùng SCREENSHOT_DATABASE_URL.
+ */
+async function backdateOrder(code: string, shippedHoursAgo: number): Promise<void> {
+  const { Client } = createRequire(path.join(BACKEND_DIR, "package.json"))("pg") as {
+    Client: new (cfg: { connectionString: string }) => PgClient;
+  };
+  const client = new Client({ connectionString: process.env.SCREENSHOT_DATABASE_URL! });
+  await client.connect();
+  try {
+    const at = (hoursAgo: number) => new Date(Date.now() - hoursAgo * 3_600_000).toISOString();
+    const offsets: [status: string | null, hoursAgo: number][] = [
+      ["SHIPPING", shippedHoursAgo],
+      ["PROCESSING", shippedHoursAgo + 4],
+      ["CONFIRMED", shippedHoursAgo + 8],
+    ];
+    for (const [status, h] of offsets) {
+      await client.query(
+        `UPDATE "OrderStatusHistory" SET "createdAt" = ($1::timestamptz AT TIME ZONE 'UTC')
+         WHERE "toStatus" = $2::"OrderStatus" AND "orderId" = (SELECT id FROM "Order" WHERE code = $3)`,
+        [at(h), status, code],
+      );
+    }
+    const created = at(shippedHoursAgo + 12);
+    await client.query(
+      `UPDATE "OrderStatusHistory" SET "createdAt" = ($1::timestamptz AT TIME ZONE 'UTC')
+       WHERE "fromStatus" IS NULL AND "orderId" = (SELECT id FROM "Order" WHERE code = $2)`,
+      [created, code],
+    );
+    const res = await client.query(
+      `UPDATE "Order" SET "createdAt" = ($1::timestamptz AT TIME ZONE 'UTC') WHERE code = $2`,
+      [created, code],
+    );
+    expect(res.rowCount, "backdate đơn").toBe(1);
+  } finally {
+    await client.end();
   }
 }
 
@@ -269,6 +351,15 @@ async function settle(page: Page): Promise<void> {
 async function shoot(page: Page, name: string, fullPage = false): Promise<void> {
   await settle(page);
   await page.screenshot({ path: path.join(OUT_DIR, `${name}.png`), fullPage });
+}
+
+/** Chụp phần đầu trang (từ y=0, cao `height` px) để bỏ khoảng trống và chân trang. */
+async function shootTop(page: Page, name: string, height: number): Promise<void> {
+  await settle(page);
+  await page.screenshot({
+    path: path.join(OUT_DIR, `${name}.png`),
+    clip: { x: 0, y: 0, width: DESKTOP.width, height },
+  });
 }
 
 /** Chụp một vùng của trang (toạ độ trang, sau khi cuộn về đầu): từ y=top tới đáy của `bottom`. */
@@ -308,6 +399,8 @@ let products: Demo[] = [];
 let admin: BrowserContext;
 let customer: BrowserContext;
 let lookup: Person & { code: string };
+let shipLookup: Person & { code: string };
+let adminAccessToken = "";
 let seedCartVariants: string[] = [];
 
 test.beforeAll(async ({ browser, request }) => {
@@ -340,6 +433,13 @@ test.beforeAll(async ({ browser, request }) => {
     if (e.target) await advance(request, adminToken, code, e.target);
   }
   lookup = { ...GUESTS[2]!, code: codes[2]! }; // đơn đang giao: kết quả tra cứu có tiến trình
+  adminAccessToken = adminToken;
+
+  // Đơn đang giao với mã vận đơn giả do server sinh; lùi mốc thời gian để hành trình có vài mốc.
+  const shipCode = await placeOrder(request, GUESTS[6]!, pick(4, 1));
+  await advance(request, adminToken, shipCode, "SHIPPING_SIM");
+  await backdateOrder(shipCode, 60);
+  shipLookup = { ...GUESTS[6]!, code: shipCode };
 
   // Đơn của customer@beanbox.local.
   const me: Person = {
@@ -435,25 +535,59 @@ test("cart.png", async ({ browser, request }) => {
   });
 });
 
+/** Điền form checkout (khách vãng lai) tới hết khối địa chỉ; chưa chọn phương thức thanh toán. */
+async function fillCheckoutForm(page: Page, p: Person): Promise<void> {
+  await page.goto("/thanh-toan");
+  await page.getByLabel("Email").fill(p.email);
+  await page.getByLabel("Số điện thoại", { exact: true }).fill(p.phone);
+  await page.getByLabel("Họ và tên người nhận").fill(p.fullName);
+  await page.getByLabel("Số điện thoại người nhận").fill(p.phone);
+  await page.getByRole("combobox", { name: "Tỉnh/thành" }).click();
+  await page.getByRole("option", { name: /Hồ Chí Minh/ }).click();
+  const ward = page.getByRole("combobox", { name: "Phường/xã" });
+  await expect(ward).toBeEnabled();
+  await ward.click();
+  await page.getByRole("option", { name: "Phường Sài Gòn", exact: true }).click();
+  await page.getByLabel("Địa chỉ cụ thể (số nhà, đường)").fill(p.line1);
+  await expect(page.getByRole("radio", { name: /tiêu chuẩn/i }).first()).toBeChecked();
+}
+
 test("checkout.png", async ({ browser, request }) => {
   await withCart(browser, request, async (page) => {
-    const p = GUESTS[0]!;
-    await page.goto("/thanh-toan");
-    await page.getByLabel("Email").fill(p.email);
-    await page.getByLabel("Số điện thoại", { exact: true }).fill(p.phone);
-    await page.getByLabel("Họ và tên người nhận").fill(p.fullName);
-    await page.getByLabel("Số điện thoại người nhận").fill(p.phone);
-    await page.getByRole("combobox", { name: "Tỉnh/thành" }).click();
-    await page.getByRole("option", { name: /Hồ Chí Minh/ }).click();
-    const ward = page.getByRole("combobox", { name: "Phường/xã" });
-    await expect(ward).toBeEnabled();
-    await ward.click();
-    await page.getByRole("option", { name: "Phường Sài Gòn", exact: true }).click();
-    await page.getByLabel("Địa chỉ cụ thể (số nhà, đường)").fill(p.line1);
-    await expect(page.getByRole("radio", { name: /tiêu chuẩn/i }).first()).toBeChecked();
+    await fillCheckoutForm(page, GUESTS[0]!);
     await page.getByRole("radio", { name: /thanh toán khi nhận hàng|COD/i }).check();
     // Không bấm "Đặt hàng".
     await shoot(page, "checkout");
+  });
+});
+
+test("payment-mock-gateway.png", async ({ browser, request }) => {
+  await withCart(browser, request, async (page) => {
+    await fillCheckoutForm(page, GUESTS[7]!);
+    const radio = page.getByRole("radio", { name: /VNPay/ });
+    await expect(radio).toBeEnabled();
+    await radio.check();
+    await page.getByLabel(/Tôi đã đọc và đồng ý/).check();
+    await page.getByRole("button", { name: /^Đặt hàng/ }).click();
+    await expect(page).toHaveURL(/\/cong-thanh-toan-gia-lap\/vnpay/);
+    await expect(page.getByRole("note")).toContainText("GIẢ LẬP, không trừ tiền thật");
+    await expect(page.getByTestId("mock-order-code")).toContainText("BB-");
+    await shootTop(page, "payment-mock-gateway", 450); // không bấm nút nào: đơn giữ ở chờ thanh toán
+  });
+});
+
+test("bank-transfer-qr.png", async ({ browser, request }) => {
+  await withCart(browser, request, async (page) => {
+    await fillCheckoutForm(page, GUESTS[8]!);
+    const radio = page.getByRole("radio", { name: /Chuyển khoản/ });
+    await expect(radio).toBeEnabled();
+    await radio.check();
+    await page.getByLabel(/Tôi đã đọc và đồng ý/).check();
+    await page.getByRole("button", { name: /^Đặt hàng/ }).click();
+    await expect(page).toHaveURL(/\/dat-hang-thanh-cong\/BB-/);
+    await expect(page.getByRole("note")).toContainText("KHÔNG chuyển tiền thật");
+    await expect(page.getByRole("img", { name: /Mã QR VietQR/ })).toBeVisible();
+    await shoot(page, "bank-transfer-qr");
   });
 });
 
@@ -528,4 +662,78 @@ test("admin: dashboard, analytics, orders, product edit, mobile orders", async (
   } finally {
     await page.close();
   }
+});
+
+test("order-tracking-shipment.png", async ({ browser }) => {
+  await withContext(browser, DESKTOP, async (_c, page) => {
+    await page.goto("/tra-cuu-don-hang");
+    await page.getByLabel("Mã đơn hàng").fill(shipLookup.code);
+    await page.getByLabel("Số điện thoại đặt hàng").fill(shipLookup.phone);
+    await page.getByRole("button", { name: "Tra cứu" }).click();
+    const result = page.getByRole("region", { name: "Kết quả tra cứu" });
+    await expect(result.getByText(shipLookup.code).first()).toBeVisible();
+    await expect(result.getByText("Hành trình vận chuyển")).toBeVisible();
+    await expect(result.getByText(/BBL-\d{8}-/).first()).toBeVisible();
+    await shootRegion(page, "order-tracking-shipment", {
+      top: result,
+      bottom: result.getByRole("list", { name: /Hành trình vận chuyển/ }),
+      pad: 32, // gồm hết viền dưới của khối hành trình
+    });
+  });
+});
+
+/** Tài khoản STAFF riêng bật 2FA qua API (không đụng tài khoản seed dùng ở ảnh khác). */
+test("login-2fa.png và account-security.png", async ({ browser, request }) => {
+  test.setTimeout(180_000);
+  const password = "Matkhau2FA-Demo1";
+  const email = "nhanvien.baomat@example.com";
+  const reg = await request.post(`${API}/auth/register`, {
+    data: { fullName: "Lê Thanh Bình", email, password },
+  });
+  expect(reg.status(), "register").toBe(201);
+  const userId = ((await reg.json()) as { data: { user: { id: string } } }).data.user.id;
+  const role = await request.patch(`${API}/admin/users/${userId}/role`, {
+    headers: { Authorization: `Bearer ${adminAccessToken}` },
+    data: { role: "STAFF" },
+  });
+  expect(role.status(), "đổi vai trò").toBe(200);
+
+  const login = await request.post(`${API}/auth/login`, { data: { email, password } });
+  expect(login.status(), "staff login").toBe(200);
+  const staffToken = ((await login.json()) as { data: { accessToken: string } }).data.accessToken;
+  const auth = { Authorization: `Bearer ${staffToken}` };
+  const setup = await request.post(`${API}/me/2fa/setup`, { headers: auth, data: { password } });
+  expect(setup.status(), "2fa setup").toBe(200);
+  const secret = base32Decode(((await setup.json()) as { data: { secret: string } }).data.secret);
+  const enableCode = await freshCode(secret, null);
+  const enable = await request.post(`${API}/me/2fa/enable`, {
+    headers: auth,
+    data: { code: enableCode.code },
+  });
+  expect(enable.status(), "2fa enable").toBe(200);
+
+  await withContext(browser, DESKTOP, async (_c, page) => {
+    await page.goto("/dang-nhap");
+    await page.getByLabel("Email", { exact: true }).fill(email);
+    await page.getByLabel("Mật khẩu", { exact: true }).fill(password);
+    await page.getByRole("button", { name: "Đăng nhập", exact: true }).click();
+    const stepInput = page.getByLabel("Mã xác thực", { exact: true });
+    await expect(stepInput).toBeVisible();
+    const code = await freshCode(secret, enableCode.step);
+    await stepInput.fill(code.code); // mã 6 số của khóa demo trên DB tạm
+    await shootTop(page, "login-2fa", 560);
+
+    await page.getByRole("button", { name: "Xác nhận", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Đăng xuất" }).first()).toBeVisible();
+    await page.goto("/tai-khoan");
+    const section = page.getByRole("region", { name: "Xác thực 2 lớp" });
+    await expect(section.getByText("Đã bật", { exact: true })).toBeVisible();
+    const personal = page.getByRole("heading", { name: "Dữ liệu cá nhân" });
+    await expect(personal).toBeVisible();
+    // Từ khối "Xác thực 2 lớp" tới hết khối "Dữ liệu cá nhân".
+    await shootRegion(page, "account-security", {
+      top: section,
+      bottom: personal.locator("xpath=ancestor::section[1]"),
+    });
+  });
 });

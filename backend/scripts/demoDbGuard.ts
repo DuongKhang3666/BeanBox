@@ -78,11 +78,20 @@ export interface DemoArgs {
   seed: number;
   batch: number;
   reset: boolean;
+  /** Đã có dữ liệu demo cùng seed thì thoát thành công, không sinh thêm (dùng cho `up` lặp lại của demo một lệnh, D-066). */
+  skipIfExists: boolean;
 }
 
 /** Phân tích tham số dòng lệnh; ném lỗi tiếng Việt khi sai. */
 export function parseDemoArgs(argv: readonly string[]): DemoArgs {
-  const out: DemoArgs = { orders: 1000, days: 365, seed: 42, batch: 10000, reset: false };
+  const out: DemoArgs = {
+    orders: 1000,
+    days: 365,
+    seed: 42,
+    batch: 10000,
+    reset: false,
+    skipIfExists: false,
+  };
   const intArg = (name: string, raw: string | undefined, min: number, max: number): number => {
     if (raw === undefined || !/^\d+$/.test(raw))
       throw new Error(`${name} phải là số nguyên không âm.`);
@@ -93,6 +102,7 @@ export function parseDemoArgs(argv: readonly string[]): DemoArgs {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === '--reset') out.reset = true;
+    else if (a === '--skip-if-exists') out.skipIfExists = true;
     else if (a === '--orders') out.orders = intArg('--orders', argv[++i], 1, 2_000_000);
     else if (a === '--days') out.days = intArg('--days', argv[++i], 1, 1095);
     else if (a === '--seed') out.seed = intArg('--seed', argv[++i], 0, 2_000_000_000);

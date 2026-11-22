@@ -14,6 +14,8 @@ export interface User {
   emailVerified: boolean;
   /** D-063: đã bật xác thực 2 lớp. */
   twoFactorEnabled: boolean;
+  /** D-070: Admin chưa bật 2FA trong khi server bắt buộc (REQUIRE_ADMIN_2FA); /admin/* sẽ trả 403. */
+  twoFactorRequired: boolean;
   createdAt: string;
 }
 
