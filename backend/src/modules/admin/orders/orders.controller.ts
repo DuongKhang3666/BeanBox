@@ -44,3 +44,14 @@ export const refundPayment = asyncHandler(async (req, res) => {
   });
   res.json({ data });
 });
+
+// D-061: Staff+ (như xác nhận thu tiền COD).
+export const confirmBankTransfer = asyncHandler(async (req, res) => {
+  const data = await service.confirmBankTransfer({
+    rawCode: String(req.params.code ?? ''),
+    actorId: req.auth!.userId,
+    role: req.auth!.role as 'STAFF' | 'ADMIN',
+    ip: req.ip ?? null,
+  });
+  res.json({ data });
+});

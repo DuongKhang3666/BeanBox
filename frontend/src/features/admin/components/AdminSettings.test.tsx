@@ -86,7 +86,7 @@ describe("AdminSettings", () => {
     expect(
       screen.getByText(`Cập nhật lần cuối: ${formatVnDateTime("2026-11-10T08:30:00.000Z")}`),
     ).toBeInTheDocument();
-    expect(screen.getAllByText(/Chưa chỉnh sửa/).length).toBe(3);
+    expect(screen.getAllByText(/Chưa chỉnh sửa/).length).toBe(4);
     expect(await screen.findByLabelText("Thành phố Hà Nội")).toBeChecked();
     expect(screen.getByLabelText("Thành phố Đà Nẵng")).not.toBeChecked();
   });
@@ -133,7 +133,7 @@ describe("AdminSettings", () => {
     expect(screen.getByLabelText("Số điện thoại")).toHaveValue("0901234567");
   });
 
-  it("section phí chỉ gửi 4 key phí/thời hạn; không gửi key khác", async () => {
+  it("section phí chỉ gửi 5 key phí/thời gian giao/thời hạn; không gửi key khác", async () => {
     const mock = stubFetch((path, init) =>
       path === "/admin/settings" && init.method === "PUT"
         ? jsonRes(200, { data: makeAdminSettings(), meta: { updatedAt: {} } })
@@ -149,6 +149,7 @@ describe("AdminSettings", () => {
     const body = putBody(mock);
     expect(Object.keys(body).sort()).toEqual([
       "order.paymentExpiryMinutes",
+      "shipping.eta",
       "shipping.freeShippingThreshold",
       "shipping.rates",
       "shipping.weightSurcharge",

@@ -1,6 +1,10 @@
 # BeanBox – Thiết kế cơ sở dữ liệu
 
-> Phiên bản 0.9 · 2026-11-20 · PostgreSQL + Prisma 7 (D-036).
+> Phiên bản 0.13 · 2026-11-22 · PostgreSQL + Prisma 7 (D-036).
+> Thay đổi 0.13: MIGRATION mới `d065_user_deleted_at` (D-065): `User.deletedAt TIMESTAMP(3)` nullable, đặt khi khách tự xóa tài khoản (ẩn danh hóa, `api-contract.md` §6.6). Khác `status = DISABLED` do admin khóa; tài khoản đã xóa cũng được đặt `DISABLED` để chặn đăng nhập/refresh. Không đổi ràng buộc/index khác. Sau khi xóa: `email` = `deleted-<id>@deleted.invalid` (vẫn unique), `Order.contactPhone` = `""` (cột NOT NULL, không có CHECK), `shippingAddress` JSON ẩn tên/SĐT/line1 nhưng giữ tỉnh/phường, `Order.userId` giữ nguyên (analytics không đổi).
+> Thay đổi 0.12: MIGRATION mới `d063_two_factor` (D-063): `User` thêm `twoFactorEnabledAt`, `twoFactorSecretEnc` (secret TOTP mã hóa AES-256-GCM `v1:<iv>:<tag>:<ct>`), `twoFactorPendingSecretEnc` + `twoFactorPendingAt` (secret đang setup, chưa xác nhận, hết hạn 10 phút), `twoFactorLastStep Int?` (bước TOTP đã dùng, chống replay); bảng mới `TwoFactorBackupCode` (băm SHA-256, `usedAt`, unique `userId+codeHash`) và `TwoFactorChallenge` (token đăng nhập bước 2: `tokenHash` unique, `attempts`, `usedAt`, `expiresAt`); cả hai FK cascade theo `User`.
+> Thay đổi 0.11: MIGRATION mới `d062_order_eta` (D-062): `Order.etaFrom DATE?` và `Order.etaTo DATE?` (kiểu `@db.Date`: ngày giao dự kiến sớm/muộn nhất theo NGÀY LỊCH Việt Nam, lưu dạng ngày thuần, snapshot lúc đặt do server tính; `null` với đơn tạo trước migration; không thêm index). Setting mới `shipping.eta` (JSON, không cần migration, §6). Hành trình vận chuyển giả lập KHÔNG có bảng riêng: tính từ `OrderStatusHistory` + `etaTo` + `deliveredAt` khi trả API.
+> Thay đổi 0.10: MIGRATION mới `d060_mock_payments_bank_transfer` (D-060, D-061): enum `PaymentMethod` và `PaymentProvider` thêm `MOMO` và `BANK_TRANSFER` (`ALTER TYPE ... ADD VALUE`, không đổi dữ liệu cũ); `Order.transferClaimedAt DateTime?` (thời điểm khách bấm "Tôi đã chuyển khoản"; chỉ để nhân viên ưu tiên đối soát, KHÔNG phải bằng chứng đã thanh toán; không thêm index vì danh sách lọc theo `paymentMethod` + `transferClaimedAt` có số dòng nhỏ). Setting mới `payment.bankTransfer` (JSON, không cần migration, §6).
 > Thay đổi 0.9: MIGRATION mới `m10_analytics_indexes` (D-049, D-050): thêm `Order @@index([paidAt])` (doanh thu theo ngày thanh toán) và `Payment @@index([refundedAt])` (tổng hoàn tiền theo kỳ) cho khu Phân tích kinh doanh; không đổi cột/enum.
 > Thay đổi 0.8: MIGRATION mới `m6b_contact_message` (D-023): thêm enum `ContactStatus`, model `ContactMessage` và 2 quan hệ ngược ở `User` (`contactMessages`, `handledContactMessages`); cập nhật giải thích `ContactMessage`, `Setting` (§3), ghi chú ràng buộc setting (§6), §7 mục 5. Quy tắc nghiệp vụ: api-contract §14.9–14.11.
 > Thay đổi 0.7: MIGRATION mới `m6_slug_redirect` (D-018): thêm enum `SlugEntity`, model `SlugRedirect`, `Review @@index([status, createdAt])` (danh sách duyệt đánh giá của admin) và `Review @@unique([userId, productId])` (1 đánh giá/user/sản phẩm, chặn gửi đồng thời; Tech Lead chốt); cập nhật giải thích `Review`, `Wishlist`, `SlugRedirect` (§3) và `ratingAvg/ratingCount` chỉ tính `PUBLISHED` (§5). Quy tắc nghiệp vụ: api-contract §14.
@@ -111,11 +115,15 @@ enum PaymentMethod {
   COD
   VNPAY
   STRIPE
+  MOMO // D-060: MoMo giả lập, chỉ khi PAYMENT_MOCKS_ENABLED
+  BANK_TRANSFER // D-061: chuyển khoản / VietQR, nhân viên xác nhận thủ công
 }
 
 enum PaymentProvider {
   VNPAY
   STRIPE
+  MOMO
+  BANK_TRANSFER
 }
 
 enum PaymentTxnStatus {
@@ -167,6 +175,13 @@ model User {
   lastFailedLoginAt DateTime?
   lockedUntil       DateTime?
   lastLoginAt       DateTime?
+  // 2FA TOTP (D-063)
+  twoFactorEnabledAt        DateTime?
+  twoFactorSecretEnc        String?
+  twoFactorPendingSecretEnc String?
+  twoFactorPendingAt        DateTime?
+  twoFactorLastStep         Int?
+  deletedAt         DateTime? // D-065: khách tự xóa tài khoản (đã ẩn danh hóa)
   createdAt         DateTime   @default(now())
   updatedAt         DateTime   @updatedAt
 
@@ -185,6 +200,8 @@ model User {
   paymentRefunds          Payment[] @relation("PaymentRefunds")
   contactMessages         ContactMessage[] @relation("ContactMessageUser")
   handledContactMessages  ContactMessage[] @relation("ContactMessageHandler")
+  twoFactorBackupCodes    TwoFactorBackupCode[]
+  twoFactorChallenges     TwoFactorChallenge[]
 
   @@index([role])
   @@index([createdAt])
@@ -225,6 +242,33 @@ model RefreshToken {
 
   @@index([userId])
   @@index([familyId])
+  @@index([expiresAt])
+}
+
+model TwoFactorBackupCode {
+  id        String    @id @default(cuid())
+  userId    String
+  codeHash  String // SHA-256 của mã đã chuẩn hóa
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, codeHash])
+}
+
+model TwoFactorChallenge {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  attempts  Int       @default(0)
+  usedAt    DateTime?
+  expiresAt DateTime // now + 5 phút
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
   @@index([expiresAt])
 }
 
@@ -485,8 +529,11 @@ model Order {
   trackingNumber  String?
   carrier         String?
   cancelReason    String?
+  etaFrom         DateTime? @db.Date // D-062: ngày giao dự kiến sớm nhất (ngày lịch VN), snapshot lúc đặt
+  etaTo           DateTime? @db.Date // D-062: ngày giao dự kiến muộn nhất; null = đơn cũ
   expiresAt       DateTime? // hạn thanh toán của PENDING_PAYMENT
   paidAt          DateTime?
+  transferClaimedAt DateTime? // D-061: khách báo đã chuyển khoản (chưa phải đã thanh toán)
   confirmedAt     DateTime?
   deliveredAt     DateTime?
   cancelledAt     DateTime?
@@ -728,6 +775,7 @@ model ContactMessage {
 | `Address` | Sổ địa chỉ 2 cấp (tỉnh/thành – phường/xã); tên được lưu kèm mã để hiển thị không cần tra lại. Tối đa 10 địa chỉ/user (service). Đúng 1 địa chỉ mặc định/user (xem §4) |
 | `RefreshToken` | Hash SHA-256 của refresh token, `familyId` để thu hồi cả chuỗi khi phát hiện reuse, `replacedById` truy vết rotation |
 | `PasswordResetToken`, `EmailVerificationToken` | Token dùng 1 lần (`usedAt`), hết hạn 30 phút / 24 giờ; tạo token mới thì vô hiệu token cũ chưa dùng |
+| `TwoFactorBackupCode`, `TwoFactorChallenge` | 2FA (D-063). Mã dự phòng: 10 mã/lần tạo, chỉ lưu SHA-256, đánh dấu `usedAt` bằng `updateMany` có điều kiện (dùng một lần); tạo lại thì xóa bộ cũ. Challenge: token đăng nhập bước 2, hết hạn 5 phút, tối đa 5 lần thử (`attempts` tăng trước khi kiểm), dùng một lần; job dọn dẹp xóa bản hết hạn |
 | `Category` | Cây 2 cấp (service từ chối tạo cấp 3); `isActive` để ẩn khỏi storefront |
 | `Brand` | Thương hiệu, tùy chọn trên sản phẩm |
 | `Product` | Thông tin chung; các cột denormalize ở §5; `tags` và `description` (Markdown) |
@@ -882,15 +930,22 @@ Tổng >= 38 sản phẩm. Các trường hợp cần có để test UI/logic (c
     "inner":  { "STANDARD": 20000, "EXPRESS": 35000 },
     "other":  { "STANDARD": 35000, "EXPRESS": 55000 }
   },
+  "shipping.eta": {
+    "inner": { "STANDARD": { "minDays": 1, "maxDays": 2 }, "EXPRESS": { "minDays": 0, "maxDays": 1 } },
+    "other": { "STANDARD": { "minDays": 3, "maxDays": 5 }, "EXPRESS": { "minDays": 1, "maxDays": 3 } }
+  },
   "shipping.innerCityProvinceCodes": ["01", "79"],
   "shipping.innerCityWardCodes": [],
   "shipping.freeShippingThreshold": 500000,
   "shipping.weightSurcharge": { "freeGram": 2000, "stepGram": 1000, "feePerStep": 5000 },
   "order.paymentExpiryMinutes": 15,
   "store.contact": { "name": "BeanBox", "phone": "", "email": "hello@beanbox.local", "address": "" },
+  "payment.bankTransfer": { "bankBin": "999999", "bankName": "Ngân hàng demo (không có thật)", "accountNo": "0123456789", "accountName": "BEANBOX DEMO" },
   "home.banners": []
 }
 ```
+
+`payment.bankTransfer` (D-061) không được seed: thiếu key thì dùng mặc định trên (BIN `999999` không tồn tại, nên mã QR không chuyển được tiền thật).
 
 Ràng buộc khi ghi các key này (qua admin) nằm ở api-contract §14.9.
 

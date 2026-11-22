@@ -14,7 +14,12 @@ import { ApiError } from "@/lib/api/errors";
 import { formatVND } from "@/lib/format";
 import type { AdminUserDetail } from "@/types/adminUsers";
 import type { UserRole } from "@/types/auth";
-import { getAdminUser, updateAdminUserRole, updateAdminUserStatus } from "../api/users";
+import {
+  getAdminUser,
+  resetAdminUserTwoFactor,
+  updateAdminUserRole,
+  updateAdminUserStatus,
+} from "../api/users";
 import { adminErrorMessage } from "../errors";
 import { formatVnDateTime } from "../format";
 import { USERS_BASE, USER_ROLES, USER_ROLE_LABEL, isTempLocked } from "../userFilters";
@@ -28,7 +33,7 @@ const REASON_MAX = 255;
 const selectClass =
   "h-11 w-full rounded-lg border border-coffee-400 bg-white px-3 text-base text-coffee-900 focus-visible:outline-3 focus-visible:outline-offset-1 focus-visible:outline-moss-600";
 
-type Dialog = "lock" | "unlock" | "clearLock" | "role";
+type Dialog = "lock" | "unlock" | "clearLock" | "role" | "reset2fa";
 
 /** Lỗi thao tác người dùng -> tiếng Việt; ưu tiên message server nếu có. */
 export function userActionError(err: unknown): string {
@@ -42,6 +47,8 @@ export function userActionError(err: unknown): string {
           server ||
           "Không thể thực hiện vì hệ thống phải còn ít nhất một quản trị viên đang hoạt động."
         );
+      case "TWO_FACTOR_NOT_ENABLED":
+        return server || "Người dùng chưa bật xác thực 2 lớp.";
       case "NOT_FOUND":
         return server || "Không tìm thấy người dùng.";
       case "VALIDATION_ERROR":
@@ -199,6 +206,12 @@ export function AdminUserDetail({ id }: { id: string }) {
         "Đã gỡ khóa tạm của tài khoản.",
       );
     }
+    if (dialog === "reset2fa") {
+      return run(
+        () => resetAdminUserTwoFactor(u.id),
+        "Đã đặt lại xác thực 2 lớp. Người dùng bị đăng xuất khỏi mọi thiết bị.",
+      );
+    }
     return run(
       () => updateAdminUserRole(u.id, { role: roleChoice }),
       `Đã đổi vai trò thành ${USER_ROLE_LABEL[roleChoice]}.`,
@@ -238,6 +251,7 @@ export function AdminUserDetail({ id }: { id: string }) {
           </Field>
           <Field label="Số địa chỉ">{u.addressCount}</Field>
           <Field label="Số phiên đang hoạt động">{u.activeSessions}</Field>
+          <Field label="Xác thực 2 lớp">{u.twoFactorEnabled ? "Đã bật" : "Chưa bật"}</Field>
           {tempLocked && u.lockedUntil ? (
             <Field label="Khóa tạm đến">{formatVnDateTime(u.lockedUntil)}</Field>
           ) : null}
@@ -272,7 +286,12 @@ export function AdminUserDetail({ id }: { id: string }) {
       </Card>
 
       <Card title="Quản lý tài khoản">
-        {isSelf ? (
+        {u.deleted ? (
+          <p className="text-coffee-800">
+            Khách đã tự xóa tài khoản này (dữ liệu cá nhân đã được ẩn danh). Không thể khóa, mở khóa
+            hay đổi vai trò.
+          </p>
+        ) : isSelf ? (
           <p className="text-coffee-800">Bạn không thể khóa hoặc đổi vai trò của chính mình.</p>
         ) : (
           <div className="space-y-5">
@@ -292,6 +311,16 @@ export function AdminUserDetail({ id }: { id: string }) {
                 </Button>
               ) : null}
             </div>
+            {u.twoFactorEnabled ? (
+              <div>
+                <Button variant="outline" disabled={busy} onClick={() => setDialog("reset2fa")}>
+                  Đặt lại xác thực 2 lớp
+                </Button>
+                <p className="mt-1 text-sm text-coffee-700">
+                  Người dùng này đang bật xác thực 2 lớp.
+                </p>
+              </div>
+            ) : null}
             <div className="max-w-xs">
               <Label htmlFor="ud-role">Vai trò</Label>
               <select
@@ -320,6 +349,17 @@ export function AdminUserDetail({ id }: { id: string }) {
         )}
       </Card>
 
+      {dialog === "reset2fa" ? (
+        <ConfirmDialog
+          title="Đặt lại xác thực 2 lớp?"
+          description="Dùng khi người dùng mất điện thoại và mã dự phòng. 2FA của họ sẽ bị tắt, mã dự phòng bị xóa và họ bị đăng xuất khỏi mọi thiết bị; họ có thể tự bật lại sau khi đăng nhập."
+          confirmLabel="Đặt lại 2FA"
+          danger
+          busy={busy}
+          onConfirm={confirm}
+          onClose={close}
+        />
+      ) : null}
       {dialog === "lock" ? (
         <ConfirmDialog
           title="Khóa tài khoản?"

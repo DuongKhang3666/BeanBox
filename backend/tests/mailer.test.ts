@@ -15,7 +15,12 @@ import {
 
 const GOOD_SECRET = 'Zq7' + 'k9'.repeat(20);
 const base = { DATABASE_URL: 'x', JWT_ACCESS_SECRET: GOOD_SECRET } as NodeJS.ProcessEnv;
-const prod = { ...base, NODE_ENV: 'production', INTERNAL_API_SECRET: GOOD_SECRET };
+const prod = {
+  ...base,
+  NODE_ENV: 'production',
+  INTERNAL_API_SECRET: GOOD_SECRET,
+  TOTP_ENCRYPTION_KEY: 'a1'.repeat(32),
+};
 
 const MSG: MailMessage = {
   to: 'khach@example.test',

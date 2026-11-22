@@ -13,18 +13,29 @@ import { ORDER_CODE_RE, orderErrorMessage } from "@/features/orders/labels";
 import { ApiError } from "@/lib/api/errors";
 import type { PaymentMethod } from "@/types/order";
 import type { PaymentResult } from "@/types/payment";
-import { confirmVnpayReturn, pickVnpayParams, syncStripeSession } from "../api";
+import {
+  confirmMomoReturn,
+  confirmVnpayReturn,
+  pickMomoParams,
+  pickVnpayParams,
+  syncStripeSession,
+} from "../api";
 import { useRemainingMs } from "../useCountdown";
 import { PayAgainButton } from "./PayAgainButton";
 
 const BASE = "/thanh-toan/ket-qua";
 const SESSION_ID_RE = /^cs_(test_)?[A-Za-z0-9]+$/;
 
-type Provider = "vnpay" | "stripe";
-const METHOD: Record<Provider, PaymentMethod> = { vnpay: "VNPAY", stripe: "STRIPE" };
+type Provider = "vnpay" | "stripe" | "momo";
+const METHOD: Record<Provider, PaymentMethod> = {
+  vnpay: "VNPAY",
+  stripe: "STRIPE",
+  momo: "MOMO",
+};
 
 type Plan =
   | { kind: "vnpay"; query: string }
+  | { kind: "momo"; query: string }
   | { kind: "stripe"; sessionId: string }
   | { kind: "cancelled"; provider: Provider; code: string | null }
   | { kind: "unknown"; provider: Provider | null; code: string | null };
@@ -34,18 +45,24 @@ type View =
   | { kind: "result"; result: PaymentResult }
   | { kind: "invalid" }
   | { kind: "error"; message: string }
-  | Exclude<Plan, { kind: "vnpay" } | { kind: "stripe" }>;
+  | Exclude<Plan, { kind: "vnpay" } | { kind: "stripe" } | { kind: "momo" }>;
 
 function planFor(raw: string): Plan {
   const sp = new URLSearchParams(raw);
   const p = sp.get("provider");
-  const provider: Provider | null = p === "vnpay" || p === "stripe" ? p : null;
+  const provider: Provider | null = p === "vnpay" || p === "stripe" || p === "momo" ? p : null;
   const rawCode = sp.get("code")?.trim().toUpperCase() ?? "";
   const code = ORDER_CODE_RE.test(rawCode) ? rawCode : null;
   if (provider === "vnpay") {
     const vnp = pickVnpayParams(raw);
     return Array.from(vnp.keys()).length > 0
       ? { kind: "vnpay", query: vnp.toString() }
+      : { kind: "unknown", provider, code };
+  }
+  if (provider === "momo") {
+    const momo = pickMomoParams(raw);
+    return momo.has("signature")
+      ? { kind: "momo", query: momo.toString() }
       : { kind: "unknown", provider, code };
   }
   if (provider === "stripe") {
@@ -57,7 +74,9 @@ function planFor(raw: string): Plan {
 }
 
 function initialView(plan: Plan): View {
-  return plan.kind === "vnpay" || plan.kind === "stripe" ? { kind: "loading" } : plan;
+  return plan.kind === "vnpay" || plan.kind === "stripe" || plan.kind === "momo"
+    ? { kind: "loading" }
+    : plan;
 }
 
 /** URL sạch: chỉ còn provider (+ code đã kiểm định dạng). */
@@ -317,7 +336,9 @@ export function PaymentResultView() {
   // Không để chữ ký/phiên thanh toán nằm lại trong URL và lịch sử trình duyệt.
   useEffect(() => {
     const provider =
-      plan.kind === "vnpay" ? "vnpay" : plan.kind === "stripe" ? "stripe" : plan.provider;
+      plan.kind === "vnpay" || plan.kind === "stripe" || plan.kind === "momo"
+        ? plan.kind
+        : plan.provider;
     const code = plan.kind === "cancelled" || plan.kind === "unknown" ? plan.code : null;
     const clean = cleanQuery(provider, code);
     if (raw !== clean) router.replace(clean ? `${BASE}?${clean}` : BASE);
@@ -326,10 +347,14 @@ export function PaymentResultView() {
   }, []);
 
   useEffect(() => {
-    if (plan.kind !== "vnpay" && plan.kind !== "stripe") return;
+    if (plan.kind !== "vnpay" && plan.kind !== "stripe" && plan.kind !== "momo") return;
     let cancelled = false;
     const run =
-      plan.kind === "vnpay" ? confirmVnpayReturn(plan.query) : syncStripeSession(plan.sessionId);
+      plan.kind === "vnpay"
+        ? confirmVnpayReturn(plan.query)
+        : plan.kind === "momo"
+          ? confirmMomoReturn(plan.query)
+          : syncStripeSession(plan.sessionId);
     run.then(
       (result) => {
         if (cancelled) return;
@@ -377,7 +402,7 @@ export function PaymentResultView() {
       return (
         <ResultPanel
           result={view.result}
-          provider={plan.kind === "vnpay" ? "vnpay" : "stripe"}
+          provider={plan.kind === "vnpay" || plan.kind === "momo" ? plan.kind : "stripe"}
           authed={authed}
           authLoading={authLoading}
         />

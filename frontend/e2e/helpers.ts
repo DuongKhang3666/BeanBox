@@ -61,8 +61,12 @@ export async function findStockedProduct(
   throw new Error("Không có sản phẩm còn hàng trong dữ liệu seed (chạy npm run prisma:seed)");
 }
 
-/** Tạo đơn COD cho khách vãng lai qua API; trả mã đơn và SĐT dùng để tra cứu. */
-export async function createGuestCodOrder(request: APIRequestContext, variantId: string) {
+/** Tạo đơn cho khách vãng lai qua API (mặc định COD); trả mã đơn và SĐT dùng để tra cứu. */
+export async function createGuestCodOrder(
+  request: APIRequestContext,
+  variantId: string,
+  paymentMethod: "COD" | "BANK_TRANSFER" = "COD",
+) {
   const contact = testContact();
   const add = await request.post(`${API}/cart/items`, { data: { variantId, quantity: 1 } });
   expect(add.status()).toBeLessThan(300);
@@ -80,7 +84,7 @@ export async function createGuestCodOrder(request: APIRequestContext, variantId:
         line1: "12 Lê Lợi",
       },
       shippingMethod: "STANDARD",
-      paymentMethod: "COD",
+      paymentMethod,
       acceptTerms: true,
     },
   });
@@ -99,4 +103,19 @@ export async function cancelGuestOrderApi(
     data: { reason: "Dọn dẹp đơn test E2E", phone },
   });
   expect(res.status(), "POST /orders/:code/cancel").toBe(200);
+}
+
+/**
+ * Bấm "Thêm vào giỏ" an toàn: chờ nút đã hydrate (`data-ready`) và bật, rồi chờ phản hồi
+ * `POST /cart/items` (không chờ thời gian cố định). Bấm trước khi hydrate làm mất cú bấm.
+ */
+export async function addToCartWhenReady(page: Page): Promise<void> {
+  const button = page.getByRole("button", { name: "Thêm vào giỏ" });
+  await expect(button).toHaveAttribute("data-ready", "true");
+  await expect(button).toBeEnabled();
+  const response = page.waitForResponse(
+    (r) => r.request().method() === "POST" && /\/cart\/items(\?|$)/.test(r.url()),
+  );
+  await button.click();
+  expect((await response).status(), "POST /cart/items").toBeLessThan(300);
 }

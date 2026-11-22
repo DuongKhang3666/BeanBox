@@ -89,6 +89,8 @@ const PUBLIC = new Set<string>([
   `POST ${A}/csp-report`,
   `POST ${A}/auth/register`,
   `POST ${A}/auth/login`,
+  // D-063: bước 2 của đăng nhập; xác thực bằng challengeToken (ngẫu nhiên 32 byte) + mã TOTP/dự phòng.
+  `POST ${A}/auth/login/2fa`,
   `POST ${A}/auth/forgot-password`,
   `POST ${A}/auth/reset-password`,
   `POST ${A}/auth/verify-email`,
@@ -96,6 +98,9 @@ const PUBLIC = new Set<string>([
   `GET ${A}/payments/vnpay/return`,
   `POST ${A}/payments/stripe/webhook`,
   `POST ${A}/payments/stripe/sync`,
+  // MoMo giả (D-060): IPN xác thực bằng chữ ký; return chỉ đọc trạng thái sau khi kiểm chữ ký.
+  `POST ${A}/payments/momo/ipn`,
+  `GET ${A}/payments/momo/return`,
 ]);
 /** Dùng cookie bb_rt, bảo vệ bằng kiểm Origin (không có Origin -> 403 INVALID_ORIGIN). */
 const COOKIE_ORIGIN = new Set<string>([`POST ${A}/auth/refresh`, `POST ${A}/auth/logout`]);
@@ -113,12 +118,19 @@ const OPTIONAL = new Set<string>([
   `POST ${A}/orders/:code/cancel`,
   `POST ${A}/payments/vnpay/create`,
   `POST ${A}/payments/stripe/create-session`,
+  `POST ${A}/payments/momo/create`,
+  // D-061: chủ đơn hoặc khách vãng lai + SĐT (không khớp -> 404).
+  `GET ${A}/orders/:code/bank-transfer`,
+  `POST ${A}/orders/:code/bank-transfer/claim`,
   `POST ${A}/contact`,
 ]);
 /** Bắt buộc đăng nhập, nêu tường minh trong yêu cầu M6 (chặn ai đó chuyển nhầm sang OPTIONAL). */
 const MUST_BE_AUTH = [
   `GET ${A}/me`,
   `PATCH ${A}/me`,
+  // D-065: xóa tài khoản (chỉ CUSTOMER, kiểm ở bên dưới) và xuất dữ liệu cá nhân (mọi role).
+  `DELETE ${A}/me`,
+  `GET ${A}/me/export`,
   `GET ${A}/me/addresses`,
   `POST ${A}/me/addresses`,
   `PATCH ${A}/me/addresses/:id`,
@@ -136,6 +148,11 @@ const MUST_BE_AUTH = [
   `DELETE ${A}/me/wishlist/:productId`,
   `POST ${A}/auth/change-password`,
   `POST ${A}/auth/resend-verification`,
+  // D-063: chỉ Staff+ (CUSTOMER -> 403, kiểm ở bên dưới).
+  `POST ${A}/me/2fa/setup`,
+  `POST ${A}/me/2fa/enable`,
+  `POST ${A}/me/2fa/disable`,
+  `POST ${A}/me/2fa/backup-codes`,
 ];
 /** Chỉ ADMIN (STAFF -> 403). */
 const ADMIN_ONLY = new Set<string>([
@@ -161,6 +178,7 @@ const ADMIN_ONLY = new Set<string>([
   `GET ${A}/admin/users/:id`,
   `PATCH ${A}/admin/users/:id/status`,
   `PATCH ${A}/admin/users/:id/role`,
+  `POST ${A}/admin/users/:id/2fa/reset`,
 ]);
 
 const ADMIN_PREFIX = `${API}/admin/`;
@@ -291,6 +309,41 @@ describe('route yêu cầu đăng nhập: không token -> 401', () => {
         expect(res.status, `${k} ${JSON.stringify(h)}`).toBe(403);
         expect(errOf(res).code).toBe('INVALID_ORIGIN');
       }
+    }
+  });
+});
+
+describe('/api/v1/me/2fa/*: chỉ Staff+', () => {
+  it('CUSTOMER -> 403 FORBIDDEN; STAFF/ADMIN qua tầng quyền (không 401/403)', async () => {
+    const keys = routes.filter((r) => r.path.startsWith(`${API}/me/2fa/`));
+    expect(keys).toHaveLength(4);
+    for (const r of keys) {
+      const res = await send(r, alice.who);
+      expect(res.status, r.key).toBe(403);
+      expect(errOf(res).code).toBe('FORBIDDEN');
+      for (const who of [staff.who, admin.who]) {
+        const ok = await send(r, who);
+        expect([401, 403], r.key).not.toContain(ok.status);
+        expect(ok.status, r.key).toBeLessThan(500);
+      }
+    }
+  });
+});
+
+describe('DELETE /api/v1/me: chỉ CUSTOMER tự xóa (D-065)', () => {
+  it('STAFF/ADMIN -> 403 FORBIDDEN dù body hợp lệ; GET /me/export mở cho mọi role', async () => {
+    const del = routes.find((r) => r.key === `DELETE ${A}/me`)!;
+    for (const who of [staff.who, admin.who]) {
+      const res = await send(del, who).send({
+        password: 'Matkhau123',
+        confirmation: 'XOA TAI KHOAN',
+      });
+      expect(res.status).toBe(403);
+      expect(errOf(res).code).toBe('FORBIDDEN');
+    }
+    const exp = routes.find((r) => r.key === `GET ${A}/me/export`)!;
+    for (const who of [alice.who, staff.who, admin.who]) {
+      expect((await send(exp, who)).status).toBe(200);
     }
   });
 });

@@ -334,3 +334,27 @@ describe("PaymentResultView - thanh toán lại / hết hạn", () => {
     expect(screen.getByRole("button", { name: "Thanh toán lại" })).toBeInTheDocument();
   });
 });
+
+describe("PaymentResultView - MoMo (giả lập)", () => {
+  it("chỉ chuyển khóa MoMo, hiển thị theo response của server", async () => {
+    search =
+      "provider=momo&partnerCode=BEANBOXMOMODEMO&orderId=p1&amount=350000&resultCode=0&signature=sig&utm_x=1";
+    const mock = stubFetch(() => jsonRes(200, { data: result() }));
+    render(<PaymentResultView />);
+    await waitFor(() => expect(mock).toHaveBeenCalled());
+    const url = (mock.mock.calls[0] as unknown as [string])[0];
+    expect(url.startsWith("/api/v1/payments/momo/return?")).toBe(true);
+    expect(url).toContain("signature=sig");
+    expect(url).not.toContain("utm_x");
+    expect(url).not.toContain("provider=");
+    expect(await screen.findByText(/Thanh toán thành công/)).toBeInTheDocument();
+  });
+
+  it("thiếu chữ ký: không gọi API", async () => {
+    search = "provider=momo&orderId=p1";
+    const mock = stubFetch(() => jsonRes(200, { data: result() }));
+    render(<PaymentResultView />);
+    await screen.findByRole("heading");
+    expect(mock).not.toHaveBeenCalled();
+  });
+});

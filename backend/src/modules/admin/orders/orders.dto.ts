@@ -1,6 +1,8 @@
 import type { Prisma } from '../../../generated/prisma/client.js';
 import { allowedTransitions, type OrderActor } from '../../../lib/orderStateMachine.js';
+import { formatDateOnly } from '../../../lib/eta.js';
 import {
+  toShipmentDto,
   toShippingAddress,
   type OrderDto,
   type ShippingAddressSnapshot,
@@ -104,12 +106,17 @@ export interface AdminOrderListItemDto {
   itemCount: number;
   createdAt: string;
   needsRefund: boolean;
+  transferClaimedAt: string | null;
 }
 
 const iso = (d: Date | null): string | null => (d ? d.toISOString() : null);
 const V2_TARGETS = new Set(['RETURN_REQUESTED', 'RETURNED']);
 
-export function toAdminOrderDto(o: AdminOrderRow, role: OrderActor): AdminOrderDto {
+export function toAdminOrderDto(
+  o: AdminOrderRow,
+  role: OrderActor,
+  now: Date = new Date(),
+): AdminOrderDto {
   const addr: ShippingAddressSnapshot = toShippingAddress(o.shippingAddress);
   const payments: AdminPaymentDto[] = o.payments.map((p) => ({
     id: p.id,
@@ -156,9 +163,13 @@ export function toAdminOrderDto(o: AdminOrderRow, role: OrderActor): AdminOrderD
     note: o.note,
     trackingNumber: o.trackingNumber,
     carrier: o.carrier,
+    etaFrom: o.etaFrom ? formatDateOnly(o.etaFrom) : null,
+    etaTo: o.etaTo ? formatDateOnly(o.etaTo) : null,
+    shipment: toShipmentDto(o, now),
     cancelReason: o.cancelReason,
     totalWeightGram: o.totalWeightGram,
     expiresAt: iso(o.expiresAt),
+    transferClaimedAt: iso(o.transferClaimedAt),
     paidAt: iso(o.paidAt),
     confirmedAt: iso(o.confirmedAt),
     deliveredAt: iso(o.deliveredAt),
@@ -191,6 +202,7 @@ export function toAdminOrderListItem(
     shippingAddress: Prisma.JsonValue;
     grandTotal: number;
     createdAt: Date;
+    transferClaimedAt?: Date | null;
   },
   itemCount: number,
   needsRefund = false,
@@ -211,5 +223,6 @@ export function toAdminOrderListItem(
     itemCount,
     createdAt: o.createdAt.toISOString(),
     needsRefund,
+    transferClaimedAt: iso(o.transferClaimedAt ?? null),
   };
 }

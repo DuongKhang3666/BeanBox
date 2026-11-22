@@ -51,6 +51,7 @@ describe('buildShippingOptions', () => {
     totalWeightGram: 1000,
     zone: 'INNER' as const,
     settings,
+    now: new Date('2026-11-22T03:00:00Z'),
     freeshipCoupon: null,
   };
   const std = (o: Opts) => o.find((x) => x.method === 'STANDARD')!;
@@ -59,8 +60,8 @@ describe('buildShippingOptions', () => {
   it('trả 2 phương thức với nhãn và thời gian', () => {
     const o = buildShippingOptions(base);
     expect(o.map((x) => [x.method, x.label, x.estimatedDays])).toEqual([
-      ['STANDARD', 'Tiêu chuẩn', '3-5'],
-      ['EXPRESS', 'Nhanh', '1-2'],
+      ['STANDARD', 'Tiêu chuẩn', '1-2'],
+      ['EXPRESS', 'Nhanh', '0-1'],
     ]);
     expect(std(o)).toMatchObject({
       baseFee: 20000,

@@ -19,16 +19,18 @@ export interface RateLimiterOptions {
   windowMs: number;
   limit: number;
   skip?: (req: Request) => boolean;
+  /** Mặc định khóa theo IP; truyền vào để khóa theo đối tượng khác (vd. userId sau requireAuth). */
+  keyGenerator?: (req: Request) => string;
 }
 
 /** Mỗi lần gọi tạo một store riêng (MemoryStore). */
-export function createRateLimiter({ windowMs, limit, skip }: RateLimiterOptions) {
+export function createRateLimiter({ windowMs, limit, skip, keyGenerator }: RateLimiterOptions) {
   return rateLimit({
     windowMs,
     limit,
     standardHeaders: 'draft-6',
     legacyHeaders: false,
-    keyGenerator: (req) => ipKeyGenerator(req.ip ?? ''),
+    keyGenerator: keyGenerator ?? ((req) => ipKeyGenerator(req.ip ?? '')),
     ...(skip ? { skip } : {}),
     handler: (_req, res, next) => {
       const retryAfter = Number(res.getHeader('Retry-After')) || 60;

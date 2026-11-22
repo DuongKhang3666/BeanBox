@@ -12,6 +12,7 @@ const PREFIX = 'tm6b-set-';
 const BIG = 100_000;
 const KEYS = [
   'shipping.rates',
+  'shipping.eta',
   'shipping.innerCityProvinceCodes',
   'shipping.innerCityWardCodes',
   'shipping.freeShippingThreshold',
@@ -19,6 +20,7 @@ const KEYS = [
   'order.paymentExpiryMinutes',
   'store.contact',
   'home.banners',
+  'payment.bankTransfer',
 ];
 const FAKE_KEY = 'test.secret';
 
@@ -73,7 +75,7 @@ afterAll(async () => {
 });
 
 describe('GET /admin/settings', () => {
-  it('mặc định: đủ 8 key, updatedAt null', async () => {
+  it('mặc định: đủ 10 key, updatedAt null', async () => {
     await resetKeys();
     const res = await get('/admin/settings', admin.who);
     expect(res.status).toBe(200);
@@ -243,6 +245,7 @@ describe('GET /settings/public', () => {
     expect(Object.keys(res.body as object)).toEqual(['data']);
     expect(Object.keys(d).sort()).toEqual(['contactCaptcha', 'home', 'order', 'shipping', 'store']);
     expect(Object.keys(d.shipping).sort()).toEqual([
+      'eta',
       'freeShippingThreshold',
       'innerCityProvinces',
       'innerCityWardCount',

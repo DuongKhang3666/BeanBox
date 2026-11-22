@@ -17,9 +17,26 @@ const full = [
 ];
 
 describe('parseShopSettings', () => {
+  it('shipping.eta: đọc giá trị hợp lệ; min > max hoặc ngoài 0..30 -> mặc định', () => {
+    const eta = {
+      inner: { STANDARD: { minDays: 2, maxDays: 4 }, EXPRESS: { minDays: 0, maxDays: 0 } },
+      other: { STANDARD: { minDays: 5, maxDays: 9 }, EXPRESS: { minDays: 1, maxDays: 30 } },
+    };
+    expect(parseShopSettings([{ key: 'shipping.eta', value: eta }]).shippingEta).toEqual(eta);
+    for (const bad of [
+      { ...eta, inner: { ...eta.inner, STANDARD: { minDays: 5, maxDays: 2 } } },
+      { ...eta, other: { ...eta.other, EXPRESS: { minDays: 0, maxDays: 31 } } },
+    ]) {
+      expect(parseShopSettings([{ key: 'shipping.eta', value: bad }]).shippingEta).toEqual(
+        DEFAULT_SHOP_SETTINGS.shippingEta,
+      );
+    }
+  });
+
   it('đọc đủ các key hợp lệ', () => {
     expect(parseShopSettings(full)).toEqual({
       shippingRates: { inner: { STANDARD: 1, EXPRESS: 2 }, other: { STANDARD: 3, EXPRESS: 4 } },
+      shippingEta: DEFAULT_SHOP_SETTINGS.shippingEta,
       innerCityProvinceCodes: ['48'],
       innerCityWardCodes: ['26740'],
       freeShippingThreshold: 300000,

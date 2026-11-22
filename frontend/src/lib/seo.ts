@@ -6,6 +6,7 @@ export const PRIVATE_PATHS = [
   "/gio-hang",
   "/so-sanh",
   "/thanh-toan",
+  "/cong-thanh-toan-gia-lap",
   "/dat-hang-thanh-cong",
   "/tra-cuu-don-hang",
   "/dang-nhap",

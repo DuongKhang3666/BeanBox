@@ -46,7 +46,6 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const title = product.seo.title || product.name;
   const description = product.seo.description || product.shortDesc || product.name;
   const path = `/san-pham/${product.slug}`;
-  const image = (product.images.find((i) => i.isPrimary) ?? product.images[0])?.url;
 
   return {
     title,
@@ -58,14 +57,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       description,
       url: absoluteUrl(path),
       locale: "vi_VN",
-      ...(image ? { images: [{ url: absoluteUrl(image), alt: product.name }] } : {}),
     },
-    twitter: {
-      card: image ? "summary_large_image" : "summary",
-      title,
-      description,
-      ...(image ? { images: [absoluteUrl(image)] } : {}),
-    },
+    // Ảnh OG/Twitter do ./opengraph-image và ./twitter-image sinh (D-064); không đặt images ở đây.
+    twitter: { card: "summary_large_image", title, description },
   };
 }
 

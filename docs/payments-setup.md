@@ -62,10 +62,42 @@ Gọi `POST /api/v1/checkout/quote` (giỏ không rỗng, kèm `provinceCode`) v
 3. Thử hủy giữa chừng hoặc để quá hạn (mặc định 15 phút, đổi bằng setting `order.paymentExpiryMinutes`): job chạy mỗi 60 giây sẽ hủy đơn, hoàn kho và gửi email hủy.
 4. Trường hợp thanh toán thành công sau khi đơn đã bị hủy: đơn giữ nguyên `CANCELLED`, Payment hiện cờ "cần hoàn tiền" ở trang chi tiết đơn của admin. Hoàn tiền thủ công trên Dashboard/cổng sandbox rồi ghi nhận tại đó.
 
-## 6. Sự cố thường gặp
+## 6. Chế độ giả lập cho demo
+
+> D-060, D-061. Dùng khi chỉ chạy trên localhost, không có tài khoản/khóa thật. **Mặc định tắt.** Không có tiền thật, không gọi dịch vụ bên ngoài, không dùng khóa thật.
+
+Bật trong `backend/.env` (xem `backend/.env.example`), rồi khởi động lại backend:
+
+```
+PAYMENT_MOCKS_ENABLED=true
+# Tùy chọn; để trống thì tự sinh ngẫu nhiên mỗi lần khởi động (có cảnh báo)
+PAYMENT_MOCK_SECRET=
+BANK_TRANSFER_ENABLED=true
+# BANK_TRANSFER_HOLD_HOURS=24
+```
+
+Ràng buộc an toàn: backend **từ chối khởi động** nếu `PAYMENT_MOCKS_ENABLED=true` cùng với `NODE_ENV=production` hoặc cùng với `VNPAY_TMN_CODE` (không trộn cổng giả với sandbox thật). Khi bật, backend ghi cảnh báo lúc khởi động.
+
+**VNPay giả và MoMo giả.** Ở bước thanh toán, hai phương thức hiện kèm nhãn "Giả lập, không trừ tiền thật". Chọn một trong hai, đặt hàng: trình duyệt chuyển tới trang `/cong-thanh-toan-gia-lap/vnpay` (hoặc `/momo`) của chính ứng dụng, có ba nút:
+
+- "Thanh toán thành công": đơn thành `CONFIRMED`, `paymentStatus = PAID`; trang kết quả báo "Thanh toán thành công".
+- "Thanh toán thất bại" hoặc "Hủy giao dịch": đơn vẫn chờ thanh toán (`PENDING_PAYMENT`, `paymentStatus = FAILED`); thử lại được ở trang đơn hàng tới khi hết hạn.
+
+Cổng giả không đi tắt vào DB: nút gọi `POST /api/v1/mock-gateway/{vnpay|momo}/complete`, server kiểm chữ ký rồi gọi đúng hàm xử lý IPN thật (`applyPaymentResult`), nên các nhánh chữ ký, số tiền, idempotent và thanh toán muộn được thử y như luồng thật. Chữ ký MoMo giả: HMAC-SHA256 hex trên chuỗi `k=v&k=v...` (khóa sắp theo thứ tự chữ cái, giá trị thô) bằng `PAYMENT_MOCK_SECRET`; đây là mô phỏng, không phải tích hợp MoMo thật. Chi tiết: `api-contract.md` §13.10, §13.11.
+
+**Chuyển khoản / VietQR.** Chọn "Chuyển khoản / VietQR": trang thành công hiện mã QR (dựng ở server theo chuẩn VietQR/EMVCo), số tài khoản, số tiền và nội dung chuyển khoản (mã đơn), kèm cảnh báo "Tài khoản demo, KHÔNG chuyển tiền thật" khi dùng BIN demo `999999` (BIN này không tồn tại, nên ứng dụng ngân hàng không thể chuyển tiền thật). Khách bấm "Tôi đã chuyển khoản" chỉ để báo cửa hàng, **không** làm đơn thành đã thanh toán. Nhân viên (Staff trở lên) vào chi tiết đơn ở khu quản trị, kiểm tra tiền đã về rồi bấm "Xác nhận đã nhận tiền" (hai bước); danh sách đơn có bộ lọc "Khách báo đã chuyển khoản". Hệ thống KHÔNG đối soát ngân hàng. Đơn chưa được xác nhận sẽ tự hủy sau `BANK_TRANSFER_HOLD_HOURS` giờ và hoàn kho.
+
+Tài khoản nhận tiền đổi ở Admin > Cài đặt > "Tài khoản nhận chuyển khoản" (`payment.bankTransfer`). Chỉ đổi BIN khác `999999` khi bạn thật sự muốn nhận tiền: khi đó cảnh báo demo chỉ còn nếu cổng giả đang bật.
+
+Bài kiểm tay nhanh: đặt đơn VNPay giả thành công; đặt đơn MoMo giả rồi bấm "Thanh toán thất bại" và thanh toán lại; đặt đơn chuyển khoản, bấm "Tôi đã chuyển khoản", đăng nhập admin và xác nhận. Tự động: `frontend/e2e/payments-demo.spec.ts` và một kịch bản trong `m6b.spec.ts` (Playwright bật hai biến trên cho backend khi chạy E2E).
+
+## 7. Sự cố thường gặp
 
 | Triệu chứng | Nguyên nhân thường gặp |
 |---|---|
+| Backend không khởi động, báo `PAYMENT_MOCKS_ENABLED` | Đang đặt cùng `NODE_ENV=production` hoặc `VNPAY_TMN_CODE`; bỏ một trong hai (mục 6) |
+| MoMo giả / chuyển khoản không hiện ở bước thanh toán | Chưa đặt `PAYMENT_MOCKS_ENABLED=true` / `BANK_TRANSFER_ENABLED=true`, hoặc chưa khởi động lại backend |
+| Trang cổng giả báo "Yêu cầu thanh toán không hợp lệ" | `PAYMENT_MOCK_SECRET` tự sinh đã đổi vì backend khởi động lại sau khi tạo phiên; tạo lại phiên thanh toán (đặt đơn mới hoặc "Thanh toán lại") |
 | Phương thức hiện "chưa khả dụng" | Thiếu `VNPAY_TMN_CODE`/`VNPAY_HASH_SECRET` hoặc `STRIPE_SECRET_KEY`; chưa khởi động lại backend sau khi sửa `.env` |
 | Backend không khởi động, báo khóa Stripe | `STRIPE_SECRET_KEY` không phải dạng `sk_test_` |
 | VNPay báo sai chữ ký | Sai `VNPAY_HASH_SECRET`, hoặc có khoảng trắng/dấu nháy thừa trong `.env` |

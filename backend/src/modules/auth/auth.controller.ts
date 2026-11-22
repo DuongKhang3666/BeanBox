@@ -11,6 +11,7 @@ import type {
   ResetPasswordInput,
   VerifyEmailInput,
 } from './auth.schema.js';
+import type { LoginTwoFactorInput } from '../twoFactor/twoFactor.schema.js';
 import * as service from './auth.service.js';
 
 const clientContext = (req: Request): service.ClientContext => ({
@@ -34,7 +35,22 @@ export const register = asyncHandler(async (req, res) => {
 });
 
 export const login = asyncHandler(async (req, res) => {
-  const { refreshToken, ...body } = await service.login(req.body as LoginInput, clientContext(req));
+  const result = await service.login(req.body as LoginInput, clientContext(req));
+  if ('twoFactorRequired' in result) {
+    // D-063: bước 1 của đăng nhập 2 lớp: không cookie, không access token.
+    res.json({ data: result });
+    return;
+  }
+  const { refreshToken, ...body } = result;
+  setRefreshCookie(res, refreshToken);
+  res.json({ data: body });
+});
+
+export const loginTwoFactor = asyncHandler(async (req, res) => {
+  const { refreshToken, ...body } = await service.loginWithTwoFactor(
+    req.body as LoginTwoFactorInput,
+    clientContext(req),
+  );
   setRefreshCookie(res, refreshToken);
   res.json({ data: body });
 });

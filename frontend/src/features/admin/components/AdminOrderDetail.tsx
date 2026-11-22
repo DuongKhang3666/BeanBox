@@ -17,12 +17,18 @@ import {
 } from "@/features/orders/labels";
 import { useResource } from "@/features/orders/useResource";
 import { ApiError } from "@/lib/api/errors";
+import { formatDateRange } from "@/lib/format";
 import type { AdminOrder, AdminOrderHistoryEntry } from "@/types/admin";
 import { getAdminOrder } from "../api/orders";
 import { adminErrorMessage } from "../errors";
 import { formatVnDateTime } from "../format";
 import { actionsFor, type StatusActionConfig } from "../orderActions";
-import { NeedsRefundBadge, NeedsRefundBanner, OrderPayments } from "./OrderPayments";
+import {
+  NeedsRefundBadge,
+  NeedsRefundBanner,
+  OrderPayments,
+  TransferClaimedBadge,
+} from "./OrderPayments";
 import { StatusDialog } from "./StatusDialog";
 
 const load = (code: string) => getAdminOrder(code);
@@ -144,6 +150,9 @@ export function AdminOrderDetail({ code }: { code: string }) {
           <div className="flex flex-wrap items-center gap-3">
             <OrderStatusBadge status={order.status} />
             {order.needsRefund ? <NeedsRefundBadge /> : null}
+            {order.status === "PENDING_PAYMENT" && order.transferClaimedAt ? (
+              <TransferClaimedBadge />
+            ) : null}
             <Link
               href={`/admin/don-hang/${encodeURIComponent(order.code)}/in`}
               className={buttonClasses("outline", "sm")}
@@ -212,6 +221,11 @@ export function AdminOrderDetail({ code }: { code: string }) {
             setAlert(null);
             setNotice("Đã ghi nhận hoàn tiền.");
           }}
+          onConfirmed={(updated) => {
+            res.setData(updated);
+            setAlert(null);
+            setNotice("Đã xác nhận nhận tiền chuyển khoản.");
+          }}
         />
 
         <Card title="Khách hàng và giao nhận">
@@ -269,10 +283,13 @@ export function AdminOrderDetail({ code }: { code: string }) {
         </Card>
 
         <Card title="Vận đơn">
-          {order.trackingNumber || order.carrier ? (
+          {order.trackingNumber || order.carrier || order.etaFrom ? (
             <dl className="grid gap-3 sm:grid-cols-2">
               <Field label="Mã vận đơn">{order.trackingNumber ?? "Chưa có"}</Field>
               <Field label="Đơn vị vận chuyển">{order.carrier ?? "Chưa có"}</Field>
+              {order.etaFrom && order.etaTo ? (
+                <Field label="Dự kiến giao">{formatDateRange(order.etaFrom, order.etaTo)}</Field>
+              ) : null}
             </dl>
           ) : (
             <p className="text-coffee-700">Chưa có thông tin vận đơn.</p>

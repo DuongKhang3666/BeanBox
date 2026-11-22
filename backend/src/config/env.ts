@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 
 /**
@@ -29,6 +30,23 @@ export function ttlToSeconds(ttl: string): number {
   if (!m) throw new Error('ACCESS_TOKEN_TTL không hợp lệ');
   const n = Number(m[1]);
   return m[2] === 's' ? n : m[2] === 'm' ? n * 60 : n * 3600;
+}
+
+/** Tiền tố byte của khóa TOTP mẫu dev (`.env.example`); production từ chối khóa bắt đầu bằng chuỗi này. */
+export const TOTP_DEV_KEY_PREFIX = 'beanbox-dev-';
+
+/**
+ * Khóa AES-256 cho secret TOTP (D-063): 64 ký tự hex hoặc base64 (standard/url, có hoặc không padding)
+ * giải mã ra đúng 32 byte. Ném lỗi (không chứa giá trị khóa) nếu sai.
+ */
+export function parseTotpKey(raw: string): Buffer {
+  const v = raw.trim();
+  if (/^[0-9a-fA-F]{64}$/.test(v)) return Buffer.from(v, 'hex');
+  if (/^[A-Za-z0-9+/_-]+={0,2}$/.test(v)) {
+    const buf = Buffer.from(v, 'base64'); // Node chấp nhận cả base64url
+    if (buf.length === 32) return buf;
+  }
+  throw new Error('TOTP_ENCRYPTION_KEY phải là 32 byte, dạng 64 ký tự hex hoặc base64');
 }
 
 export const DEFAULT_VNPAY_PAYMENT_URL = 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html';
@@ -124,6 +142,21 @@ const schema = z
       )
       .optional(),
     STRIPE_WEBHOOK_SECRET: z.string().optional(),
+    // D-060: cổng thanh toán GIẢ cho demo (VNPay giả + MoMo giả). Mặc định tắt; cấm ở production.
+    PAYMENT_MOCKS_ENABLED: z.enum(['true', 'false']).optional(),
+    // Khóa ký của cổng giả. Trống thì sinh ngẫu nhiên lúc khởi động (chỉ dev; đổi mỗi lần chạy lại).
+    PAYMENT_MOCK_SECRET: z
+      .string()
+      .min(16, 'PAYMENT_MOCK_SECRET phải có ít nhất 16 ký tự')
+      .optional(),
+    // D-061: chuyển khoản/VietQR. Thông tin tài khoản nằm ở settings admin (`payment.bankTransfer`).
+    BANK_TRANSFER_ENABLED: z.enum(['true', 'false']).optional(),
+    BANK_TRANSFER_HOLD_HOURS: z.coerce
+      .number()
+      .int('BANK_TRANSFER_HOLD_HOURS phải là số nguyên từ 1 đến 72')
+      .min(1, 'BANK_TRANSFER_HOLD_HOURS phải là số nguyên từ 1 đến 72')
+      .max(72, 'BANK_TRANSFER_HOLD_HOURS phải là số nguyên từ 1 đến 72')
+      .default(24),
     GENERAL_RATE_LIMIT_PER_MIN: z.coerce.number().int().positive().default(100),
     // Limiter nhóm auth (register/login/forgot/reset/change-password). Production giữ 5; E2E đặt cao hơn.
     AUTH_RATE_LIMIT_PER_MIN: z.coerce.number().int().positive().default(5),
@@ -174,6 +207,18 @@ const schema = z
       .min(1000, 'ANALYTICS_STATEMENT_TIMEOUT_MS phải là số nguyên từ 1000 đến 120000')
       .max(120000, 'ANALYTICS_STATEMENT_TIMEOUT_MS phải là số nguyên từ 1000 đến 120000')
       .default(15000),
+    // D-063: khóa AES-256-GCM mã hóa secret 2FA (TOTP). Thiếu -> bật 2FA trả 503; production bắt buộc.
+    TOTP_ENCRYPTION_KEY: z
+      .string()
+      .transform((s, ctx) => {
+        try {
+          return parseTotpKey(s);
+        } catch (e) {
+          ctx.addIssue({ code: 'custom', message: (e as Error).message });
+          return z.NEVER;
+        }
+      })
+      .optional(),
     SEED_ADMIN_PASSWORD: z.string().optional(),
     SEED_STAFF_PASSWORD: z.string().optional(),
     SEED_CUSTOMER_PASSWORD: z.string().optional(),
@@ -185,6 +230,25 @@ const schema = z
         code: 'custom',
         path: [missing[0]!],
         message: `Thiếu ${missing[0]!}: phải đặt cả TURNSTILE_SITE_KEY và TURNSTILE_SECRET_KEY, hoặc bỏ trống cả hai`,
+      });
+    }
+  })
+  .superRefine((v, ctx) => {
+    // D-060: cổng giả không bao giờ ở production, và không chạy chung với VNPay thật.
+    if (v.PAYMENT_MOCKS_ENABLED !== 'true') return;
+    if (v.NODE_ENV === 'production') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['PAYMENT_MOCKS_ENABLED'],
+        message: 'PAYMENT_MOCKS_ENABLED=true không được phép ở production (cổng thanh toán giả)',
+      });
+    }
+    if (v.VNPAY_TMN_CODE) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['PAYMENT_MOCKS_ENABLED'],
+        message:
+          'PAYMENT_MOCKS_ENABLED=true xung đột với VNPAY_TMN_CODE (VNPay thật đã cấu hình); chỉ bật một trong hai',
       });
     }
   })
@@ -207,6 +271,21 @@ const schema = z
           'COOKIE_SECURE=false không được phép ở production (cookie refresh token phải có cờ Secure); bỏ biến này hoặc đặt true',
       });
     }
+    if (!v.TOTP_ENCRYPTION_KEY) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['TOTP_ENCRYPTION_KEY'],
+        message:
+          'TOTP_ENCRYPTION_KEY là bắt buộc ở production (khóa mã hóa secret 2FA, 32 byte: openssl rand -base64 32)',
+      });
+    } else if (v.TOTP_ENCRYPTION_KEY.subarray(0, 12).toString('utf8') === TOTP_DEV_KEY_PREFIX) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['TOTP_ENCRYPTION_KEY'],
+        message:
+          'TOTP_ENCRYPTION_KEY đang dùng giá trị mẫu dev; production phải dùng khóa ngẫu nhiên riêng',
+      });
+    }
     for (const key of ['JWT_ACCESS_SECRET', 'INTERNAL_API_SECRET'] as const) {
       if (v[key]?.startsWith('dev-')) {
         ctx.addIssue({
@@ -217,19 +296,40 @@ const schema = z
       }
     }
   })
-  .transform(({ COOKIE_SECURE, JOBS_ENABLED, SMTP_SECURE, SMTP_REQUIRE_TLS, ...v }) => ({
-    ...v,
-    /** Mặc định false (TLS ngầm định chỉ bật tường minh). */
-    SMTP_SECURE: SMTP_SECURE === 'true',
-    /** Mặc định true khi production, false nơi khác; đặt tường minh thì theo giá trị đặt. */
-    SMTP_REQUIRE_TLS: SMTP_REQUIRE_TLS ? SMTP_REQUIRE_TLS === 'true' : v.NODE_ENV === 'production',
-    VNPAY_RETURN_URL: v.VNPAY_RETURN_URL ?? `${v.WEB_APP_URL}/thanh-toan/ket-qua?provider=vnpay`,
-    /** Mặc định true; NODE_ENV=test luôn false. */
-    JOBS_ENABLED: v.NODE_ENV === 'test' ? false : JOBS_ENABLED !== 'false',
-    /** Đã tính: mặc định true khi production. */
-    COOKIE_SECURE: COOKIE_SECURE ? COOKIE_SECURE === 'true' : v.NODE_ENV === 'production',
-    accessTokenTtlSec: ttlToSeconds(v.ACCESS_TOKEN_TTL),
-  }));
+  .transform(
+    ({
+      COOKIE_SECURE,
+      JOBS_ENABLED,
+      SMTP_SECURE,
+      SMTP_REQUIRE_TLS,
+      PAYMENT_MOCKS_ENABLED,
+      BANK_TRANSFER_ENABLED,
+      PAYMENT_MOCK_SECRET,
+      ...v
+    }) => ({
+      ...v,
+      PAYMENT_MOCKS_ENABLED: PAYMENT_MOCKS_ENABLED === 'true',
+      /** Có giá trị khi mock bật: đặt tường minh hoặc sinh ngẫu nhiên (PAYMENT_MOCK_SECRET_GENERATED). */
+      PAYMENT_MOCK_SECRET:
+        PAYMENT_MOCKS_ENABLED === 'true'
+          ? (PAYMENT_MOCK_SECRET ?? randomBytes(24).toString('hex'))
+          : undefined,
+      PAYMENT_MOCK_SECRET_GENERATED: PAYMENT_MOCKS_ENABLED === 'true' && !PAYMENT_MOCK_SECRET,
+      BANK_TRANSFER_ENABLED: BANK_TRANSFER_ENABLED === 'true',
+      /** Mặc định false (TLS ngầm định chỉ bật tường minh). */
+      SMTP_SECURE: SMTP_SECURE === 'true',
+      /** Mặc định true khi production, false nơi khác; đặt tường minh thì theo giá trị đặt. */
+      SMTP_REQUIRE_TLS: SMTP_REQUIRE_TLS
+        ? SMTP_REQUIRE_TLS === 'true'
+        : v.NODE_ENV === 'production',
+      VNPAY_RETURN_URL: v.VNPAY_RETURN_URL ?? `${v.WEB_APP_URL}/thanh-toan/ket-qua?provider=vnpay`,
+      /** Mặc định true; NODE_ENV=test luôn false. */
+      JOBS_ENABLED: v.NODE_ENV === 'test' ? false : JOBS_ENABLED !== 'false',
+      /** Đã tính: mặc định true khi production. */
+      COOKIE_SECURE: COOKIE_SECURE ? COOKIE_SECURE === 'true' : v.NODE_ENV === 'production',
+      accessTokenTtlSec: ttlToSeconds(v.ACCESS_TOKEN_TTL),
+    }),
+  );
 
 export type Env = z.infer<typeof schema>;
 

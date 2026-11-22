@@ -41,3 +41,27 @@ description = "Fixture test: INTERNAL_API_SECRET giả cho môi trường test"
 condition = "AND"
 paths = ['''^backend/tests/testEnv\.ts$''']
 regexes = ['''test-internal-secret-0123456789abcdefghij''']
+
+# D-063: khóa AES-256 giả/mẫu cho 2FA (TOTP_ENCRYPTION_KEY), chỉ dùng localhost/CI/test; production từ chối khóa mẫu dev.
+[[allowlists]]
+description = "Khóa TOTP mẫu dev (base64 của chuỗi ASCII beanbox-dev-...) trong .env.example, test và cấu hình E2E"
+condition = "AND"
+paths = [
+  '''^backend/\.env\.example$''',
+  '''^backend/tests/testEnv\.ts$''',
+  '''^frontend/playwright\.config\.ts$''',
+]
+regexes = ['''YmVhbmJveC1kZXYtdG90cC1rZXktbG9jYWxob3N0ISE=''']
+
+[[allowlists]]
+description = "Khóa TOTP giả của workflow CI (base64 của chuỗi ASCII ci-only-...)"
+condition = "AND"
+paths = ['''^\.github/workflows/ci\.yml$''']
+regexes = ['''Y2ktb25seS10b3RwLWtleS0wMTIzNDU2Nzg5YWJjZGU=''']
+
+# Fixture test: chuỗi base32 giả "ABCDEF234567" làm secret otpauth (kiểm tra dựng URI), không phải bí mật thật.
+[[allowlists]]
+description = "Fixture test: secret base32 giả cho buildOtpauthUri"
+condition = "AND"
+paths = ['''^backend/tests/totp\.test\.ts$''']
+regexes = ['''ABCDEF234567''']

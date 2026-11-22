@@ -7,6 +7,7 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { LAST_ORDER_KEY } from "@/features/checkout/components/CheckoutForm";
+import { BankTransferPanel } from "@/features/payments/components/BankTransferPanel";
 import { PayAgainButton } from "@/features/payments/components/PayAgainButton";
 import { ApiError } from "@/lib/api/errors";
 import { formatVND } from "@/lib/format";
@@ -112,6 +113,19 @@ function PaySection({
   notice: boolean;
 }) {
   if (order.paymentMethod === "COD") return null;
+  if (order.paymentMethod === "BANK_TRANSFER") {
+    // D-061: không có "thanh toán lại"; hiện QR/hướng dẫn khi đơn còn chờ chuyển khoản.
+    if (loading) {
+      return (
+        <p role="status" className="text-center text-sm text-coffee-700">
+          Đang kiểm tra trạng thái thanh toán...
+        </p>
+      );
+    }
+    return order.status === "PENDING_PAYMENT" ? (
+      <BankTransferPanel code={order.code} phone={phone} />
+    ) : null;
+  }
   return (
     <div className="space-y-3 text-left">
       {notice ? (

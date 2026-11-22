@@ -23,6 +23,9 @@ export function maskAuthorName(fullName: string): string {
   return `${last} ${words.map((w) => `${initialOf(w)}.`).join(' ')}`;
 }
 
+/** D-065: tác giả đã xóa tài khoản (không che tên theo kiểu "An N. V."). */
+export const DELETED_AUTHOR_NAME = 'Người dùng đã xóa';
+
 export const round1 = (n: number) => Math.round(n * 10) / 10;
 
 export const notFoundProduct = () => new AppError(404, 'NOT_FOUND', 'Không tìm thấy sản phẩm');
@@ -82,7 +85,7 @@ export const reviewSelect = {
   repliedAt: true,
   createdAt: true,
   updatedAt: true,
-  user: { select: { fullName: true } },
+  user: { select: { fullName: true, deletedAt: true } },
 } satisfies Prisma.ReviewSelect;
 
 export type ReviewRow = Prisma.ReviewGetPayload<{ select: typeof reviewSelect }>;
@@ -92,7 +95,7 @@ export function toReview(r: ReviewRow) {
     id: r.id,
     rating: r.rating,
     content: r.content,
-    authorName: maskAuthorName(r.user.fullName),
+    authorName: r.user.deletedAt ? DELETED_AUTHOR_NAME : maskAuthorName(r.user.fullName),
     verifiedPurchase: true as const,
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),

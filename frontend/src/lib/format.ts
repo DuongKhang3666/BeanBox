@@ -29,6 +29,15 @@ function toDate(value: string | number | Date): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+/** "22/11 – 24/11" (hoặc "22/11") từ hai ngày `YYYY-MM-DD` (ngày VN, không qua múi giờ máy). */
+export function formatDateRange(fromDate: string, toDate: string): string {
+  const fmt = (iso: string) => {
+    const [, m, d] = iso.split("-");
+    return m && d ? `${d}/${m}` : iso;
+  };
+  return fromDate === toDate ? fmt(fromDate) : `${fmt(fromDate)} – ${fmt(toDate)}`;
+}
+
 /** "10/11/2026" theo giờ Việt Nam (UTC+7). Trả về chuỗi rỗng nếu ngày không hợp lệ. */
 export function formatDate(value: string | number | Date): string {
   const d = toDate(value);

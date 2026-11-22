@@ -28,6 +28,8 @@ export interface AdminOrderListItem {
   createdAt: string;
   /** Contract 0.6 chưa có trường này ở danh sách; nếu server trả thì hiện badge. */
   needsRefund?: boolean;
+  /** D-061: khách báo đã chuyển khoản (đơn BANK_TRANSFER). */
+  transferClaimedAt?: string | null;
 }
 
 export type OrderStatusCounts = Record<OrderStatus, number>;
@@ -45,6 +47,8 @@ export interface AdminOrderQuery {
   paymentMethod?: PaymentMethod;
   /** true = chỉ đơn cần hoàn tiền (§13.7); không gửi khi false. */
   needsRefund?: boolean;
+  /** true = chỉ đơn chuyển khoản khách đã báo chuyển (D-061); không gửi khi false. */
+  transferClaimed?: boolean;
   /** YYYY-MM-DD, giờ Việt Nam */
   from?: string;
   to?: string;
@@ -67,7 +71,7 @@ export interface AdminOrderHistoryEntry extends OrderHistoryEntry {
 
 /** Theo docs/api-contract.md §13.7. */
 export type AdminPaymentStatus = "PENDING" | "SUCCEEDED" | "FAILED" | "REFUNDED";
-export type AdminPaymentProvider = "VNPAY" | "STRIPE";
+export type AdminPaymentProvider = "VNPAY" | "STRIPE" | "MOMO" | "BANK_TRANSFER";
 
 export interface AdminPayment {
   id: string;

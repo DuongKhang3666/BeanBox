@@ -1,5 +1,7 @@
+import type { Metadata } from "next";
 import Link from "next/link";
-import { connection } from "next/server";
+import { Suspense } from "react";
+import { AccountDeletedNotice } from "@/features/account/components/AccountDeletedNotice";
 import { Container } from "@/components/ui/Container";
 import { ButtonLink } from "@/components/ui/Button";
 import { ErrorState } from "@/components/ui/ErrorState";
@@ -9,10 +11,16 @@ import { HomeBanners } from "@/features/content/components/HomeBanners";
 import { getPublicSettings } from "@/features/content/publicSettings";
 import { ROOT_CATEGORY_SLUGS } from "@/lib/site";
 
-/** Trang chủ cần API lúc chạy; không prerender lúc build (build phải qua được khi backend tắt). */
-export default async function HomePage() {
-  await connection();
+export const metadata: Metadata = { alternates: { canonical: "/" } };
 
+/**
+ * ISR (D-064): dựng tĩnh lúc build, làm mới nền mỗi 60 giây (cùng nhịp với dữ liệu sản phẩm). HTML trang chủ
+ * có thể cũ tới ~60 giây. Mọi nguồn dữ liệu dùng allSettled nên backend tắt lúc build/chạy chỉ làm mục đó
+ * hiện trạng thái lỗi, không làm build hỏng.
+ */
+export const revalidate = 60;
+
+export default async function HomePage() {
   const [categories, featured, newest, bestseller, settings] = await Promise.allSettled([
     getCategories(),
     getProducts({ featured: true, pageSize: 8 }),
@@ -23,6 +31,9 @@ export default async function HomePage() {
 
   return (
     <>
+      <Suspense fallback={null}>
+        <AccountDeletedNotice />
+      </Suspense>
       <section className="bg-coffee-800 text-cream-50">
         <Container className="py-14 sm:py-20">
           <p className="text-sm font-medium uppercase tracking-widest text-cream-300">

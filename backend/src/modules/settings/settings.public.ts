@@ -12,6 +12,7 @@ export async function getPublicSettings(captcha: CaptchaConfig | null = null) {
   return {
     shipping: {
       rates: v['shipping.rates'],
+      eta: v['shipping.eta'],
       freeShippingThreshold: v['shipping.freeShippingThreshold'],
       weightSurcharge: v['shipping.weightSurcharge'],
       innerCityProvinces: provinceCodes.flatMap((code) => {

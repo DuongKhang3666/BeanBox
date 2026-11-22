@@ -13,6 +13,7 @@ export function makeProduct(over: Partial<ProductListItem> = {}): ProductListIte
     compareAtPrice: null,
     inStock: true,
     isFeatured: false,
+    updatedAt: "2026-11-01T00:00:00.000Z",
     ratingAvg: 4.6,
     ratingCount: 18,
     coffee: { originCountry: "Ethiopia", roastLevel: "LIGHT", process: "WASHED" },

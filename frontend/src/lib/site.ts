@@ -43,3 +43,6 @@ export function absoluteUrl(pathOrUrl: string): string {
   if (/^https?:\/\//i.test(pathOrUrl)) return pathOrUrl;
   return `${SITE_URL}${pathOrUrl.startsWith("/") ? "" : "/"}${pathOrUrl}`;
 }
+
+/** Ảnh OG mặc định (app/opengraph-image.tsx), phục vụ ở đường dẫn không băm. */
+export const DEFAULT_OG_IMAGE = "/opengraph-image";

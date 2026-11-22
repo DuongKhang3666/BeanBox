@@ -2,6 +2,7 @@ import { Router, type RequestHandler } from 'express';
 import { optionalAuth, requireAuth } from '../../middlewares/auth.js';
 import { validate } from '../../middlewares/validate.js';
 import * as controller from './orders.controller.js';
+import { bankTransferOwnerSchema } from '../payments/bankTransfer.schema.js';
 import {
   cancelOrderSchema,
   createOrderSchema,
@@ -16,12 +17,15 @@ export interface OrdersRouterOptions {
   guestCancelLimiter: RequestHandler;
   /** 10/phút/IP cho POST /orders (store riêng, đứng trước optionalAuth). */
   orderLimiter: RequestHandler;
+  /** Hướng dẫn chuyển khoản và báo đã chuyển (store riêng, bỏ qua request có Authorization). */
+  bankTransferLimiter: RequestHandler;
 }
 
 export function createOrdersRouter({
   trackLimiter,
   guestCancelLimiter,
   orderLimiter,
+  bankTransferLimiter,
 }: OrdersRouterOptions): Router {
   const router = Router();
 
@@ -55,6 +59,21 @@ export function createOrdersRouter({
     optionalAuth,
     validate(cancelOrderSchema),
     controller.cancelOrder,
+  );
+  // D-061: hướng dẫn chuyển khoản (QR) và khách báo đã chuyển. Chủ đơn hoặc khách vãng lai + SĐT.
+  router.get(
+    '/orders/:code/bank-transfer',
+    bankTransferLimiter,
+    optionalAuth,
+    validate(bankTransferOwnerSchema, 'query'),
+    controller.getBankTransfer,
+  );
+  router.post(
+    '/orders/:code/bank-transfer/claim',
+    bankTransferLimiter,
+    optionalAuth,
+    validate(bankTransferOwnerSchema),
+    controller.claimBankTransfer,
   );
   router.get('/orders/:code', requireAuth, controller.getOrder);
 

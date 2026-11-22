@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { orderErrorMessage } from "@/features/orders/labels";
 import { cn } from "@/lib/cn";
 import type { PaymentMethod } from "@/types/order";
-import { createStripeSession, createVnpayPayment } from "../api";
+import { createOnlinePayment } from "../api";
 import { goToPayment } from "../redirect";
 import { WARN_BEFORE_MS, formatCountdown, useRemainingMs } from "../useCountdown";
 
@@ -38,7 +38,8 @@ export function PayAgainButton({
   const [error, setError] = useState<string | null>(null);
   const lock = useRef(false);
 
-  if (method === "COD") return null;
+  // COD không có phiên thanh toán; chuyển khoản (D-061) trả tiền ngoài hệ thống, không có "thanh toán lại".
+  if (method === "COD" || method === "BANK_TRANSFER") return null;
 
   if (remaining === 0) {
     return (
@@ -51,15 +52,14 @@ export function PayAgainButton({
   const warn = remaining !== null && remaining <= WARN_BEFORE_MS;
 
   async function onClick() {
-    if (lock.current) return;
+    if (lock.current || method === "COD" || method === "BANK_TRANSFER") return;
     if (onBeforePay && !onBeforePay()) return;
     lock.current = true;
     setBusy(true);
     setError(null);
     try {
       const input = { code, ...(phone ? { phone } : {}) };
-      const session =
-        method === "VNPAY" ? await createVnpayPayment(input) : await createStripeSession(input);
+      const session = await createOnlinePayment(method, input);
       if (goToPayment(session.redirectUrl)) return; // đang rời trang: giữ trạng thái loading
       setError("Không mở được trang thanh toán. Vui lòng thử lại.");
     } catch (err) {

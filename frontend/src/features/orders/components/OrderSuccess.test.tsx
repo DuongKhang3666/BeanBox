@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { errRes, jsonRes } from "@/features/account/testing";
@@ -86,5 +86,63 @@ describe("OrderSuccess", () => {
     render(<OrderSuccess code={CODE} />);
     await userEvent.click(await screen.findByRole("button", { name: "Thử lại" }));
     expect(await screen.findByTestId("order-code")).toBeInTheDocument();
+  });
+});
+
+describe("OrderSuccess - chuyển khoản / VietQR (D-061)", () => {
+  const bankOrder = (over = {}) =>
+    makeOrder({
+      paymentMethod: "BANK_TRANSFER",
+      status: "PENDING_PAYMENT",
+      paymentStatus: "UNPAID",
+      canPay: false,
+      expiresAt: "2026-11-11T08:30:00.000Z",
+      ...over,
+    });
+  const transfer = {
+    orderCode: CODE,
+    amount: 350000,
+    content: `BEANBOX ${CODE}`,
+    bankName: "Ngân hàng demo (không có thật)",
+    bankBin: "999999",
+    accountNo: "0123456789",
+    accountName: "BEANBOX DEMO",
+    qrPayload: "000201",
+    qrDataUrl: "data:image/png;base64,AAAA",
+    expiresAt: "2026-11-11T08:30:00.000Z",
+    claimedAt: null,
+    isDemo: true,
+  };
+
+  it("đơn còn chờ chuyển khoản: hiện QR + cảnh báo demo, không có nút 'Thanh toán lại'", async () => {
+    sessionStorage.setItem(LAST_ORDER_KEY, JSON.stringify(bankOrder()));
+    const mock = stubFetch((path) =>
+      path.startsWith("/orders/track")
+        ? jsonRes(200, { data: bankOrder() })
+        : jsonRes(200, { data: transfer }),
+    );
+    render(<OrderSuccess code={CODE} />);
+    expect(await screen.findByTestId("bt-account")).toHaveTextContent("0123456789");
+    expect(screen.getByRole("note")).toHaveTextContent("KHÔNG chuyển tiền thật");
+    expect(screen.getByRole("img", { name: /Mã QR VietQR/ })).toHaveAttribute(
+      "src",
+      "data:image/png;base64,AAAA",
+    );
+    expect(screen.queryByRole("button", { name: /Thanh toán lại/ })).not.toBeInTheDocument();
+    const bt = mock.mock.calls.map((c) => String(c[0])).find((u) => u.includes("/bank-transfer"));
+    expect(bt).toContain("phone=");
+  });
+
+  it("đã thanh toán (CONFIRMED): không hiện khối chuyển khoản", async () => {
+    sessionStorage.setItem(LAST_ORDER_KEY, JSON.stringify(bankOrder()));
+    const mock = stubFetch(() =>
+      jsonRes(200, { data: bankOrder({ status: "CONFIRMED", paymentStatus: "PAID" }) }),
+    );
+    render(<OrderSuccess code={CODE} />);
+    await waitFor(() => expect(mock).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(screen.queryByText("Đang kiểm tra trạng thái thanh toán...")).not.toBeInTheDocument(),
+    );
+    expect(screen.queryByTestId("bt-account")).not.toBeInTheDocument();
   });
 });

@@ -31,6 +31,17 @@ export function createPaymentsRouter({
   router.get('/payments/vnpay/ipn', controller.vnpayIpn);
   router.get('/payments/vnpay/return', returnLimiter, controller.vnpayReturn);
 
+  // MoMo GIẢ (D-060): chỉ dùng được khi cấu hình `momo` có (PAYMENT_MOCKS_ENABLED); thiếu -> 409 UNAVAILABLE.
+  router.post(
+    '/payments/momo/create',
+    createLimiter,
+    optionalAuth,
+    validate(createPaymentSchema),
+    controller.createMomo,
+  );
+  router.post('/payments/momo/ipn', controller.momoIpn);
+  router.get('/payments/momo/return', returnLimiter, controller.momoReturn);
+
   router.post(
     '/payments/stripe/create-session',
     createLimiter,

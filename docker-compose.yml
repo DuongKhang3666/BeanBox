@@ -51,6 +51,8 @@ services:
       # Bắt buộc khi NODE_ENV=production: nếu để trống backend dừng ngay khi khởi động. Không dùng `:?` vì
       # compose nội suy cả service của profile chưa bật, sẽ làm hỏng `docker compose up -d db mailpit`.
       INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:-}
+      # D-063: bắt buộc khi NODE_ENV=production (32 byte: openssl rand -base64 32); khóa mẫu dev bị từ chối.
+      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:-}
       WEB_APP_URL: ${WEB_APP_URL:-http://localhost:3000}
       SMTP_HOST: mailpit
       SMTP_PORT: '1025'

@@ -43,6 +43,14 @@ export async function updateAdminUserStatus(
   return data;
 }
 
+/** POST /admin/users/:id/2fa/reset (§14.10): tắt 2FA của người dùng khác, thu hồi mọi phiên của họ. */
+export async function resetAdminUserTwoFactor(id: string): Promise<AdminUserDetail> {
+  const { data } = await api.post<AdminUserDetail>(
+    `/admin/users/${encodeURIComponent(id)}/2fa/reset`,
+  );
+  return data;
+}
+
 export async function updateAdminUserRole(
   id: string,
   body: { role: UserRole },

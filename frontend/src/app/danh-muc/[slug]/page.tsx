@@ -16,8 +16,9 @@ import { FilterPanel } from "@/features/catalog/components/FilterPanel";
 import { ProductResults } from "@/features/catalog/components/ProductResults";
 import { parseFilters, toApiQuery, type RawSearchParams } from "@/features/catalog/filters";
 import { JsonLd } from "@/components/seo/JsonLd";
-import { buildBreadcrumbJsonLd } from "@/features/catalog/jsonld";
-import { absoluteUrl, COFFEE_BEANS_SLUG } from "@/lib/site";
+import { buildBreadcrumbJsonLd, buildItemListJsonLd } from "@/features/catalog/jsonld";
+import { listingCanonicalAndRobots } from "@/features/catalog/listingSeo";
+import { absoluteUrl, COFFEE_BEANS_SLUG, DEFAULT_OG_IMAGE } from "@/lib/site";
 import { redirectIfMoved } from "@/lib/slugRedirect";
 import type { CategoryChild, CategoryDetail, CategoryNode } from "@/types/catalog";
 
@@ -94,8 +95,8 @@ async function resolveCategory(tree: CategoryNode[], slug: string): Promise<Foun
   return result.status === "ok" ? fromDetail(result.data) : null;
 }
 
-export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const { slug } = await params;
+export async function generateMetadata({ params, searchParams }: Props): Promise<Metadata> {
+  const [{ slug }, rawSearch] = await Promise.all([params, searchParams]);
   const path = `/danh-muc/${slug}`;
   let tree: CategoryNode[];
   try {
@@ -116,15 +117,22 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return {
     title: name,
     description,
-    alternates: { canonical: path },
+    ...listingCanonicalAndRobots(path, rawSearch),
+    // Metadata con thay hẳn openGraph của cha nên phải nêu lại ảnh: dùng ảnh OG mặc định (D-064).
     openGraph: {
       type: "website",
       title: name,
       description,
       url: absoluteUrl(path),
       locale: "vi_VN",
+      images: [{ url: DEFAULT_OG_IMAGE, width: 1200, height: 630, alt: `${name} - BeanBox` }],
     },
-    twitter: { card: "summary", title: name, description },
+    twitter: {
+      card: "summary_large_image",
+      title: name,
+      description,
+      images: [DEFAULT_OG_IMAGE],
+    },
   };
 }
 
@@ -178,6 +186,17 @@ export default async function CategoryPage({ params, searchParams }: Props) {
           { name: category.name, path: pathname },
         ])}
       />
+      {productRes.status === "fulfilled" && productRes.value.items.length > 0 ? (
+        <JsonLd
+          data={buildItemListJsonLd(
+            productRes.value.items.map((p) => ({
+              path: `/san-pham/${p.slug}`,
+              name: p.name,
+            })),
+            (productRes.value.meta.page - 1) * productRes.value.meta.pageSize + 1,
+          )}
+        />
+      ) : null}
       <Breadcrumbs items={crumbs} />
       <h1 className="font-serif text-3xl font-bold text-coffee-900">{category.name}</h1>
 

@@ -1,3 +1,4 @@
+import { computeEta, formatDaysRange, type EtaDto } from './eta.js';
 import type { ShopSettings } from '../modules/settings/settings.service.js';
 
 /** Quy tắc phí ship (api-contract §10 mục 3–4, D-003, D-006). Tiền là số nguyên VND. */
@@ -30,7 +31,10 @@ export function weightSurcharge(totalGram: number, cfg: SurchargeConfig): number
 export interface ShippingOption {
   method: ShippingMethod;
   label: string;
+  /** Giữ để tương thích: `min-max` ngày, lấy từ settings `shipping.eta`. */
   estimatedDays: string;
+  /** D-062: khoảng ngày + ngày dự kiến (ngày lịch VN, tính từ ngày đặt). */
+  eta: EtaDto;
   baseFee: number;
   weightSurcharge: number;
   fee: number;
@@ -46,22 +50,25 @@ export interface BuildShippingInput {
   totalWeightGram: number;
   zone: ShippingZone;
   settings: ShopSettings;
+  now: Date;
   freeshipCoupon: { maxDiscount: number | null } | null;
 }
 
-const METHODS: readonly { method: ShippingMethod; label: string; estimatedDays: string }[] = [
-  { method: 'STANDARD', label: 'Tiêu chuẩn', estimatedDays: '3-5' },
-  { method: 'EXPRESS', label: 'Nhanh', estimatedDays: '1-2' },
+const METHODS: readonly { method: ShippingMethod; label: string }[] = [
+  { method: 'STANDARD', label: 'Tiêu chuẩn' },
+  { method: 'EXPRESS', label: 'Nhanh' },
 ];
 
 export function buildShippingOptions(input: BuildShippingInput): ShippingOption[] {
-  const { subtotal, discountTotal, totalWeightGram, zone, settings, freeshipCoupon } = input;
+  const { subtotal, discountTotal, totalWeightGram, zone, settings, freeshipCoupon, now } = input;
   const rates = zone === 'INNER' ? settings.shippingRates.inner : settings.shippingRates.other;
+  const etas = zone === 'INNER' ? settings.shippingEta.inner : settings.shippingEta.other;
   const surcharge = weightSurcharge(totalWeightGram, settings);
   const net = subtotal - discountTotal;
   const thresholdReached = net >= settings.freeShippingThreshold;
 
-  return METHODS.map(({ method, label, estimatedDays }) => {
+  return METHODS.map(({ method, label }) => {
+    const range = etas[method];
     const baseFee = rates[method];
     const fee = baseFee + surcharge;
     const freeShippingApplied = method === 'STANDARD' && thresholdReached;
@@ -75,7 +82,8 @@ export function buildShippingOptions(input: BuildShippingInput): ShippingOption[
     return {
       method,
       label,
-      estimatedDays,
+      estimatedDays: formatDaysRange(range),
+      eta: computeEta(now, range),
       baseFee,
       weightSurcharge: surcharge,
       fee,

@@ -1,4 +1,4 @@
-import { formatDate, formatDateTime, formatVND } from "./format";
+import { formatDate, formatDateRange, formatDateTime, formatVND } from "./format";
 
 describe("formatVND", () => {
   it("định dạng với dấu chấm ngăn cách và ký hiệu ₫", () => {
@@ -35,5 +35,16 @@ describe("formatDate", () => {
     expect(formatDateTime(new Date(Date.UTC(2026, 11, 31, 17, 0)))).toBe("01/01/2027 00:00");
     // 16:59 UTC vẫn là 23:59 cùng ngày.
     expect(formatDateTime("2026-11-20T16:59:00Z")).toBe("20/11/2026 23:59");
+  });
+});
+
+describe("formatDateRange", () => {
+  it("dd/MM – dd/MM từ chuỗi YYYY-MM-DD, không phụ thuộc múi giờ máy", () => {
+    expect(formatDateRange("2026-11-22", "2026-11-24")).toBe("22/11 – 24/11");
+    expect(formatDateRange("2026-12-30", "2027-01-02")).toBe("30/12 – 02/01");
+  });
+  it("cùng ngày -> một ngày; chuỗi lạ giữ nguyên", () => {
+    expect(formatDateRange("2026-11-22", "2026-11-22")).toBe("22/11");
+    expect(formatDateRange("x", "y")).toBe("x – y");
   });
 });

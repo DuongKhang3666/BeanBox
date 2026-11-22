@@ -32,7 +32,7 @@ const adminSelect = {
   repliedAt: true,
   createdAt: true,
   updatedAt: true,
-  user: { select: { id: true, fullName: true, email: true } },
+  user: { select: { id: true, fullName: true, email: true, deletedAt: true } },
   product: { select: { id: true, name: true, slug: true } },
 } satisfies Prisma.ReviewSelect;
 

@@ -166,6 +166,7 @@ Quy tắc phân lớp backend: `routes` (khai báo + middleware) -> `controller`
 | `HOST` | `127.0.0.1` (mặc định; địa chỉ backend lắng nghe, D-009) |
 | `TRUST_PROXY` | mặc định `loopback`; Docker dùng `uniquelocal`; cấm `true` (D-009) |
 | `INTERNAL_API_SECRET` (backend + frontend server) | chuỗi >= 32 ký tự; SSR gửi qua `X-Internal-Secret`; chỉ ở server, không bao giờ `NEXT_PUBLIC_` (D-009). Tùy chọn ở dev, BẮT BUỘC khi `NODE_ENV=production` (thiếu thì backend không khởi động; D-026) |
+| `TOTP_ENCRYPTION_KEY` | khóa AES-256-GCM (32 byte, dạng hex 64 ký tự hoặc base64) mã hóa secret TOTP của 2FA (D-063). Tùy chọn ở dev: thiếu thì setup 2FA trả 503 `TWO_FACTOR_UNAVAILABLE` và user đã bật 2FA không đăng nhập được. BẮT BUỘC ở production; khóa mẫu bắt đầu bằng `beanbox-dev-` bị từ chối. Không đổi/mất khóa sau khi có người bật 2FA (chưa hỗ trợ xoay khóa) |
 | `WEB_APP_URL` | gốc link trong email, mặc định `http://localhost:3000`; không dựng link từ header Host/Origin |
 | `JOBS_ENABLED` | mặc định `true`; bật/tắt job nền dọn dẹp (§7); luôn tắt khi `NODE_ENV=test` |
 | `COOKIE_SECURE` | mặc định `true` khi production; `false` ở production bị từ chối lúc khởi động (D-045) |
@@ -178,6 +179,8 @@ Quy tắc phân lớp backend: `routes` (khai báo + middleware) -> `controller`
 | `VNPAY_TMN_CODE`, `VNPAY_HASH_SECRET` | Có cả hai thì bật VNPay; thiếu thì tắt (quote `enabled:false`, đặt đơn -> 409 `PAYMENT_METHOD_UNAVAILABLE`). Lấy từ tài khoản sandbox, xem `payments-setup.md` |
 | `VNPAY_PAYMENT_URL` | mặc định `https://sandbox.vnpayment.vn/paymentv2/vpcpay.html`; bắt buộc https |
 | `VNPAY_RETURN_URL` | mặc định `${WEB_APP_URL}/thanh-toan/ket-qua?provider=vnpay` |
+| `PAYMENT_MOCKS_ENABLED`, `PAYMENT_MOCK_SECRET` | (D-060) mặc định tắt; bật cổng VNPay giả và MoMo giả. Từ chối khi `NODE_ENV=production` hoặc có `VNPAY_TMN_CODE`; secret >= 16 ký tự, trống thì sinh ngẫu nhiên mỗi lần khởi động |
+| `BANK_TRANSFER_ENABLED`, `BANK_TRANSFER_HOLD_HOURS` | (D-061) mặc định tắt; bật chuyển khoản VietQR; thời gian giữ đơn 1..72 giờ, mặc định 24 |
 | `STRIPE_SECRET_KEY` | Có thì bật Stripe; CHỈ dạng `sk_test_...` (`sk_live_` -> backend từ chối khởi động) |
 | `STRIPE_WEBHOOK_SECRET` | `whsec_...`, tùy chọn; thiếu thì webhook trả 503, vẫn xác nhận qua `POST /payments/stripe/sync` |
 | `ORDER_RATE_LIMIT_PER_MIN`, `COUPON_RATE_LIMIT_PER_MIN`, `QUOTE_RATE_LIMIT_PER_MIN` | mặc định `10`, `10`, `30` (D-011, D-016); số nguyên dương |

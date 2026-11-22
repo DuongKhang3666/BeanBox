@@ -9,6 +9,8 @@ export function applyTestEnv(): void {
   process.env.INTERNAL_API_SECRET = 'test-internal-secret-0123456789abcdefghij';
   process.env.FRONTEND_ORIGINS = 'http://localhost:3000';
   process.env.LOG_LEVEL = 'silent';
+  // D-063: khóa dev giả (32 byte ASCII "beanbox-dev-totp-key-localhost!!"), chỉ dùng trong test.
+  process.env.TOTP_ENCRYPTION_KEY = 'YmVhbmJveC1kZXYtdG90cC1rZXktbG9jYWxob3N0ISE=';
   // D-057: nhiều test đặt hàng loạt đơn COD guest cùng một SĐT; nới giới hạn đơn mở cho cả suite.
   // Test của chính giới hạn (guestCod.integration.test.ts) đặt lại env.GUEST_COD_MAX_OPEN = 3.
   process.env.GUEST_COD_MAX_OPEN = '100';
@@ -19,6 +21,10 @@ export function applyTestEnv(): void {
     'VNPAY_HASH_SECRET',
     'STRIPE_SECRET_KEY',
     'STRIPE_WEBHOOK_SECRET',
+    'PAYMENT_MOCKS_ENABLED',
+    'PAYMENT_MOCK_SECRET',
+    'BANK_TRANSFER_ENABLED',
+    'BANK_TRANSFER_HOLD_HOURS',
     'TURNSTILE_SITE_KEY',
     'TURNSTILE_SECRET_KEY',
   ]) {

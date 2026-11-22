@@ -3,14 +3,15 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import {
   AUTH_LOGOUT_EVENT,
+  clearSession,
   SESSION_FLAG_KEY,
   api,
   sessionFlag,
   tokenStore,
 } from "@/lib/api/client";
-import type { Session, User } from "@/types/auth";
+import { isTwoFactorChallenge, type LoginResult, type Session, type User } from "@/types/auth";
 import * as authApi from "./api";
-import type { LoginInput, RegisterInput } from "./api";
+import type { LoginInput, LoginTwoFactorInput, RegisterInput } from "./api";
 
 export type AuthStatus = "loading" | "authenticated" | "anonymous";
 
@@ -21,9 +22,13 @@ export interface AuthContextValue {
   status: AuthStatus;
   logoutReason: LogoutReason;
   user: User | null;
-  login: (input: LoginInput) => Promise<Session>;
+  /** Có thể trả thử thách 2FA (chưa đăng nhập) thay vì phiên: dùng `isTwoFactorChallenge`. */
+  login: (input: LoginInput) => Promise<LoginResult>;
+  loginTwoFactor: (input: LoginTwoFactorInput) => Promise<Session>;
   register: (input: RegisterInput) => Promise<Session>;
   logout: () => Promise<void>;
+  /** Kết thúc phiên chỉ ở phía client (server đã thu hồi, vd. sau khi xóa tài khoản). */
+  endSession: () => void;
   setUser: (user: User) => void;
   reloadUser: () => Promise<void>;
 }
@@ -95,7 +100,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const login = useCallback(
-    async (input: LoginInput) => applySession(await authApi.login(input)),
+    async (input: LoginInput): Promise<LoginResult> => {
+      const result = await authApi.login(input);
+      return isTwoFactorChallenge(result) ? result : applySession(result);
+    },
+    [applySession],
+  );
+
+  const loginTwoFactor = useCallback(
+    async (input: LoginTwoFactorInput) => applySession(await authApi.loginTwoFactor(input)),
     [applySession],
   );
 
@@ -116,6 +129,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setStatus("anonymous");
   }, []);
 
+  const endSession = useCallback(() => {
+    clearSession();
+    setLogoutReason("user");
+    setUserState(null);
+    setStatus("anonymous");
+  }, []);
+
   const setUser = useCallback((next: User) => {
     setLogoutReason(null);
     setUserState(next);
@@ -127,8 +147,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = useMemo<AuthContextValue>(
-    () => ({ status, logoutReason, user, login, register, logout, setUser, reloadUser }),
-    [status, logoutReason, user, login, register, logout, setUser, reloadUser],
+    () => ({
+      status,
+      logoutReason,
+      user,
+      login,
+      loginTwoFactor,
+      register,
+      logout,
+      endSession,
+      setUser,
+      reloadUser,
+    }),
+    [
+      status,
+      logoutReason,
+      user,
+      login,
+      loginTwoFactor,
+      register,
+      logout,
+      endSession,
+      setUser,
+      reloadUser,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

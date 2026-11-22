@@ -93,6 +93,13 @@ export default defineConfig({
             GENERAL_RATE_LIMIT_PER_MIN: "1000",
             // Limiter nhóm auth (login/register/...) mặc định 5/phút; E2E có ~5 lượt đăng nhập.
             AUTH_RATE_LIMIT_PER_MIN: "30",
+            // D-063: khóa AES-256 giả cho secret 2FA (32 byte ASCII; chỉ dev/E2E, production từ chối).
+            // Ưu tiên giá trị từ môi trường (CI), nếu không có thì dùng khóa mẫu dev của .env.example.
+            TOTP_ENCRYPTION_KEY:
+              process.env.TOTP_ENCRYPTION_KEY ?? "YmVhbmJveC1kZXYtdG90cC1rZXktbG9jYWxob3N0ISE=",
+            // D-060/D-061: cổng giả + chuyển khoản VietQR demo (chỉ dev/CI; production từ chối).
+            PAYMENT_MOCKS_ENABLED: "true",
+            BANK_TRANSFER_ENABLED: "true",
             // Chỉ ghi đè khi đổi cổng (mặc định dùng giá trị trong backend/.env như trước).
             ...(CUSTOM_API_PORT ? { PORT: String(API_PORT) } : {}),
             ...(CUSTOM_WEB_PORT

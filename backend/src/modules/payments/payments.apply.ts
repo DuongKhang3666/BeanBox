@@ -63,7 +63,12 @@ export interface ApplyPaymentResult {
   late: boolean;
 }
 
-const methodLabel: Record<string, string> = { VNPAY: 'VNPay', STRIPE: 'Stripe' };
+const methodLabel: Record<string, string> = {
+  VNPAY: 'VNPay',
+  STRIPE: 'Stripe',
+  MOMO: 'MoMo (giả lập)',
+  BANK_TRANSFER: 'chuyển khoản',
+};
 
 const notFound = (): ApplyPaymentResult => ({
   kind: 'NOT_FOUND',

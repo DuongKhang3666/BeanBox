@@ -93,4 +93,6 @@ export const PAYMENT_RECORD_STATUS_LABEL: Record<AdminPaymentStatus, string> = {
 export const PAYMENT_PROVIDER_LABEL: Record<AdminPaymentProvider, string> = {
   VNPAY: "VNPay",
   STRIPE: "Stripe",
+  MOMO: "MoMo (giả lập)",
+  BANK_TRANSFER: "Chuyển khoản",
 };

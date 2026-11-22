@@ -18,14 +18,18 @@ import { adminErrorMessage, fieldErrorsOf } from "../errors";
 import { formatVnDateTime } from "../format";
 import {
   AREA_FIELD_PATHS,
+  BANK_FIELD_PATHS,
   CONTACT_FIELD_PATHS,
+  DEMO_BANK_BIN,
   MAX_BANNERS,
   SECTION_KEYS,
   SHIPPING_FIELD_PATHS,
   areaDraft,
   bannerFieldPaths,
   bannersDraft,
+  bankDraft,
   buildAreaPatch,
+  buildBankPatch,
   buildBannersPatch,
   buildContactPatch,
   buildShippingPatch,
@@ -34,11 +38,15 @@ import {
   latestUpdatedAt,
   mapServerFieldErrors,
   shippingDraft,
+  ETA_METHODS,
+  ETA_ZONES,
   validateArea,
+  validateBank,
   validateBanners,
   validateContact,
   validateShipping,
   type AreaDraft,
+  type BankDraft,
   type BannerDraft,
   type ContactDraft,
   type FieldErrors,
@@ -293,6 +301,10 @@ function ShippingSection({
     touch();
     setD((x) => ({ ...x, [k]: v }));
   };
+  const setEta = (key: string) => (v: string) => {
+    touch();
+    setD((x) => ({ ...x, eta: { ...x.eta, [key]: v } }));
+  };
   const e = state.errors;
   return (
     <SectionCard
@@ -338,6 +350,41 @@ function ShippingSection({
             error={e["shipping.rates.other.EXPRESS"]}
           />
         </div>
+      </fieldset>
+      <fieldset className="space-y-3">
+        <legend className="mb-1 text-sm font-semibold text-coffee-900">
+          Thời gian giao dự kiến (ngày)
+        </legend>
+        <p className="text-sm text-coffee-700">
+          Tính theo ngày lịch từ ngày đặt hàng (không loại trừ chủ nhật/ngày lễ). Chỉ là ước tính;
+          đơn đã đặt giữ nguyên ngày dự kiến đã báo cho khách.
+        </p>
+        {ETA_ZONES.flatMap(({ zone, label: zl }) =>
+          ETA_METHODS.map(({ method, label: ml }) => {
+            const minKey = `${zone}.${method}.minDays`;
+            const maxKey = `${zone}.${method}.maxDays`;
+            return (
+              <div key={`${zone}.${method}`} className="grid gap-3 sm:grid-cols-2">
+                <NumberField
+                  path={`shipping.eta.${minKey}`}
+                  label={`${zl} - ${ml}: từ`}
+                  suffix="ngày"
+                  value={d.eta[minKey] ?? ""}
+                  onChange={setEta(minKey)}
+                  error={e[`shipping.eta.${minKey}`]}
+                />
+                <NumberField
+                  path={`shipping.eta.${maxKey}`}
+                  label={`${zl} - ${ml}: đến`}
+                  suffix="ngày"
+                  value={d.eta[maxKey] ?? ""}
+                  onChange={setEta(maxKey)}
+                  error={e[`shipping.eta.${maxKey}`]}
+                />
+              </div>
+            );
+          }),
+        )}
       </fieldset>
       <NumberField
         path="shipping.freeShippingThreshold"
@@ -570,6 +617,84 @@ function ContactSection({
           value={d.address}
           onChange={set("address")}
           error={e["store.contact.address"]}
+        />
+      </div>
+    </SectionCard>
+  );
+}
+
+// ---------- Chuyển khoản (D-061) ----------
+
+function BankSection({
+  result,
+  onSaved,
+}: {
+  result: AdminSettingsResult;
+  onSaved: (r: AdminSettingsResult) => void;
+}) {
+  const [d, setD] = useState<BankDraft>(() => bankDraft(result.data));
+  const { state, save, touch } = useSectionSave<BankDraft>({
+    validate: validateBank,
+    build: buildBankPatch,
+    paths: () => BANK_FIELD_PATHS,
+    onSaved: (r) => {
+      setD(bankDraft(r.data));
+      onSaved(r);
+    },
+  });
+  const set = (k: keyof BankDraft) => (v: string) => {
+    touch();
+    setD((x) => ({ ...x, [k]: v }));
+  };
+  const e = state.errors;
+  const isDemo = d.bankBin.trim() === DEMO_BANK_BIN;
+  return (
+    <SectionCard
+      title="Tài khoản nhận chuyển khoản"
+      description="Dùng để dựng mã VietQR cho đơn thanh toán bằng chuyển khoản (chỉ hiện khi máy chủ bật BANK_TRANSFER_ENABLED)."
+      updatedAt={latestUpdatedAt(SECTION_KEYS.payment, result.meta.updatedAt)}
+      state={state}
+      onSubmit={() => void save(d)}
+    >
+      {isDemo ? (
+        <p role="note" className="rounded-lg bg-cream-100 px-3 py-2 text-sm text-coffee-900">
+          Đang dùng BIN demo <strong>{DEMO_BANK_BIN}</strong> (không tồn tại): ứng dụng ngân hàng
+          không thể chuyển tiền thật tới mã QR này. Chỉ đổi khi bạn thực sự muốn nhận tiền.
+        </p>
+      ) : null}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <TextField
+          path="payment.bankTransfer.bankBin"
+          label="Mã BIN ngân hàng"
+          maxLength={6}
+          hint="6 chữ số theo danh mục NAPAS."
+          value={d.bankBin}
+          onChange={set("bankBin")}
+          error={e["payment.bankTransfer.bankBin"]}
+        />
+        <TextField
+          path="payment.bankTransfer.bankName"
+          label="Tên ngân hàng"
+          maxLength={100}
+          value={d.bankName}
+          onChange={set("bankName")}
+          error={e["payment.bankTransfer.bankName"]}
+        />
+        <TextField
+          path="payment.bankTransfer.accountNo"
+          label="Số tài khoản"
+          maxLength={19}
+          value={d.accountNo}
+          onChange={set("accountNo")}
+          error={e["payment.bankTransfer.accountNo"]}
+        />
+        <TextField
+          path="payment.bankTransfer.accountName"
+          label="Tên chủ tài khoản"
+          maxLength={100}
+          value={d.accountName}
+          onChange={set("accountName")}
+          error={e["payment.bankTransfer.accountName"]}
         />
       </div>
     </SectionCard>
@@ -882,6 +1007,7 @@ function SettingsForms({ initial }: { initial: AdminSettingsResult }) {
       <ShippingSection result={result} onSaved={onSaved} />
       <AreaSection result={result} onSaved={onSaved} />
       <ContactSection result={result} onSaved={onSaved} />
+      <BankSection result={result} onSaved={onSaved} />
       <BannersSection result={result} onSaved={onSaved} />
     </div>
   );

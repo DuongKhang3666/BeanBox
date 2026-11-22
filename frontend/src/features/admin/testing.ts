@@ -255,6 +255,10 @@ export function makeAdminSettings(over: Partial<AdminSettings> = {}): AdminSetti
       inner: { STANDARD: 20000, EXPRESS: 35000 },
       other: { STANDARD: 35000, EXPRESS: 55000 },
     },
+    "shipping.eta": {
+      inner: { STANDARD: { minDays: 1, maxDays: 2 }, EXPRESS: { minDays: 0, maxDays: 1 } },
+      other: { STANDARD: { minDays: 3, maxDays: 5 }, EXPRESS: { minDays: 1, maxDays: 3 } },
+    },
     "shipping.innerCityProvinceCodes": ["01", "79"],
     "shipping.innerCityWardCodes": [],
     "shipping.freeShippingThreshold": 500000,
@@ -262,6 +266,12 @@ export function makeAdminSettings(over: Partial<AdminSettings> = {}): AdminSetti
     "order.paymentExpiryMinutes": 15,
     "store.contact": { name: "BeanBox", email: "hello@beanbox.local", phone: "", address: "" },
     "home.banners": [],
+    "payment.bankTransfer": {
+      bankBin: "999999",
+      bankName: "Ngân hàng demo (không có thật)",
+      accountNo: "0123456789",
+      accountName: "BEANBOX DEMO",
+    },
     ...over,
   };
 }

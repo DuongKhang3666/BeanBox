@@ -14,11 +14,13 @@ import {
   type TurnstileVerifier,
 } from './lib/turnstile.js';
 import { errorHandler } from './middlewares/errorHandler.js';
+import { ipKeyGenerator } from 'express-rate-limit';
 import { createRateLimiter, isTrustedInternalRequest } from './middlewares/rateLimit.js';
 import { notFound } from './middlewares/notFound.js';
 import { requestId } from './middlewares/requestId.js';
 import { createAdminRouter } from './modules/admin/admin.routes.js';
 import { createAuthRouter } from './modules/auth/auth.routes.js';
+import { createTwoFactorRouter } from './modules/twoFactor/twoFactor.routes.js';
 import { createCspRouter } from './modules/csp/csp.routes.js';
 import { createContactRouter } from './modules/contact/contact.routes.js';
 import { createCartRouter } from './modules/cart/cart.routes.js';
@@ -28,8 +30,9 @@ import { healthRouter } from './modules/health/health.routes.js';
 import { createOrdersRouter } from './modules/orders/orders.routes.js';
 import { loadLocations } from './modules/locations/locations.data.js';
 import { locationsRouter } from './modules/locations/locations.routes.js';
-import { meRouter } from './modules/me/me.routes.js';
+import { createMeRouter } from './modules/me/me.routes.js';
 import { createPaymentsRouter } from './modules/payments/payments.routes.js';
+import { createMockGatewayRouter } from './modules/payments/mockGateway.js';
 import { createReviewsRouter } from './modules/reviews/reviews.routes.js';
 import type { StripeHttp } from './modules/payments/stripe.js';
 import { settingsRouter } from './modules/settings/settings.routes.js';
@@ -83,6 +86,8 @@ export interface AppOptions {
   uploadRateLimit?: number;
   /** Số request/phút/IP của GET /admin/analytics/export (mặc định env EXPORT_RATE_LIMIT_PER_MIN = 10). Chỉ đổi trong test. */
   exportRateLimit?: number;
+  /** Số lần/giờ/người dùng của GET /me/export (mặc định 5). Chỉ đổi trong test. */
+  dataExportRateLimit?: number;
   /** Cấu hình thanh toán online (mặc định đọc từ env). Test tiêm cấu hình giả. */
   paymentConfig?: PaymentConfig;
   /** Số request/phút/IP của POST /payments/vnpay/create (mặc định 10). Chỉ đổi trong test. */
@@ -93,6 +98,10 @@ export interface AppOptions {
   paymentSyncRateLimit?: number;
   /** HTTP client Stripe (mặc định fetch tới api.stripe.com). Test tiêm bản giả, không đi qua mạng. */
   stripeHttp?: StripeHttp;
+  /** Số request/phút/IP của POST /mock-gateway/*\/complete (mặc định 30). Chỉ đổi trong test. */
+  mockGatewayRateLimit?: number;
+  /** Số request/phút/IP của GET/POST /orders/:code/bank-transfer* (mặc định 30). Chỉ đổi trong test. */
+  bankTransferRateLimit?: number;
   /** Số request/phút/IP của POST /products/:slug/reviews và PATCH /reviews/:id (mặc định 10). Chỉ đổi trong test. */
   reviewRateLimit?: number;
   /** Số request/10 phút/IP của POST /contact (mặc định 3). Chỉ đổi trong test. */
@@ -162,6 +171,13 @@ export function createApp(options: AppOptions = {}): Express {
       windowMs: 60_000,
       limit: options.paymentSyncRateLimit ?? 30,
     }),
+    // Cổng giả (D-060) và hướng dẫn chuyển khoản (D-061): store riêng, theo IP.
+    mockGateway: createRateLimiter({ windowMs: 60_000, limit: options.mockGatewayRateLimit ?? 30 }),
+    bankTransfer: createRateLimiter({
+      windowMs: 60_000,
+      limit: options.bankTransferRateLimit ?? 30,
+      skip: (req) => req.headers.authorization !== undefined,
+    }),
     // Ghi đánh giá (§14.1): store riêng, theo IP, đứng trước xác thực.
     reviewWrite: createRateLimiter({ windowMs: 60_000, limit: options.reviewRateLimit ?? 10 }),
     // Form liên hệ (§14.11): 3/10 phút/IP, store riêng, tính mọi request (kể cả honeypot/Bearer).
@@ -170,6 +186,12 @@ export function createApp(options: AppOptions = {}): Express {
     cspReport: createRateLimiter({ windowMs: 60_000, limit: options.cspReportRateLimit ?? 20 }),
     // Chỉ áp cho /admin/uploads (store riêng), đứng sau requireAuth/requireStaff.
     upload: createRateLimiter({ windowMs: 60_000, limit: options.uploadRateLimit ?? 30 }),
+    // D-065: xuất dữ liệu cá nhân 5 lần/giờ, khóa theo userId (đứng sau requireAuth), fallback IP.
+    dataExport: createRateLimiter({
+      windowMs: 3_600_000,
+      limit: options.dataExportRateLimit ?? 5,
+      keyGenerator: (req) => (req.auth ? `u:${req.auth.userId}` : ipKeyGenerator(req.ip ?? '')),
+    }),
     export: createRateLimiter({
       windowMs: 60_000,
       limit: options.exportRateLimit ?? env.EXPORT_RATE_LIMIT_PER_MIN,
@@ -238,7 +260,14 @@ export function createApp(options: AppOptions = {}): Express {
 
   app.use(API_PREFIX, healthRouter);
   app.use(API_PREFIX, createAuthRouter({ sensitiveLimiter: limiters.sensitive }));
-  app.use(API_PREFIX, meRouter);
+  app.use(
+    API_PREFIX,
+    createMeRouter({
+      sensitiveLimiter: limiters.sensitive,
+      dataExportLimiter: limiters.dataExport,
+    }),
+  );
+  app.use(API_PREFIX, createTwoFactorRouter({ sensitiveLimiter: limiters.sensitive }));
   app.use(API_PREFIX, wishlistRouter);
   app.use(API_PREFIX, catalogRouter);
   app.use(API_PREFIX, createReviewsRouter({ writeLimiter: limiters.reviewWrite }));
@@ -253,6 +282,7 @@ export function createApp(options: AppOptions = {}): Express {
       trackLimiter: limiters.track,
       guestCancelLimiter: limiters.guestCancel,
       orderLimiter: limiters.order,
+      bankTransferLimiter: limiters.bankTransfer,
     }),
   );
   app.use(
@@ -263,6 +293,13 @@ export function createApp(options: AppOptions = {}): Express {
       syncLimiter: limiters.paymentSync,
     }),
   );
+  // D-060: cổng giả chỉ tồn tại khi bật cờ; tắt -> không mount -> 404 chuẩn của notFound.
+  if (paymentConfig.mocksEnabled) {
+    app.use(
+      `${API_PREFIX}/mock-gateway`,
+      createMockGatewayRouter({ limiter: limiters.mockGateway }),
+    );
+  }
   app.use(
     `${API_PREFIX}/admin`,
     createAdminRouter({

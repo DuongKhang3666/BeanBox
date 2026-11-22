@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { isTwoFactorChallenge, type TwoFactorChallenge } from "@/types/auth";
 import { isAdminPath } from "@/lib/adminPath";
 import { useAuth } from "../AuthProvider";
 import { mapAuthError } from "../errors";
@@ -12,6 +13,7 @@ import { normalizeEmail, validateEmail, validateRequiredPassword } from "../vali
 import { AuthCard, authLinkClass } from "./AuthCard";
 import { PasswordField, TextField } from "./Fields";
 import { FormError } from "./FormError";
+import { LoginTwoFactorStep } from "./LoginTwoFactorStep";
 import { focusFirstInvalid } from "./focus";
 
 const FIELDS = ["email", "password"] as const;
@@ -28,11 +30,27 @@ export function LoginForm() {
   const [formError, setFormError] = useState<string | undefined>();
   const [submitting, setSubmitting] = useState(false);
   const busy = useRef(false);
+  // Bước 2 (2FA): token thử thách chỉ giữ trong state, không lưu localStorage.
+  const [challenge, setChallenge] = useState<TwoFactorChallenge | null>(null);
 
   // Đã đăng nhập mà vào trang này -> sang tài khoản. `busy` chặn xung đột với redirect sau khi submit.
   useEffect(() => {
     if (status === "authenticated" && !busy.current) router.replace("/tai-khoan");
   }, [status, router]);
+
+  function goAfterLogin() {
+    // Gộp giỏ guest vào giỏ tài khoản do CartProvider xử lý khi auth chuyển sang authenticated.
+    const dest = safeRedirect(params.get("next"));
+    // /admin có CSP riêng theo tài liệu: phải tải trang đầy đủ (phiên được khôi phục bằng refresh cookie).
+    if (isAdminPath(dest)) window.location.assign(dest);
+    else router.replace(dest);
+  }
+
+  function restart() {
+    setChallenge(null);
+    setFormError(undefined);
+    busy.current = false;
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -53,12 +71,15 @@ export function LoginForm() {
     busy.current = true;
     setSubmitting(true);
     try {
-      await login({ email: normalizeEmail(email), password });
-      // Gộp giỏ guest vào giỏ tài khoản do CartProvider xử lý khi auth chuyển sang authenticated.
-      const dest = safeRedirect(params.get("next"));
-      // /admin có CSP riêng theo tài liệu: phải tải trang đầy đủ (phiên được khôi phục bằng refresh cookie).
-      if (isAdminPath(dest)) window.location.assign(dest);
-      else router.replace(dest);
+      const result = await login({ email: normalizeEmail(email), password });
+      if (isTwoFactorChallenge(result)) {
+        // Giữ busy=true trong suốt bước 2 để effect "đã đăng nhập" không chen vào điều hướng.
+        setPassword("");
+        setChallenge(result);
+        setSubmitting(false);
+        return;
+      }
+      goAfterLogin();
     } catch (err) {
       const mapped = mapAuthError(err, FIELDS);
       setErrors(mapped.fieldErrors);
@@ -66,6 +87,12 @@ export function LoginForm() {
       busy.current = false;
       setSubmitting(false);
     }
+  }
+
+  if (challenge) {
+    return (
+      <LoginTwoFactorStep challenge={challenge} onSuccess={goAfterLogin} onRestart={restart} />
+    );
   }
 
   const registerHref = next ? `/dang-ky?next=${encodeURIComponent(next)}` : "/dang-ky";

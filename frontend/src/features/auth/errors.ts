@@ -75,6 +75,23 @@ export function mapAuthError(error: unknown, knownFields?: readonly string[]): M
         formError: "Tài khoản đã bị vô hiệu hóa. Vui lòng liên hệ cửa hàng để được hỗ trợ.",
         fieldErrors: {},
       };
+    case "TWO_FACTOR_INVALID":
+      return { formError: "Mã xác thực không đúng hoặc đã được sử dụng.", fieldErrors: {} };
+    case "TWO_FACTOR_CHALLENGE_INVALID":
+      return {
+        formError: "Phiên xác thực đã hết hạn hoặc không còn hiệu lực. Vui lòng đăng nhập lại.",
+        fieldErrors: {},
+      };
+    case "TWO_FACTOR_UNAVAILABLE":
+      return {
+        formError: "Xác thực 2 lớp tạm thời không khả dụng. Vui lòng thử lại sau.",
+        fieldErrors: {},
+      };
+    case "TWO_FACTOR_SETUP_REQUIRED":
+      return {
+        formError: "Phiên thiết lập đã hết hạn. Vui lòng bắt đầu lại.",
+        fieldErrors: {},
+      };
     case "EMAIL_TAKEN":
       return { fieldErrors: { email: "Email đã được sử dụng" } };
     case "RATE_LIMITED": {

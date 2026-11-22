@@ -9,6 +9,8 @@ export interface UserDto {
   avatarUrl: string | null;
   role: Role;
   emailVerified: boolean;
+  /** D-063: đã bật xác thực 2 lớp (chỉ cờ, không lộ gì khác). */
+  twoFactorEnabled: boolean;
   createdAt: string;
 }
 
@@ -22,6 +24,7 @@ export interface UserDtoSource {
   avatarUrl: string | null;
   role: Role;
   emailVerifiedAt: Date | null;
+  twoFactorEnabledAt: Date | null;
   createdAt: Date;
 }
 
@@ -36,6 +39,7 @@ export function toUserDto(user: UserDtoSource): UserDto {
     avatarUrl: user.avatarUrl,
     role: user.role,
     emailVerified: user.emailVerifiedAt !== null,
+    twoFactorEnabled: user.twoFactorEnabledAt !== null,
     createdAt: user.createdAt.toISOString(),
   };
 }

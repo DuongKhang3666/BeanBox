@@ -197,6 +197,7 @@ describe('related: chấm điểm nội dung', () => {
         'compareAtPrice',
         'inStock',
         'isFeatured',
+        'updatedAt',
         'ratingAvg',
         'ratingCount',
         'coffee',

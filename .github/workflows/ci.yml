@@ -163,6 +163,8 @@ jobs:
       DATABASE_URL: postgresql://beanbox:ci-pg-password@localhost:5432/beanbox
       JWT_ACCESS_SECRET: ci-only-secret-0123456789abcdefghijklmnop
       INTERNAL_API_SECRET: ci-only-internal-0123456789abcdefghijklm
+      # D-063: khóa AES-256 giả (32 byte ASCII "ci-only-totp-key-0123456789abcde") cho secret 2FA của E2E.
+      TOTP_ENCRYPTION_KEY: Y2ktb25seS10b3RwLWtleS0wMTIzNDU2Nzg5YWJjZGU=
       SMTP_HOST: localhost
       SMTP_PORT: "1025"
       GENERAL_RATE_LIMIT_PER_MIN: "1000"
@@ -308,6 +310,7 @@ jobs:
           POSTGRES_PASSWORD=ci-only-not-a-real-password
           JWT_ACCESS_SECRET=ci-only-not-a-real-jwt-secret-0123456789
           INTERNAL_API_SECRET=ci-only-not-a-real-internal-secret-0123456789
+          TOTP_ENCRYPTION_KEY=Y2ktb25seS10b3RwLWtleS0wMTIzNDU2Nzg5YWJjZGU=
           ENVEOF
           docker compose -f docker-compose.prod.yml --env-file "$RUNNER_TEMP/ci.env" config -q
           docker compose -f docker-compose.prod.yml --env-file "$RUNNER_TEMP/ci.env" \

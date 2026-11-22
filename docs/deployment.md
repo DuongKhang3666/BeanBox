@@ -99,7 +99,7 @@ chmod 600 .env.production
 Sinh secret mạnh, mỗi biến một giá trị riêng:
 
 ```bash
-openssl rand -hex 32     # JWT_ACCESS_SECRET, INTERNAL_API_SECRET
+openssl rand -hex 32     # JWT_ACCESS_SECRET, INTERNAL_API_SECRET, TOTP_ENCRYPTION_KEY
 openssl rand -hex 24     # POSTGRES_PASSWORD (chuỗi hex để không có ký tự đặc biệt làm hỏng DATABASE_URL)
 ```
 
@@ -113,6 +113,7 @@ openssl rand -hex 24     # POSTGRES_PASSWORD (chuỗi hex để không có ký t
 | `POSTGRES_PASSWORD`                                                                 | Có           | Mật khẩu DB; dùng chuỗi hex                                                                                                                                                                                                                                                                                                                                                  |
 | `JWT_ACCESS_SECRET`                                                                 | Có           | Khóa ký access token, >= 32 ký tự ngẫu nhiên                                                                                                                                                                                                                                                                                                                                 |
 | `INTERNAL_API_SECRET`                                                               | Có           | >= 32 ký tự. Dùng CHUNG hai phía: compose truyền cùng một giá trị cho backend và frontend (SSR gửi `X-Internal-Secret` để không bị rate limit chung dồn vào một IP). Không bao giờ để dạng `NEXT_PUBLIC_`                                                                                                                                                                    |
+| `TOTP_ENCRYPTION_KEY` | Có | 32 byte ngẫu nhiên (`openssl rand -hex 32`), mã hóa secret 2FA. Đổi hoặc mất khóa thì user đã bật 2FA không đăng nhập được (Admin phải reset 2FA, nhưng reset cần Admin khác đăng nhập được); sao lưu cùng các secret khác |
 | `COOKIE_SECURE`                                                                     | Không        | Mặc định `true`. Giữ `true` (hoặc bỏ trống). Từ D-045, `COOKIE_SECURE=false` ở production (`NODE_ENV=production`) bị backend từ chối khởi động; chỉ dùng `false` ở dev/test (xem mục 14)                                                                                                                                                                                                                                                                          |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM`                     | Nên có       | SMTP thật (Mailpit không có ở production). Để trống `SMTP_HOST` thì email (xác nhận đơn, đặt lại mật khẩu, thông báo liên hệ) không gửi được; backend ghi log lỗi gửi mail nhưng không làm hỏng đơn. Mặc định cổng 587                                                                                                                                                       |
 | `SMTP_SECURE`, `SMTP_REQUIRE_TLS` | Không | D-056. `SMTP_SECURE=true` = TLS ngầm định (cổng 465), mặc định `false` (STARTTLS, cổng 587). `SMTP_REQUIRE_TLS` bỏ trống = `true` ở production: server SMTP không hỗ trợ TLS thì không gửi (lỗi vĩnh viễn, không retry). Timeout kết nối 10 giây, chào 10 giây, socket 20 giây. Gửi lỗi tạm thời (kết nối/timeout/SMTP 4xx) được thử lại tối đa 3 lần (chờ 1 giây, 4 giây); retry nằm trong RAM nên mất nếu backend restart giữa chừng (chưa có hàng đợi/outbox) |
@@ -138,6 +139,7 @@ Backend kiểm tra env bằng zod khi khởi động và DỪNG ngay (log nêu t
 
 - thiếu `INTERNAL_API_SECRET` ở production, hoặc `JWT_ACCESS_SECRET`/`INTERNAL_API_SECRET` ngắn hơn 32 ký tự;
 - `JWT_ACCESS_SECRET` hoặc `INTERNAL_API_SECRET` bắt đầu bằng `dev-` (giá trị mẫu dev);
+- thiếu `TOTP_ENCRYPTION_KEY` ở production, hoặc khóa sai độ dài/bắt đầu bằng `beanbox-dev-`;
 - chỉ đặt một trong hai khóa Turnstile;
 - `STRIPE_SECRET_KEY` bắt đầu bằng `sk_live_` (chỉ chấp nhận `sk_test_`);
 - `TRUST_PROXY=true` (compose đã đặt `uniquelocal`, không sửa), `VNPAY_PAYMENT_URL` không phải https, v.v.

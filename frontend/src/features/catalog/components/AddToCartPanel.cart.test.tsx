@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { renderToString } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api/errors";
 import { makeVariant } from "../fixtures";
@@ -52,5 +53,16 @@ describe("AddToCartPanel + giỏ hàng", () => {
     expect(btn).toBeDisabled();
     await userEvent.click(btn);
     expect(addItem).not.toHaveBeenCalled();
+  });
+
+  it("nút chỉ bấm được sau khi hydrate (SSR: disabled + data-ready=false; client: data-ready=true)", () => {
+    const html = renderToString(<AddToCartPanel variants={[makeVariant()]} />);
+    const addButton = /<button[^>]*>Thêm vào giỏ<\/button>/.exec(html)?.[0] ?? "";
+    expect(addButton).toContain('data-ready="false"');
+    expect(addButton).toContain("disabled");
+    render(<AddToCartPanel variants={[makeVariant()]} />);
+    const btn = screen.getByRole("button", { name: "Thêm vào giỏ" });
+    expect(btn).toHaveAttribute("data-ready", "true");
+    expect(btn).toBeEnabled();
   });
 });

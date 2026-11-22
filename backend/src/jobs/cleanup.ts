@@ -33,6 +33,7 @@ export type CleanupResult =
       refreshTokens: number;
       passwordResetTokens: number;
       emailVerificationTokens: number;
+      twoFactorChallenges: number;
       contactMessages: number;
     };
 
@@ -62,6 +63,8 @@ export async function runCleanupOnce(
       const emailVerificationTokens = await tx.emailVerificationToken.deleteMany({
         where: expired,
       });
+      // D-063: thử thách đăng nhập 2 bước hết hạn (sống 5 phút).
+      const twoFactorChallenges = await tx.twoFactorChallenge.deleteMany({ where: expired });
       // D-029: chỉ tin đã xử lý xong (RESOLVED/SPAM); NEW/IN_PROGRESS không bao giờ bị xóa.
       const contactMessages =
         retentionDays > 0
@@ -79,6 +82,7 @@ export async function runCleanupOnce(
         refreshTokens: refreshTokens.count,
         passwordResetTokens: passwordResetTokens.count,
         emailVerificationTokens: emailVerificationTokens.count,
+        twoFactorChallenges: twoFactorChallenges.count,
       };
     },
     { timeout: 60_000, maxWait: 10_000 },
@@ -91,6 +95,7 @@ export async function runCleanupOnce(
       `Job dọn dẹp: xóa ${result.guestCarts} giỏ guest, ${result.refreshTokens} refresh token, ` +
         `${result.passwordResetTokens} token đặt lại mật khẩu, ` +
         `${result.emailVerificationTokens} token xác minh email, ` +
+        `${result.twoFactorChallenges} thử thách 2FA hết hạn, ` +
         `${result.contactMessages} tin liên hệ cũ`,
     );
   }

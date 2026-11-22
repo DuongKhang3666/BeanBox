@@ -1,6 +1,7 @@
 import type { PaymentProvider } from '../../generated/prisma/client.js';
 import type { PaymentConfig } from '../../config/payments.js';
 import { stripeAdapter, type StripeHttp } from './stripe.js';
+import { buildMomoMockUrl } from './momo.js';
 import { buildVnpayUrl } from './vnpay.js';
 
 /**
@@ -53,9 +54,24 @@ export const vnpayAdapter: PaymentProviderAdapter = {
   },
 };
 
+/** MoMo GIẢ (D-060): chỉ cấu hình khi PAYMENT_MOCKS_ENABLED; URL trỏ tới trang cổng giả của FE. */
+export const momoMockAdapter: PaymentProviderAdapter = {
+  provider: 'MOMO',
+  isConfigured: (config) => !!config.momo,
+  createSession({ payment, order, config, now }) {
+    if (!config.momo) throw new Error('MoMo giả chưa được bật');
+    const redirectUrl = buildMomoMockUrl(
+      { paymentId: payment.id, amountVnd: payment.amount, orderCode: order.code, now },
+      config.momo,
+    );
+    return Promise.resolve({ redirectUrl, providerRef: payment.id });
+  },
+};
+
 export type AdapterRegistry = Partial<Record<PaymentProvider, PaymentProviderAdapter>>;
 
 export const ADAPTERS: AdapterRegistry = {
   VNPAY: vnpayAdapter,
   STRIPE: stripeAdapter,
+  MOMO: momoMockAdapter,
 };

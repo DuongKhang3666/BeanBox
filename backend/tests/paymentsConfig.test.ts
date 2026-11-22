@@ -142,3 +142,117 @@ describe('decidePaymentTransition (máy trạng thái Payment)', () => {
     expect(decidePaymentTransition('REFUNDED', 'FAILED')).toBe('IGNORE');
   });
 });
+
+describe('Cổng thanh toán giả và chuyển khoản (D-060, D-061)', () => {
+  const MOCK_SECRET = 'test-mock-secret-0123456789';
+
+  it('mặc định tắt: không có momo/bankTransfer, cờ false, không sinh khóa', () => {
+    const env = parseEnv(base);
+    expect(env).toMatchObject({
+      PAYMENT_MOCKS_ENABLED: false,
+      BANK_TRANSFER_ENABLED: false,
+      BANK_TRANSFER_HOLD_HOURS: 24,
+      PAYMENT_MOCK_SECRET_GENERATED: false,
+    });
+    expect(env.PAYMENT_MOCK_SECRET).toBeUndefined();
+  });
+
+  it('PAYMENT_MOCKS_ENABLED + production -> bị từ chối (nêu tên biến)', () => {
+    const msg = expectRejected({
+      NODE_ENV: 'production',
+      PAYMENT_MOCKS_ENABLED: 'true',
+      INTERNAL_API_SECRET: 'x'.repeat(40),
+      JWT_ACCESS_SECRET: 'y'.repeat(40),
+    });
+    expect(msg).toContain('PAYMENT_MOCKS_ENABLED');
+    expect(msg).toContain('production');
+  });
+
+  it('PAYMENT_MOCKS_ENABLED + VNPay thật (VNPAY_TMN_CODE) -> bị từ chối', () => {
+    const msg = expectRejected({
+      PAYMENT_MOCKS_ENABLED: 'true',
+      VNPAY_TMN_CODE: 'TESTTMN01',
+      VNPAY_HASH_SECRET: 'test-hash-secret',
+    });
+    expect(msg).toContain('VNPAY_TMN_CODE');
+  });
+
+  it('mock bật ở dev: dùng PAYMENT_MOCK_SECRET đã đặt, hoặc sinh ngẫu nhiên khi trống', () => {
+    const set = parseEnv({
+      ...base,
+      PAYMENT_MOCKS_ENABLED: 'true',
+      PAYMENT_MOCK_SECRET: MOCK_SECRET,
+    });
+    expect(set).toMatchObject({
+      PAYMENT_MOCKS_ENABLED: true,
+      PAYMENT_MOCK_SECRET: MOCK_SECRET,
+      PAYMENT_MOCK_SECRET_GENERATED: false,
+    });
+    const gen = parseEnv({ ...base, PAYMENT_MOCKS_ENABLED: 'true' });
+    expect(gen.PAYMENT_MOCK_SECRET_GENERATED).toBe(true);
+    expect(gen.PAYMENT_MOCK_SECRET).toMatch(/^[0-9a-f]{48}$/);
+  });
+
+  it('PAYMENT_MOCK_SECRET quá ngắn bị từ chối', () => {
+    expectRejected({ PAYMENT_MOCKS_ENABLED: 'true', PAYMENT_MOCK_SECRET: 'short' });
+  });
+
+  it('BANK_TRANSFER_HOLD_HOURS: 1..72, mặc định 24', () => {
+    expect(parseEnv({ ...base, BANK_TRANSFER_HOLD_HOURS: '1' }).BANK_TRANSFER_HOLD_HOURS).toBe(1);
+    expect(parseEnv({ ...base, BANK_TRANSFER_HOLD_HOURS: '72' }).BANK_TRANSFER_HOLD_HOURS).toBe(72);
+    for (const v of ['0', '73', '1.5', 'abc']) {
+      expect(expectRejected({ BANK_TRANSFER_HOLD_HOURS: v })).toContain('BANK_TRANSFER_HOLD_HOURS');
+    }
+  });
+
+  it('mock: returnUrl VNPay theo WEB_APP_URL, bỏ qua VNPAY_RETURN_URL đặt sẵn', () => {
+    const env = parseEnv({
+      ...base,
+      WEB_APP_URL: 'http://localhost:3100',
+      VNPAY_RETURN_URL: 'http://localhost:3000/thanh-toan/ket-qua',
+      PAYMENT_MOCKS_ENABLED: 'true',
+      PAYMENT_MOCK_SECRET: MOCK_SECRET,
+    });
+    expect(getPaymentConfig(env).vnpay?.returnUrl).toBe(
+      'http://localhost:3100/thanh-toan/ket-qua?provider=vnpay',
+    );
+  });
+
+  it('getPaymentConfig với mock: VNPay giả (tmn demo, khóa mock, URL cổng giả) + MoMo giả', () => {
+    const env = parseEnv({
+      ...base,
+      PAYMENT_MOCKS_ENABLED: 'true',
+      PAYMENT_MOCK_SECRET: MOCK_SECRET,
+    });
+    const cfg = getPaymentConfig(env);
+    expect(cfg.mocksEnabled).toBe(true);
+    expect(cfg.vnpay).toEqual({
+      tmnCode: 'BEANBOXDEMO',
+      hashSecret: MOCK_SECRET,
+      paymentUrl: 'http://localhost:3000/cong-thanh-toan-gia-lap/vnpay',
+      returnUrl: 'http://localhost:3000/thanh-toan/ket-qua?provider=vnpay',
+    });
+    expect(cfg.momo).toEqual({
+      partnerCode: 'BEANBOXMOMODEMO',
+      secret: MOCK_SECRET,
+      paymentUrl: 'http://localhost:3000/cong-thanh-toan-gia-lap/momo',
+      returnUrl: 'http://localhost:3000/thanh-toan/ket-qua?provider=momo',
+    });
+    expect(isProviderEnabled(cfg, 'VNPAY')).toBe(true);
+    expect(isProviderEnabled(cfg, 'MOMO')).toBe(true);
+    expect(isProviderEnabled(cfg, 'BANK_TRANSFER')).toBe(false);
+  });
+
+  it('bank transfer chỉ bật khi BANK_TRANSFER_ENABLED; mang holdHours', () => {
+    const env = parseEnv({
+      ...base,
+      BANK_TRANSFER_ENABLED: 'true',
+      BANK_TRANSFER_HOLD_HOURS: '12',
+    });
+    const cfg = getPaymentConfig(env);
+    expect(cfg.bankTransfer).toEqual({ holdHours: 12 });
+    expect(cfg.momo).toBeUndefined();
+    expect(isProviderEnabled(cfg, 'BANK_TRANSFER')).toBe(true);
+    expect(isProviderEnabled(cfg, 'MOMO')).toBe(false);
+  });
+});

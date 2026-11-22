@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { cn } from "@/lib/cn";
@@ -8,6 +8,8 @@ import { formatVND } from "@/lib/format";
 import type { AdminOrder, AdminPayment, AdminPaymentStatus } from "@/types/admin";
 import { formatVnDateTime } from "../format";
 import { PAYMENT_PROVIDER_LABEL, PAYMENT_RECORD_STATUS_LABEL } from "../labels";
+import { adminErrorMessage } from "../errors";
+import { confirmBankTransfer } from "../api/orders";
 import { RefundDialog } from "./RefundDialog";
 
 const TONE: Record<AdminPaymentStatus, string> = {
@@ -26,6 +28,20 @@ export function NeedsRefundBadge({ className }: { className?: string }) {
       )}
     >
       Cần hoàn tiền
+    </span>
+  );
+}
+
+/** D-061: khách đã báo chuyển khoản, đang chờ nhân viên xác nhận đã nhận tiền. */
+export function TransferClaimedBadge({ className }: { className?: string }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full border border-moss-600/40 bg-moss-50 px-2.5 py-0.5 text-xs font-semibold text-moss-800",
+        className,
+      )}
+    >
+      Khách báo đã chuyển khoản
     </span>
   );
 }
@@ -118,13 +134,93 @@ function PaymentItem({
   );
 }
 
+/**
+ * D-061: nhân viên xác nhận đã nhận tiền chuyển khoản (Staff+). Hệ thống không đối soát ngân hàng,
+ * nên có bước xác nhận thứ hai; gọi lại là idempotent.
+ */
+function BankTransferConfirm({
+  order,
+  onConfirmed,
+}: {
+  order: AdminOrder;
+  onConfirmed: (order: AdminOrder) => void;
+}) {
+  const [asking, setAsking] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function confirm() {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    setError(null);
+    try {
+      onConfirmed(await confirmBankTransfer(order.code));
+      setAsking(false);
+    } catch (err) {
+      setError(adminErrorMessage(err));
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
+  }
+
+  const late = order.status === "CANCELLED";
+  return (
+    <div className="space-y-2 rounded-xl border border-moss-600/40 bg-moss-50 p-3">
+      <p className="font-semibold text-moss-800">Chuyển khoản / VietQR</p>
+      {order.transferClaimedAt ? (
+        <p className="text-sm text-coffee-900">
+          Khách báo đã chuyển khoản lúc <strong>{formatVnDateTime(order.transferClaimedAt)}</strong>
+          . Hãy kiểm tra tiền đã về tài khoản trước khi xác nhận.
+        </p>
+      ) : (
+        <p className="text-sm text-coffee-900">
+          Khách chưa báo đã chuyển khoản. Chỉ xác nhận khi đã thấy tiền về tài khoản.
+        </p>
+      )}
+      {late ? (
+        <p className="text-sm text-danger-600">
+          Đơn đã bị hủy: xác nhận sẽ ghi nhận khoản tiền và đánh dấu cần hoàn tiền.
+        </p>
+      ) : null}
+      {error ? (
+        <p role="alert" className="text-sm text-danger-600">
+          {error}
+        </p>
+      ) : null}
+      {asking ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm text-coffee-900">
+            Xác nhận đã nhận đủ {formatVND(order.grandTotal)}?
+          </span>
+          <Button size="sm" onClick={confirm} loading={busy}>
+            Đồng ý
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setAsking(false)} disabled={busy}>
+            Không
+          </Button>
+        </div>
+      ) : (
+        <Button size="sm" onClick={() => setAsking(true)}>
+          Xác nhận đã nhận tiền
+        </Button>
+      )}
+    </div>
+  );
+}
+
 /** Khối "Thanh toán": liệt kê Payment; nút hoàn tiền chỉ cho ADMIN, chỉ với Payment SUCCEEDED. */
 export function OrderPayments({
   order,
   onRefunded,
+  onConfirmed,
 }: {
   order: AdminOrder;
   onRefunded: (order: AdminOrder) => void;
+  /** D-061: sau khi xác nhận đã nhận tiền chuyển khoản. */
+  onConfirmed?: (order: AdminOrder) => void;
 }) {
   const { user } = useAuth();
   const isAdmin = user?.role === "ADMIN";
@@ -142,6 +238,12 @@ export function OrderPayments({
           Hạn thanh toán: <strong>{formatVnDateTime(order.expiresAt)}</strong>. Sẽ tự hủy khi quá
           hạn.
         </p>
+      ) : null}
+      {order.paymentMethod === "BANK_TRANSFER" &&
+      order.paymentStatus !== "PAID" &&
+      order.paymentStatus !== "REFUNDED" &&
+      onConfirmed ? (
+        <BankTransferConfirm order={order} onConfirmed={onConfirmed} />
       ) : null}
       {payments.length === 0 ? (
         <p className="text-coffee-700">Chưa có giao dịch thanh toán online nào.</p>

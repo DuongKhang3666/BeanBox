@@ -9,8 +9,10 @@ export const USER_SELECT = {
   role: true,
   status: true,
   emailVerifiedAt: true,
+  twoFactorEnabledAt: true,
   lastLoginAt: true,
   lockedUntil: true,
+  deletedAt: true,
   createdAt: true,
   _count: { select: { orders: true } },
 } as const;
@@ -23,8 +25,10 @@ export interface UserRow {
   role: Role;
   status: UserStatus;
   emailVerifiedAt: Date | null;
+  twoFactorEnabledAt: Date | null;
   lastLoginAt: Date | null;
   lockedUntil: Date | null;
+  deletedAt: Date | null;
   createdAt: Date;
   _count: { orders: number };
 }
@@ -37,8 +41,11 @@ export interface AdminUserItem {
   role: Role;
   status: UserStatus;
   emailVerified: boolean;
+  twoFactorEnabled: boolean;
   lastLoginAt: string | null;
   lockedUntil: string | null;
+  /** D-065: khách đã tự xóa tài khoản (dữ liệu đã ẩn danh); khác `status: DISABLED` do admin khóa. */
+  deleted: boolean;
   createdAt: string;
   orderCount: number;
 }
@@ -52,8 +59,10 @@ export function toUserItem(u: UserRow): AdminUserItem {
     role: u.role,
     status: u.status,
     emailVerified: u.emailVerifiedAt !== null,
+    twoFactorEnabled: u.twoFactorEnabledAt !== null,
     lastLoginAt: u.lastLoginAt?.toISOString() ?? null,
     lockedUntil: u.lockedUntil?.toISOString() ?? null,
+    deleted: u.deletedAt !== null,
     createdAt: u.createdAt.toISOString(),
     orderCount: u._count.orders,
   };

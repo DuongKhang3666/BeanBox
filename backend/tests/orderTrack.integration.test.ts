@@ -68,6 +68,8 @@ describe('GET /orders/track', () => {
           'code',
           'createdAt',
           'discountTotal',
+          'etaFrom',
+          'etaTo',
           'expiresAt',
           'grandTotal',
           'history',
@@ -77,10 +79,12 @@ describe('GET /orders/track', () => {
           'shippingAddress',
           'shippingDiscount',
           'shippingFee',
+          'shipment',
           'shippingMethod',
           'status',
           'subtotal',
           'trackingNumber',
+          'transferClaimedAt',
         ].sort(),
       );
       expect(d).toMatchObject({

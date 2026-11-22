@@ -31,7 +31,7 @@ import {
   orderFiltersHref,
   parseOrderFilters,
 } from "../orderFilters";
-import { NeedsRefundBadge } from "./OrderPayments";
+import { NeedsRefundBadge, TransferClaimedBadge } from "./OrderPayments";
 import { useDebouncedUrlInput } from "../useDebouncedUrlInput";
 
 const load = (key: string) => {
@@ -49,7 +49,12 @@ const METHOD_SHORT: Record<PaymentMethod, string> = {
   COD: "COD",
   VNPAY: "VNPay",
   STRIPE: "Stripe",
+  MOMO: "MoMo giả",
+  BANK_TRANSFER: "Chuyển khoản",
 };
+
+const awaitingConfirm = (o: { status: string; transferClaimedAt?: string | null }) =>
+  o.status === "PENDING_PAYMENT" && !!o.transferClaimedAt;
 
 function ListSkeleton() {
   return (
@@ -120,6 +125,7 @@ function OrdersTable({ orders }: { orders: AdminOrderListItem[] }) {
               <td className="px-3 py-3">
                 <OrderStatusBadge status={o.status} />
                 {o.needsRefund ? <NeedsRefundBadge className="mt-1" /> : null}
+                {awaitingConfirm(o) ? <TransferClaimedBadge className="mt-1" /> : null}
               </td>
               <td className="px-3 py-3">
                 <span className="block">{METHOD_SHORT[o.paymentMethod] ?? o.paymentMethod}</span>
@@ -152,6 +158,7 @@ function OrderCards({ orders }: { orders: AdminOrderListItem[] }) {
               <div className="flex flex-col items-end gap-1">
                 <OrderStatusBadge status={o.status} />
                 {o.needsRefund ? <NeedsRefundBadge /> : null}
+                {awaitingConfirm(o) ? <TransferClaimedBadge /> : null}
               </div>
             </div>
             <p className="break-words text-coffee-900">
@@ -268,6 +275,24 @@ function StatusTabs({
             )}
           >
             Cần hoàn tiền
+          </Link>
+        </li>
+        <li className="shrink-0">
+          <Link
+            href={orderFiltersHref({
+              ...filters,
+              transferClaimed: filters.transferClaimed ? undefined : true,
+              page: undefined,
+            })}
+            aria-current={filters.transferClaimed ? "page" : undefined}
+            className={cn(
+              "inline-flex h-11 items-center rounded-full border px-4 text-sm font-medium",
+              filters.transferClaimed
+                ? "border-moss-700 bg-moss-700 text-white"
+                : "border-moss-600/50 bg-white text-moss-800 hover:bg-moss-50",
+            )}
+          >
+            Khách báo đã chuyển khoản
           </Link>
         </li>
       </ul>

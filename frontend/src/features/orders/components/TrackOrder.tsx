@@ -8,6 +8,7 @@ import { TextField } from "@/features/auth/components/Fields";
 import { focusFirstInvalid } from "@/features/auth/components/focus";
 import { FormError, FormNotice } from "@/features/auth/components/FormError";
 import { isValidPhone, normalizePhone } from "@/features/auth/validation";
+import { BankTransferPanel } from "@/features/payments/components/BankTransferPanel";
 import { PayAgainButton } from "@/features/payments/components/PayAgainButton";
 import { ApiError } from "@/lib/api/errors";
 import { formatDateTime } from "@/lib/format";
@@ -15,6 +16,7 @@ import type { TrackedOrder } from "@/types/order";
 import { cancelGuestOrder, trackOrder } from "../api";
 import {
   ORDER_CODE_RE,
+  deliveryEtaText,
   normalizeOrderCode,
   orderErrorMessage,
   paymentMethodLabel,
@@ -26,6 +28,7 @@ import { CancelOrderDialog } from "./CancelOrderDialog";
 import { OrderItemsList } from "./OrderItemsList";
 import { OrderStatusBadge } from "./OrderStatusBadge";
 import { OrderTimeline } from "./OrderTimeline";
+import { ShipmentTimeline } from "./ShipmentTimeline";
 import { OrderTotals } from "./OrderTotals";
 
 export const NOT_FOUND_MESSAGE =
@@ -194,6 +197,13 @@ export function TrackOrder() {
                 </Button>
               ) : null}
             </div>
+            {order.paymentMethod === "BANK_TRANSFER" &&
+            order.status === "PENDING_PAYMENT" &&
+            result ? (
+              <div className="basis-full">
+                <BankTransferPanel code={order.code} phone={result.phone} />
+              </div>
+            ) : null}
             {order.canPay && result ? (
               <div className="basis-full rounded-lg bg-moss-50 p-3">
                 <p className="mb-2 text-sm font-medium text-coffee-900">
@@ -239,7 +249,13 @@ export function TrackOrder() {
               <dt className="text-sm text-coffee-700">Vận chuyển</dt>
               <dd>{shippingMethodLabel(order.shippingMethod)}</dd>
             </div>
-            {order.trackingNumber ? (
+            {deliveryEtaText(order) ? (
+              <div>
+                <dt className="text-sm text-coffee-700">Dự kiến giao</dt>
+                <dd>{deliveryEtaText(order)}</dd>
+              </div>
+            ) : null}
+            {order.trackingNumber && !order.shipment ? (
               <div>
                 <dt className="text-sm text-coffee-700">Mã vận đơn</dt>
                 <dd>
@@ -273,6 +289,8 @@ export function TrackOrder() {
               grandTotal={order.grandTotal}
             />
           </div>
+
+          {order.shipment ? <ShipmentTimeline shipment={order.shipment} /> : null}
 
           {order.history.length > 0 ? (
             <div className="space-y-3 rounded-2xl border border-coffee-200 bg-white p-4 sm:p-5">

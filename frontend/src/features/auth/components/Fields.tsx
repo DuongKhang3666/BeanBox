@@ -17,11 +17,12 @@ function describedBy(id: string, error?: string, hint?: string) {
 }
 
 /** Label + Input + gợi ý + lỗi field (aria-invalid, aria-describedby). */
-export function TextField({ id, label, error, hint, ...rest }: FieldProps) {
+export function TextField({ id, label, error, hint, ref, ...rest }: FieldProps) {
   return (
     <div>
       <Label htmlFor={id}>{label}</Label>
       <Input
+        ref={ref}
         id={id}
         name={id}
         invalid={!!error}

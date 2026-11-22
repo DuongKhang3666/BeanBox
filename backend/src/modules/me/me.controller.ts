@@ -1,5 +1,13 @@
+import type { Request } from 'express';
 import { asyncHandler } from '../../lib/asyncHandler.js';
-import type { CreateAddressInput, UpdateAddressInput, UpdateProfileInput } from './me.schema.js';
+import { clearRefreshCookie } from '../auth/auth.cookies.js';
+import { deleteAccount, exportFilename, exportPersonalData } from './me.account.js';
+import type {
+  CreateAddressInput,
+  DeleteAccountInput,
+  UpdateAddressInput,
+  UpdateProfileInput,
+} from './me.schema.js';
 import * as service from './me.service.js';
 
 const uid = (req: { auth?: { userId: string } }): string => req.auth!.userId;
@@ -34,4 +42,21 @@ export const deleteAddress = asyncHandler(async (req, res) => {
 
 export const setDefaultAddress = asyncHandler(async (req, res) => {
   res.json({ data: await service.setDefaultAddress(uid(req), idOf(req)) });
+});
+
+export const deleteMe = asyncHandler(async (req: Request, res) => {
+  const { password } = req.body as DeleteAccountInput;
+  await deleteAccount(uid(req), password, req.ip);
+  clearRefreshCookie(res);
+  res.status(204).end();
+});
+
+/** File tải về: thân là object JSON trực tiếp (không bọc `data`); tên file dựng từ ngày, không từ input. */
+export const exportMe = asyncHandler(async (req: Request, res) => {
+  const now = new Date();
+  const payload = await exportPersonalData(uid(req), req.ip, now);
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${exportFilename(now)}"`);
+  res.setHeader('Cache-Control', 'no-store');
+  res.send(JSON.stringify(payload, null, 2));
 });

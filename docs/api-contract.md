@@ -1,6 +1,11 @@
 # BeanBox – API Contract
 
-> Phiên bản 0.19 · 2026-11-21 · **Nguồn sự thật cho FE và BE.** Đổi contract phải sửa file này trước và nêu trong báo cáo.
+> Phiên bản 0.24 · 2026-11-22 · **Nguồn sự thật cho FE và BE.** Đổi contract phải sửa file này trước và nêu trong báo cáo.
+> Thay đổi 0.24 (D-065; Đợt 2 mục 5, quyền dữ liệu cá nhân): (1) §6.6 mới: `DELETE /me` (CUSTOMER tự xóa/ẩn danh hóa tài khoản, body `{ password, confirmText }`, 204) và `GET /me/export` (mọi role, tải file JSON, limiter riêng 5 lần/giờ/người dùng). (2) §2 mã lỗi mới `409 ACTIVE_ORDERS_EXIST` và `409 ACCOUNT_DELETED`; dùng lại `INVALID_PASSWORD`, `ACCOUNT_LOCKED`, `FORBIDDEN`, `VALIDATION_ERROR`, `RATE_LIMITED`. (3) §14.4 action audit mới `user.self_delete`, `user.export`. (4) §14.10 item người dùng admin thêm `deleted: boolean`; PATCH status/role và reset 2FA trên tài khoản đã xóa -> 409 `ACCOUNT_DELETED`. (5) Tên tác giả đánh giá của tài khoản đã xóa là "Người dùng đã xóa" (§14.1). (6) Migration `d065_user_deleted_at` thêm `User.deletedAt` (nullable). Không đổi route hiện có.
+> Thay đổi 0.23 (D-064; Đợt 2 mục 4, SEO): `ProductListItem` (§4, trả bởi `GET /products` §4.3 và mọi endpoint dùng chung kiểu này: bought-together, wishlist, ...) thêm `updatedAt` (ISO 8601 UTC, = `Product.updatedAt`). Thay đổi CỘNG THÊM, không đổi trường hiện có, không cần migration. FE dùng làm `lastmod` của sitemap. Lưu ý: `Product.updatedAt` đổi khi sửa sản phẩm, không nhất thiết khi đổi biến thể/tồn kho.
+> Thay đổi 0.22 (D-063; Đợt 2 mục 3, xác thực 2 lớp TOTP cho Staff/Admin): (1) `User` (§5) thêm `twoFactorEnabled: boolean` (mọi response cấp phiên và `GET/PATCH /me`). (2) §5.2 `POST /auth/login`: khi mật khẩu đúng và user đã bật 2FA, 200 trả **hình dạng khác** `{ data: { twoFactorRequired: true, challengeToken, expiresAt } }`, KHÔNG có cookie `bb_rt`, access token hay `user`; user chưa bật 2FA không đổi. (3) §5.9 mới `POST /auth/login/2fa` `{ challengeToken, code | backupCode }` (đúng một trong hai) -> phiên như login thường; limiter nhóm auth. (4) §6.5 mới `/me/2fa/setup|enable|disable|backup-codes` (Staff+; CUSTOMER 403). (5) §14.10 mới `POST /admin/users/:id/2fa/reset` (Admin); item/chi tiết người dùng admin thêm `twoFactorEnabled`. (6) §2 mã lỗi mới: `TWO_FACTOR_INVALID` (401 ở đăng nhập, 400 ở `/me/2fa/*`), `TWO_FACTOR_CHALLENGE_INVALID` (401), `TWO_FACTOR_SETUP_REQUIRED` (409), `TWO_FACTOR_NOT_ENABLED` (409), `TWO_FACTOR_UNAVAILABLE` (503); dùng lại `INVALID_PASSWORD`, `CONFLICT`, `CANNOT_MODIFY_SELF`, `ACCOUNT_LOCKED`, `FORBIDDEN`. (7) §12.0/§14.4 action audit mới `user.2fa.enable|disable|backup_regenerate|backup_used|reset`. (8) Migration `d063_two_factor`: cột `User.twoFactor*`, bảng `TwoFactorBackupCode`, `TwoFactorChallenge`. Env mới `TOTP_ENCRYPTION_KEY` (bắt buộc ở production, `architecture.md` §8). Không đổi route hiện có ngoài hình dạng response bước 1 của `/auth/login` cho user đã bật 2FA.
+> Thay đổi 0.21 (D-062; Đợt 2 mục 2, vận chuyển giả lập): (1) §9.1 mỗi `shippingOptions[]` thêm `eta: { minDays, maxDays, fromDate, toDate }` (ngày lịch Việt Nam `YYYY-MM-DD`, tính từ ngày đặt, không loại chủ nhật/ngày lễ); `estimatedDays` giữ lại, nay dẫn xuất từ settings (`"min-max"`, hoặc `"n"` khi min = max) nên mặc định đổi từ `3-5`/`1-2` thành theo vùng (nội thành `1-2`/`0-1`, ngoài nội thành `3-5`/`1-3`). (2) §14.9 key mới `shipping.eta` (10 key quản lý; vùng dùng tên `inner`/`other` như `shipping.rates`); `GET /settings/public` thêm `shipping.eta` (cộng thêm). (3) `Order`, `TrackedOrder`, `AdminOrder` (§9, §9.5, §12.1) thêm `etaFrom`, `etaTo` (`YYYY-MM-DD` hoặc `null` với đơn cũ; snapshot lúc đặt do server tính) và `shipment` (`null` khi đơn chưa từng `SHIPPING`, ngược lại `{ carrier, trackingNumber, simulated: true, events: [{ code, label, at }] }`, mốc mô phỏng tính từ lịch sử + `etaTo`, chỉ gồm mốc `at <= now`; §9.7). (4) §11 #7 và §12.1 `PATCH /admin/orders/:code/status`: **`trackingNumber` KHÔNG còn bắt buộc** khi `PROCESSING -> SHIPPING` (thay đổi hành vi so với 0.20, trước đây thiếu -> 400): để trống thì server dùng mã đã có trên đơn, nếu chưa có thì sinh mã vận đơn giả `BBL|BBE-YYYYMMDD-XXXXXX` và đặt `carrier` = hãng giả lập theo `shippingMethod`; nhập thì giữ nguyên. (5) Migration `d062_order_eta` thêm `Order.etaFrom`, `Order.etaTo` (`DATE`, nullable). Không thêm mã lỗi, không thêm route. Email xác nhận đơn thêm dòng "Dự kiến giao".
+> Thay đổi 0.20 (D-060, D-061; Đợt 2 mục 1, thanh toán demo): (1) `PaymentMethod` và `PaymentProvider` thêm `MOMO` và `BANK_TRANSFER` (§9.2, §12.1, §13, §16.2; migration `d060_mock_payments_bank_transfer` thêm giá trị enum và cột `Order.transferClaimedAt`). (2) Cổng giả: env `PAYMENT_MOCKS_ENABLED` (từ chối khi `NODE_ENV=production` hoặc khi đã có `VNPAY_TMN_CODE`), `PAYMENT_MOCK_SECRET`; khi bật, VNPay dùng cổng giả (`vnp_TmnCode = BEANBOXDEMO`, URL `${WEB_APP_URL}/cong-thanh-toan-gia-lap/vnpay`) và thêm MoMo giả; `POST /mock-gateway/{vnpay|momo}/complete` (§13.10, chỉ mount khi bật, ngược lại 404) gọi đúng logic IPN thật. (3) MoMo giả: `POST /payments/momo/create`, `POST /payments/momo/ipn`, `GET /payments/momo/return` (§13.11). (4) Chuyển khoản VietQR demo: env `BANK_TRANSFER_ENABLED`, `BANK_TRANSFER_HOLD_HOURS`; `GET /orders/:code/bank-transfer`, `POST /orders/:code/bank-transfer/claim` (§9.6), `POST /admin/orders/:code/bank-transfer/confirm` (Staff+, §12.1); setting `payment.bankTransfer` (§14.9, chỉ Admin; KHÔNG nằm trong `GET /settings/public`). (5) `Order`, `TrackedOrder`, `AdminOrderListItem`, `AdminOrder` thêm `transferClaimedAt` (ISO hoặc null); `GET /admin/orders` thêm query `transferClaimed`; `PaymentMethodOption` thêm `mock?: true`. (6) Mã lỗi: dùng lại `PAYMENT_SIGNATURE_INVALID`, `PAYMENT_NOT_ALLOWED`, `CONFLICT`, `PAYMENT_METHOD_UNAVAILABLE`, `TOO_MANY_PENDING_ORDERS`; không thêm mã mới. (7) §9.2: giới hạn `GUEST_COD_MAX_OPEN` áp dụng thêm cho đơn `BANK_TRANSFER` khách vãng lai đang `PENDING_PAYMENT`. (8) §16.2 nhãn thanh toán `MOMO` "MoMo (giả lập)", `BANK_TRANSFER` "Chuyển khoản / VietQR". Env mới trong `architecture.md` §8 và `backend/.env.example`.
 > Thay đổi 0.19 (D-056, D-057, D-058; Đợt 1 R-04/R-06/R-08): (1) §9.2 `POST /orders` nhận `captchaToken` tùy chọn: khi captcha Turnstile đã cấu hình (cùng `contactCaptcha` của `GET /settings/public`, §14.9) thì **khách vãng lai bắt buộc** gửi token (thiếu/sai -> 400 `CAPTCHA_FAILED`, Cloudflare lỗi -> 503 `SERVICE_UNAVAILABLE`), khách đăng nhập không cần; không cấu hình thì không đổi hành vi; `captchaToken` KHÔNG nằm trong `requestFingerprint` và được kiểm SAU nhánh replay. (2) §9.2/§2 mã lỗi mới `409 TOO_MANY_PENDING_ORDERS`: khách vãng lai đã có >= `GUEST_COD_MAX_OPEN` (mặc định 3) đơn COD khách vãng lai `PENDING` cùng SĐT (chuẩn hóa) hoặc cùng email (lowercase). (3) §11 #4: thêm actor `SYSTEM` cho `PENDING -> CANCELLED` (job tự hủy đơn COD khách vãng lai quá `GUEST_COD_HOLD_HOURS` = 48 giờ chưa được xác nhận, lý do "Quá hạn xác nhận đơn", hoàn kho + hoàn lượt mã + email); không áp cho khách có tài khoản và đơn online. (4) §16.3 `cancellations.byType` loại `expired` đổi nhãn thành "Hết hạn tự động" và gồm cả hủy tự động đơn COD guest (`actorId` null, `fromStatus = PENDING`, `note` = "Quá hạn xác nhận đơn"); nhãn này cũng ở CSV xuất `operations`. (5) §2/§16 mã lỗi mới `503 ANALYTICS_TIMEOUT` ("Truy vấn phân tích quá lâu, hãy thu hẹp khoảng ngày") khi truy vấn analytics vượt `ANALYTICS_STATEMENT_TIMEOUT_MS` (mặc định 15000) trên pool riêng; shape response thành công không đổi. Không có route mới, không cần migration. Env mới: `SMTP_SECURE`, `SMTP_REQUIRE_TLS`, `GUEST_COD_HOLD_HOURS`, `GUEST_COD_MAX_OPEN`, `DATABASE_POOL_MAX`, `ANALYTICS_POOL_MAX`, `ANALYTICS_STATEMENT_TIMEOUT_MS` (`architecture.md` §8).
 > Thay đổi 0.18 (D-054, phân tích kinh doanh Bước 5): §13.8 `code` của mã giảm giá **không được bắt đầu bằng `-`** khi tạo (400 `VALIDATION_ERROR`, `details.field = "code"`, thông báo "Mã không được bắt đầu bằng dấu gạch ngang"; kiểm sau trim + uppercase). Mã cũ đã có dạng `-...` vẫn hiển thị, sửa các trường khác (PATCH không nhận `code`, §13.8) và áp dụng được ở giỏ/checkout như trước. Không đổi shape response, không cần migration, không thêm index (D-054: đo hiệu năng 100.000 đơn).
 > Thay đổi 0.17 (D-053, phân tích kinh doanh Bước 4): §16.4 thành đặc tả đầy đủ cho `GET /admin/analytics/coupons?from&to&sort&limit` (hiệu quả mã giảm giá, chỉ ADMIN) và `GET /admin/analytics/export?report=...` (xuất CSV UTF-8 có BOM, chống CSV injection, chỉ ADMIN); thêm action audit `analytics.export` (§12.0, §14.4); limiter riêng cho xuất CSV 10/phút/IP, env `EXPORT_RATE_LIMIT_PER_MIN` (§1); `Content-Disposition` được expose qua CORS. Không đổi §14.3, §16.1-16.3 hay shape hiện có; không cần migration. Ghi chú: tham số của `export` được kiểm chặt (tham số không áp dụng cho báo cáo -> 400), khác quy ước bỏ qua tham số lạ của các endpoint JSON.
@@ -35,14 +40,18 @@
 3. [Health](#3-health)
 4. [Catalog](#4-catalog)
 5. [Auth](#5-auth)
+    - 5.2 Đăng nhập (kể cả bước 1 khi bật 2FA) · 5.9 Đăng nhập bước 2 (2FA)
 6. [Me (hồ sơ & địa chỉ)](#6-me-hồ-sơ--địa-chỉ)
+    - 6.5 Xác thực 2 lớp (2FA) của chính mình · 6.6 Dữ liệu cá nhân: xóa tài khoản và xuất dữ liệu
 7. [Locations](#7-locations)
 8. [Cart](#8-cart)
 9. [Checkout & Orders](#9-checkout--orders)
+    - 9.6 Chuyển khoản / VietQR · 9.7 Vận chuyển giả lập và hành trình mô phỏng
 10. [Quy tắc tính giá](#10-quy-tắc-tính-giá)
 11. [Máy trạng thái đơn hàng](#11-máy-trạng-thái-đơn-hàng)
 12. [Admin (M4)](#12-admin-m4)
 13. [Thanh toán online, mã giảm giá admin, hoàn tiền (M5)](#13-thanh-toán-online-mã-giảm-giá-admin-hoàn-tiền-m5)
+    - 13.10 Cổng giả (VNPay giả, `/mock-gateway`) · 13.11 MoMo giả
 14. [Hoàn thiện v1 (M6, M6b)](#14-hoàn-thiện-v1-m6-m6b)
     - 14.9 Cài đặt cửa hàng · 14.10 Quản lý người dùng · 14.11 Liên hệ · 14.12 CSP · 14.13 Còn hoãn
 15. [Câu hỏi mở / Giả định](#15-câu-hỏi-mở--giả-định)
@@ -117,9 +126,17 @@ Phân trang: query `page` (>= 1, mặc định 1), `pageSize` (1–100, mặc đ
 | 400  | `INVALID_PASSWORD`           | Mật khẩu hiện tại không đúng (đổi mật khẩu)                                                                                                                                                  |
 | 400  | `PAYMENT_SIGNATURE_INVALID`  | Chữ ký VNPay return / Stripe webhook sai hoặc quá hạn (§13.3, §13.4)                                                                                                                         |
 | 400  | `CAPTCHA_FAILED`             | Captcha form liên hệ (§14.11, D-028) hoặc captcha đặt đơn của khách vãng lai (§9.2, D-057) thiếu hoặc không hợp lệ                                                                           |
+| 400  | `TWO_FACTOR_INVALID`         | Mã 2FA/mã dự phòng sai hoặc đã dùng ở `/me/2fa/*` (status 400; ở đăng nhập bước 2 là 401, §5.9); tính vào `failedLoginCount` (D-063)                                                           |
 | 401  | `UNAUTHORIZED`               | Thiếu/hết hạn/sai access token                                                                                                                                                               |
 | 401  | `INVALID_CREDENTIALS`        | Sai email hoặc mật khẩu (thông báo chung, không nói cái nào sai)                                                                                                                             |
 | 401  | `INVALID_REFRESH_TOKEN`      | Refresh token thiếu/sai/hết hạn/đã thu hồi (kể cả phát hiện reuse); cookie bị xóa                                                                                                            |
+| 401  | `TWO_FACTOR_INVALID`         | Đăng nhập bước 2: mã TOTP/mã dự phòng sai, hoặc bước đã dùng (chống dùng lại); thông báo chung; tính vào `failedLoginCount`/khóa tạm (§5.9)                                                  |
+| 401  | `TWO_FACTOR_CHALLENGE_INVALID` | Thử thách đăng nhập 2 bước không tồn tại, hết hạn (5 phút), đã dùng, hoặc hết 5 lượt thử; phải đăng nhập lại (§5.9)                                                                        |
+| 409  | `TWO_FACTOR_SETUP_REQUIRED`  | Chưa gọi `setup` hoặc secret chờ đã quá 10 phút khi `enable` (§6.5)                                                                                                                         |
+| 409  | `TWO_FACTOR_NOT_ENABLED`     | Thao tác cần 2FA đang bật (`disable`, `backup-codes`, admin reset) nhưng chưa bật (§6.5, §14.10)                                                                                            |
+| 503  | `TWO_FACTOR_UNAVAILABLE`     | Chưa cấu hình/sai `TOTP_ENCRYPTION_KEY`: không bật được 2FA, và user đã bật 2FA không đăng nhập được (không bỏ qua bước 2; D-063)                                                            |
+| 409  | `ACTIVE_ORDERS_EXIST` | Khách xóa tài khoản (`DELETE /me`) khi còn đơn ở trạng thái đang xử lý; `details: { orderCodes: [tối đa 10 mã mới nhất], total }` (§6.6, D-065) |
+| 409  | `ACCOUNT_DELETED` | Admin thao tác (status/role/reset 2FA) lên tài khoản đã được chủ sở hữu tự xóa (§14.10, D-065) |
 | 403  | `FORBIDDEN`                  | Không đủ quyền (endpoint admin)                                                                                                                                                              |
 | 403  | `ACCOUNT_LOCKED`             | Khóa tạm do sai mật khẩu nhiều lần; `details.lockedUntil`                                                                                                                                    |
 | 403  | `ACCOUNT_DISABLED`           | Tài khoản bị admin khóa                                                                                                                                                                      |
@@ -139,7 +156,7 @@ Phân trang: query `page` (>= 1, mặc định 1), `pageSize` (1–100, mặc đ
 | 409  | `IDEMPOTENCY_CONFLICT`       | Cùng `Idempotency-Key` nhưng nội dung hoặc người gọi khác                                                                                                                                    |
 | 409  | `INVALID_STATUS_TRANSITION`  | Chuyển trạng thái đơn không hợp lệ; `details.from/to/allowed`                                                                                                                                |
 | 409  | `ADDRESS_LIMIT_REACHED`      | Quá 10 địa chỉ                                                                                                                                                                               |
-| 409  | `PAYMENT_METHOD_UNAVAILABLE` | Phương thức thanh toán chưa bật (VNPay/Stripe thiếu cấu hình env, §13.0)                                                                                                                     |
+| 409  | `PAYMENT_METHOD_UNAVAILABLE` | Phương thức thanh toán chưa bật (VNPay/Stripe thiếu cấu hình env; MoMo cần `PAYMENT_MOCKS_ENABLED`; chuyển khoản cần `BANK_TRANSFER_ENABLED`; §13.0)                                                                                                                     |
 | 409  | `PAYMENT_NOT_ALLOWED`        | Không tạo được phiên thanh toán cho đơn; `details.reason` = `STATUS` \| `METHOD_MISMATCH` \| `EXPIRED` \| `UNAVAILABLE` (§13.2)                                                              |
 | 409  | `COUPON_CODE_TAKEN`          | Mã giảm giá đã tồn tại (admin tạo mã, §13.8); `details.field = "code"`                                                                                                                       |
 | 409  | `REVIEW_NOT_ALLOWED`         | Không được viết đánh giá; `details.reason` = `NOT_PURCHASED` \| `ALREADY_REVIEWED` (§14.1)                                                                                                   |
@@ -204,6 +221,7 @@ Tất cả **Public**; chỉ trả sản phẩm `status=ACTIVE` và `deletedAt I
   "compareAtPrice": 210000, // giá niêm yết của variant đạt minPrice nếu đang sale, ngược lại null
   "inStock": true,
   "isFeatured": true,
+  "updatedAt": "2026-11-10T08:30:00.000Z", // (0.23) ISO 8601 UTC; Product.updatedAt, dùng làm lastmod của sitemap
   "ratingAvg": 4.6,
   "ratingCount": 18,
   "coffee": {
@@ -514,9 +532,12 @@ Lược đồ User trả ra (không bao giờ có `passwordHash`):
   "avatarUrl": null,
   "role": "CUSTOMER",
   "emailVerified": false,
+  "twoFactorEnabled": false,
   "createdAt": "2026-11-10T08:30:00.000Z"
 }
 ```
+
+`twoFactorEnabled` (0.22, D-063): đã bật xác thực 2 lớp; chỉ là cờ, không lộ gì khác về 2FA.
 
 Ràng buộc mật khẩu: 8–72 ký tự, có ít nhất 1 chữ và 1 số.
 Các endpoint cấp phiên trả `{ "data": { "user": {..}, "accessToken": "<jwt>", "expiresIn": 900 } }` và `Set-Cookie: bb_rt=...`. Cookie `bb_rt` có `Max-Age` 7 ngày; mỗi lần refresh cấp token mới hạn 7 ngày tính từ lúc refresh (hạn trượt). Đăng ký/đăng nhập tạo family mới.
@@ -531,6 +552,13 @@ Body: `fullName` string 2–100 (bắt buộc), `email` email <= 254 (bắt bu�
 
 Body: `{ "email": "an@example.com", "password": "Matkhau123" }`.
 200: phiên như trên. FE sau đó gọi `POST /cart/merge` nếu có cart token.
+**Từ 0.22 (D-063), nếu user đã bật 2FA và mật khẩu đúng:** 200 trả hình dạng KHÁC, chưa có phiên:
+
+```json
+{ "data": { "twoFactorRequired": true, "challengeToken": "<32 byte base64url>", "expiresAt": "2026-11-22T08:35:00.000Z" } }
+```
+
+KHÔNG `Set-Cookie`, KHÔNG `accessToken`, KHÔNG `user`; FE phân biệt bằng `twoFactorRequired`. `challengeToken` sống 5 phút, chỉ dùng được ở §5.9; DB chỉ lưu SHA-256. Mỗi lần gọi mới vô hiệu thử thách chưa dùng trước đó. Bước 1 KHÔNG reset `failedLoginCount` (chỉ bước 2 thành công mới reset). Thiếu/sai `TOTP_ENCRYPTION_KEY` -> 503 `TWO_FACTOR_UNAVAILABLE` (không phát thử thách). Lỗi mật khẩu/khóa/disabled giữ nguyên như dưới.
 Lỗi: 400; 401 `INVALID_CREDENTIALS` (tăng `failedLoginCount`); 403 `ACCOUNT_LOCKED` (`details: { "lockedUntil": "..." }`) khi đã khóa, kể cả nhập đúng mật khẩu trong lúc khóa; 403 `ACCOUNT_DISABLED`; 429.
 Quy tắc:
 
@@ -574,6 +602,20 @@ Bổ sung: `POST /auth/resend-verification` – Auth, không body, 204; 409 `CON
 ### 5.8 `POST /auth/change-password` – Auth
 
 Body: `{ "currentPassword": "...", "newPassword": "..." }` (khác mật khẩu cũ). 204; thu hồi mọi refresh token **trừ family hiện tại** (xác định bằng claim `sid` của access token); access token của các phiên khác bị 401 ngay, phiên hiện tại vẫn dùng được. `newPassword` trùng `currentPassword` -> 400 `VALIDATION_ERROR` (field `newPassword`). Rate limit 5/phút/IP. Lỗi: 400 `VALIDATION_ERROR`, 400 `INVALID_PASSWORD`, 401, 429.
+
+### 5.9 `POST /auth/login/2fa` – Public (limiter nhóm auth, 5/phút/IP; D-063)
+
+Bước 2 của đăng nhập khi tài khoản bật 2FA (bước 1 là §5.2). Body: `{ "challengeToken": "...", "code": "123456" }` **hoặc** `{ "challengeToken": "...", "backupCode": "ABCDE-FGHJK" }` — đúng một trong `code`/`backupCode` (cả hai hoặc không có -> 400 `VALIDATION_ERROR`). `code`: 6 chữ số (cho phép khoảng trắng); `backupCode`: không phân biệt hoa thường, bỏ qua gạch ngang/khoảng trắng.
+200: phiên đầy đủ như §5.2 (`{ user, accessToken, expiresIn }` + `Set-Cookie: bb_rt=...`, family mới), cập nhật `lastLoginAt`, reset `failedLoginCount`/`lockedUntil`, đánh dấu thử thách đã dùng.
+Lỗi: 400 `VALIDATION_ERROR`; 401 `TWO_FACTOR_INVALID` (mã sai, bước TOTP đã dùng hoặc nhỏ hơn bước đã dùng, mã dự phòng sai/đã dùng; thông báo chung); 401 `TWO_FACTOR_CHALLENGE_INVALID` (token không tồn tại/hết hạn/đã dùng/hết lượt thử/2FA đã bị tắt); 403 `ACCOUNT_LOCKED` (`details.lockedUntil`) hoặc `ACCOUNT_DISABLED`; 503 `TWO_FACTOR_UNAVAILABLE`; 429.
+Quy tắc:
+
+- **TOTP:** RFC 6238 (HMAC-SHA1, bước 30 giây, 6 chữ số), chấp nhận bước hiện tại và +-1 bước; chỉ nhận bước lớn hơn `twoFactorLastStep` (ghi nguyên tử), nên không dùng lại được một mã.
+- **Giới hạn thử:** mỗi thử thách tối đa 5 lượt (đặt chỗ nguyên tử trước khi kiểm mã, kể cả khi gửi song song). Hết lượt -> mọi lần sau (kể cả mã đúng) trả `TWO_FACTOR_CHALLENGE_INVALID`.
+- **Khóa tạm:** mỗi mã sai cũng tăng `failedLoginCount` như sai mật khẩu (§5.2): đủ 5 lần -> `lockedUntil = now + 15 phút`, sau đó đăng nhập (bước 1) trả 403 `ACCOUNT_LOCKED`.
+- **Mã dự phòng:** dùng một lần (đánh dấu nguyên tử), ghi audit `user.2fa.backup_used` (actor là chính user, `diff = { backupCodesRemaining: [trước, sau] }`).
+- Đánh dấu thử thách đã dùng và tiêu thụ mã nằm trong một transaction; mã sai thì không đánh dấu dùng.
+- Không kiểm Origin (như §5.2). Thiếu khóa `TOTP_ENCRYPTION_KEY` hoặc giải mã secret lỗi -> 503, không cấp phiên.
 
 ## 6. Me (hồ sơ & địa chỉ)
 
@@ -659,6 +701,58 @@ Query: `status` (OrderStatus, nhiều giá trị cách dấu phẩy), `page`, `p
 ```
 
 `itemCount` = **tổng `quantity`** của mọi dòng (ví dụ trên: 2 + 1 = 3). `items` tối đa 3 dòng đầu. Chi tiết dùng `GET /orders/:code`. Đơn guest đặt trước khi đăng ký **không** tự gắn vào tài khoản (D-005, xem §15 mục 2).
+
+### 6.5 Xác thực 2 lớp (2FA) của chính mình (D-063)
+
+Toàn bộ **Auth, chỉ Staff+** (CUSTOMER -> 403 `FORBIDDEN`), limiter nhóm auth (5/phút/IP, chung bộ đếm với §5.2). Thiếu `TOTP_ENCRYPTION_KEY` -> 503 `TWO_FACTOR_UNAVAILABLE` ở `setup`. Sai mật khẩu -> 400 `INVALID_PASSWORD`. Mã sai -> 400 `TWO_FACTOR_INVALID` và tính vào `failedLoginCount`.
+
+- `POST /me/2fa/setup` body `{ "password": "..." }` -> 200:
+
+```json
+{
+  "data": {
+    "secret": "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP",
+    "otpauthUri": "otpauth://totp/BeanBox:an%40example.com?secret=JBSW...&issuer=BeanBox&algorithm=SHA1&digits=6&period=30",
+    "qrDataUrl": "data:image/png;base64,..."
+  }
+}
+```
+
+  Tạo secret mới 20 byte lưu ở dạng mã hóa AES-256-GCM thành **secret chờ** (hết hạn 10 phút; gọi lại thay secret cũ). `secret` (base32, không padding) chỉ trả ở đây. Đã bật 2FA -> 409 `CONFLICT`.
+- `POST /me/2fa/enable` body `{ "code": "123456" }` (TOTP của secret chờ) -> 200 `{ "data": { "backupCodes": ["ABCDE-FGHJK", ...10 mã] } }`. Bật 2FA, ghi `lastStep`, sinh 10 mã dự phòng (chỉ trả một lần), **thu hồi mọi phiên KHÁC** của user (giữ phiên hiện tại theo `sid`; access token của phiên khác bị 401 ngay), audit `user.2fa.enable`. Lỗi: 400 `TWO_FACTOR_INVALID`; 409 `TWO_FACTOR_SETUP_REQUIRED` (chưa `setup` hoặc quá 10 phút); 409 `CONFLICT` (đã bật).
+- `POST /me/2fa/disable` body `{ "password": "...", "code": "..." }` (`code` là TOTP 6 số **hoặc** mã dự phòng) -> 204. Tắt 2FA: xóa secret, secret chờ, mã dự phòng, thử thách chưa dùng; thu hồi phiên khác (giữ phiên hiện tại); audit `user.2fa.disable`. Chưa bật -> 409 `TWO_FACTOR_NOT_ENABLED`.
+- `POST /me/2fa/backup-codes` body như `disable` -> 200 `{ "data": { "backupCodes": [10 mã mới] } }`. Vô hiệu toàn bộ mã cũ (kể cả mã chưa dùng); không thu hồi phiên; audit `user.2fa.backup_regenerate`. Chưa bật -> 409 `TWO_FACTOR_NOT_ENABLED`.
+- `GET /me` (§6.1) chỉ thêm `twoFactorEnabled`.
+
+Mã dự phòng: 10 mã/lần, dạng `XXXXX-XXXXX` (bảng chữ cái 31 ký tự bỏ I, L, O, 0, 1), lưu SHA-256, dùng một lần.
+
+### 6.6 Dữ liệu cá nhân: xóa tài khoản và xuất dữ liệu (D-065)
+
+- `DELETE /me` – Auth, **chỉ CUSTOMER** (STAFF/ADMIN -> 403 `FORBIDDEN`, kiểm trước cả body). Body `{ "password": "...", "confirmText": "XOA TAI KHOAN" }`; `confirmText` phải khớp CHÍNH XÁC (phân biệt hoa/thường, không khoảng trắng thừa), sai/thiếu -> 400 `VALIDATION_ERROR` (`details.field`). Limiter nhóm auth (5/phút/IP). Sai mật khẩu -> 400 `INVALID_PASSWORD` và tính vào `failedLoginCount`/khóa tạm như đổi mật khẩu (đang khóa -> 403 `ACCOUNT_LOCKED`). Còn đơn ở `PENDING_PAYMENT`, `PENDING`, `CONFIRMED`, `PROCESSING`, `SHIPPING`, `FAILED_DELIVERY`, `RETURN_REQUESTED` -> 409 `ACTIVE_ORDERS_EXIST` với `details: { "orderCodes": ["BB-..."], "total": 12 }` (tối đa 10 mã, mới nhất trước). Thành công: **204** không body, xóa cookie refresh (`bb_rt`).
+  Trong MỘT transaction (khóa dòng user `FOR UPDATE`; kiểm đơn đang xử lý nằm trong transaction):
+  - `User`: `email` -> `deleted-<id>@deleted.invalid`, `fullName` -> "Người dùng đã xóa", `phone`, `birthDate`, `avatarUrl` -> null, `passwordHash` -> hash của chuỗi ngẫu nhiên 32 byte (không ai biết), `deletedAt` = now, `status` -> `DISABLED` (chặn đăng nhập/refresh/đặt lại mật khẩu), `emailVerifiedAt` -> null, đếm/khóa đăng nhập về 0, mọi cột 2FA -> null; giữ `id`, `role`, `createdAt`, `lastLoginAt`.
+  - Xóa hẳn: `Address`, `Wishlist`, `Cart` (+ items), `RefreshToken` (mọi phiên; access token cũ -> 401 ngay theo cơ chế phiên §1), `PasswordResetToken`, `EmailVerificationToken`, `TwoFactorBackupCode`, `TwoFactorChallenge`.
+  - Mọi `Order` của user (giữ `userId`, số tiền, items, trạng thái, lịch sử, `couponCode`, tracking, tỉnh/phường): `contactEmail` -> email ẩn danh, `contactPhone` -> `""` (cột `String` NOT NULL, không có CHECK), `note` -> null, `shippingAddress.fullName` -> "Người dùng đã xóa", `.phone` -> `""`, `.line1` -> "[đã xóa]" (giữ `provinceCode/Name`, `wardCode/Name`). `CouponRedemption.email` -> email ẩn danh. `Payment.rawPayload` giữ nguyên (đã kiểm: chỉ chứa mã phản hồi cổng, id giao dịch, số tiền, không có PII).
+  - `ContactMessage` có `userId` này hoặc cùng email cũ (không phân biệt hoa/thường): `name` -> "Người dùng đã xóa", `email` -> email ẩn danh, `phone` -> null; giữ nội dung và trạng thái xử lý.
+  - Giữ: `Review` (hiển thị tác giả "Người dùng đã xóa"), `AuditLog`. Ghi audit `user.self_delete` (`actorId` = `entityId` = user, `ip`, KHÔNG có `diff` hay email cũ).
+  - Email cũ đăng ký lại được (tài khoản mới hoàn toàn, không thấy đơn cũ). Gọi lại với token cũ -> 401 `UNAUTHORIZED`.
+- `GET /me/export` – Auth, **mọi role** (chỉ dữ liệu của chính người gọi). Limiter riêng **5 lần/giờ**, khóa theo `userId` (đứng sau xác thực), quá -> 429 `RATE_LIMITED` + `Retry-After`. 200: `Content-Type: application/json; charset=utf-8`, `Content-Disposition: attachment; filename="beanbox-du-lieu-ca-nhan-YYYY-MM-DD.json"` (ngày theo giờ Việt Nam), `Cache-Control: no-store`. Thân là object JSON trực tiếp (KHÔNG bọc `data`; đây là file tải về):
+
+```json
+{
+  "formatVersion": 1,
+  "exportedAt": "2026-11-22T03:00:00.000Z",
+  "truncated": false,
+  "profile": { "id": "...", "email": "...", "fullName": "...", "phone": null, "birthDate": null, "avatarUrl": null, "role": "CUSTOMER", "emailVerified": true, "emailVerifiedAt": "...", "twoFactorEnabled": false, "createdAt": "..." },
+  "addresses": [ { "id": "...", "fullName": "...", "phone": "...", "provinceCode": "79", "provinceName": "...", "wardCode": "...", "wardName": "...", "line1": "...", "isDefault": true, "createdAt": "..." } ],
+  "orders": [ { "code": "BB-...", "status": "DELIVERED", "paymentStatus": "PAID", "paymentMethod": "COD", "shippingMethod": "STANDARD", "contactEmail": "...", "contactPhone": "...", "shippingAddress": {}, "items": [ { "productName": "...", "variantName": "...", "sku": "...", "unitPrice": 0, "quantity": 1, "lineTotal": 0 } ], "subtotal": 0, "discountTotal": 0, "shippingFee": 0, "shippingDiscount": 0, "grandTotal": 0, "couponCode": null, "note": null, "trackingNumber": null, "carrier": null, "cancelReason": null, "estimatedDelivery": { "from": null, "to": null }, "createdAt": "...", "paidAt": null, "confirmedAt": null, "deliveredAt": null, "cancelledAt": null, "statusHistory": [ { "from": null, "to": "PENDING", "at": "..." } ], "payments": [ { "provider": "COD", "status": "SUCCEEDED", "amount": 0, "createdAt": "...", "refundedAt": null } ] } ],
+  "reviews": [ { "product": { "name": "...", "slug": "..." }, "rating": 5, "content": "...", "images": [], "status": "PUBLISHED", "reply": null, "createdAt": "..." } ],
+  "wishlist": [ { "product": { "name": "...", "slug": "..." }, "addedAt": "..." } ],
+  "contactMessages": [ { "name": "...", "email": "...", "phone": null, "subject": "...", "message": "...", "createdAt": "..." } ]
+}
+```
+
+  Tối đa 1000 đơn mới nhất (`truncated: true` khi còn nhiều hơn) và 200 tin nhắn liên hệ. KHÔNG có `passwordHash`, cột/secret 2FA, mã dự phòng, token, `Payment.rawPayload`, mã giao dịch cổng thanh toán. Ghi audit `user.export` (`actorId` = `entityId` = user, `ip`, không lưu nội dung). FE tải bằng `ApiClient.download` (Bearer qua header, không đặt token vào URL).
 
 ## 7. Locations
 
@@ -857,6 +951,9 @@ Lỗi 409 `COUPON_INVALID`, `details.reason` ∈ `NOT_FOUND`, `INACTIVE`, `NOT_S
   "note": "Gọi trước khi giao",
   "trackingNumber": null,
   "carrier": null,
+  "etaFrom": "2026-11-12",
+  "etaTo": "2026-11-14",
+  "shipment": null,
   "cancelReason": null,
   "expiresAt": null,
   "paidAt": null,
@@ -875,7 +972,7 @@ Lỗi 409 `COUPON_INVALID`, `details.reason` ∈ `NOT_FOUND`, `INACTIVE`, `NOT_S
 }
 ```
 
-`canCancel` = trạng thái hiện tại cho phép khách hủy (§11). `canPay` (0.6) = đơn đang chờ thanh toán và còn thanh toán được (§13.1). Không lộ `actorId`, `idempotencyKey`.
+`etaFrom`/`etaTo` (0.21, D-062): ngày giao dự kiến (ngày lịch Việt Nam, `YYYY-MM-DD`), server tính lúc đặt đơn từ `shipping.eta` + vùng + phương thức (không nhận từ client, không đổi khi settings đổi sau đó); `null` với đơn tạo trước 0.21. `shipment` (0.21): `null` khi đơn chưa từng chuyển sang `SHIPPING`, ngược lại hành trình **mô phỏng** (§9.7). `canCancel` = trạng thái hiện tại cho phép khách hủy (§11). `canPay` (0.6) = đơn đang chờ thanh toán và còn thanh toán được (§13.1). Không lộ `actorId`, `idempotencyKey`.
 
 ### 9.1 `POST /checkout/quote` – Optional
 
@@ -910,7 +1007,8 @@ Tính giá từ giỏ hiện tại (không tạo đơn, không giữ kho). Body:
       {
         "method": "STANDARD",
         "label": "Tiêu chuẩn",
-        "estimatedDays": "3-5",
+        "estimatedDays": "1-2",
+        "eta": { "minDays": 1, "maxDays": 2, "fromDate": "2026-11-23", "toDate": "2026-11-24" },
         "baseFee": 20000,
         "weightSurcharge": 0,
         "fee": 20000,
@@ -922,7 +1020,8 @@ Tính giá từ giỏ hiện tại (không tạo đơn, không giữ kho). Body:
       {
         "method": "EXPRESS",
         "label": "Nhanh",
-        "estimatedDays": "1-2",
+        "estimatedDays": "0-1",
+        "eta": { "minDays": 0, "maxDays": 1, "fromDate": "2026-11-22", "toDate": "2026-11-23" },
         "baseFee": 35000,
         "weightSurcharge": 0,
         "fee": 35000,
@@ -942,7 +1041,9 @@ Tính giá từ giỏ hiện tại (không tạo đơn, không giữ kho). Body:
 }
 ```
 
-`fee` = `baseFee + weightSurcharge` (trước giảm); `shippingDiscount` gồm freeship ngưỡng hoặc mã FREESHIP; `payableFee = fee - shippingDiscount`; `grandTotal = subtotal - discountTotal + payableFee`. `issues.type`: `OUT_OF_STOCK` | `INSUFFICIENT_STOCK` | `UNAVAILABLE`; quote vẫn trả 200 để UI hiển thị, nhưng `POST /orders` sẽ từ chối. Mã không hợp lệ không làm quote lỗi: `coupon.valid=false` và `discount=0`; khi `invalidReason = MIN_ORDER` thì `coupon.minOrder` (int) có mặt như ở §8.
+`paymentMethods[]` (0.20): `MOMO` và `BANK_TRANSFER` CHỈ xuất hiện khi đã bật (`PAYMENT_MOCKS_ENABLED`, `BANK_TRANSFER_ENABLED`); mặc định danh sách vẫn là COD, VNPAY, STRIPE. Phần tử có thể có `mock: true` (VNPAY/MOMO khi đang dùng cổng giả) để FE hiện nhãn "Giả lập, không trừ tiền thật".
+
+`eta` (0.21, D-062): `minDays`/`maxDays` lấy từ setting `shipping.eta` theo vùng (`shippingZone`) x phương thức; `fromDate = ngày đặt + minDays`, `toDate = ngày đặt + maxDays` theo NGÀY LỊCH Việt Nam (UTC+7; đặt lúc 23:30 vẫn tính từ ngày đó; không loại chủ nhật hay ngày lễ, chỉ là ước tính). `POST /orders` dùng cùng hàm nên ngày lưu trên đơn khớp ngày quote cho cùng thời điểm. `fee` = `baseFee + weightSurcharge` (trước giảm); `shippingDiscount` gồm freeship ngưỡng hoặc mã FREESHIP; `payableFee = fee - shippingDiscount`; `grandTotal = subtotal - discountTotal + payableFee`. `issues.type`: `OUT_OF_STOCK` | `INSUFFICIENT_STOCK` | `UNAVAILABLE`; quote vẫn trả 200 để UI hiển thị, nhưng `POST /orders` sẽ từ chối. Mã không hợp lệ không làm quote lỗi: `coupon.valid=false` và `discount=0`; khi `invalidReason = MIN_ORDER` thì `coupon.minOrder` (int) có mặt như ở §8.
 Lỗi: 400 (thiếu `provinceCode`/`addressId`, mã tỉnh sai); 404 (`addressId` không thuộc user); 409 `CART_EMPTY`; 429 `RATE_LIMITED` (30/phút/IP, D-011).
 
 ### 9.2 `POST /orders` – Optional
@@ -956,7 +1057,7 @@ Header bắt buộc: `Idempotency-Key: <uuid v4>`. Lấy item từ giỏ server;
 | `addressId`       | string, chỉ user đăng nhập; thay cho `shippingAddress` (người khác -> 404; guest gửi -> 401 `UNAUTHORIZED`)                                        |
 | `shippingAddress` | object `{ fullName 2–100, phone, provinceCode, wardCode, line1 5–200 }`; bắt buộc nếu không có `addressId`; `provinceName/wardName` do server điền |
 | `shippingMethod`  | `STANDARD` \| `EXPRESS` (bắt buộc)                                                                                                                 |
-| `paymentMethod`   | `COD` \| `VNPAY` \| `STRIPE` (bắt buộc); phương thức online chưa bật -> 409 `PAYMENT_METHOD_UNAVAILABLE` (xem §13.0, §13.1)                        |
+| `paymentMethod`   | `COD` \| `VNPAY` \| `STRIPE` \| `MOMO` \| `BANK_TRANSFER` (bắt buộc); phương thức online chưa bật -> 409 `PAYMENT_METHOD_UNAVAILABLE` (xem §13.0, §13.1)                        |
 | `couponCode`      | string, tùy chọn; không gửi thì dùng mã trong giỏ                                                                                                  |
 | `note`            | string <= 500, tùy chọn                                                                                                                            |
 | `acceptTerms`     | phải là `true`                                                                                                                                     |
@@ -992,7 +1093,7 @@ Ví dụ:
 - c. Tạo `CouponRedemption(couponId, orderId, userId?, email)`.
 
 **Captcha (0.19, D-057).** Khi backend có ĐỦ `TURNSTILE_SITE_KEY` + `TURNSTILE_SECRET_KEY` (cùng cơ chế form liên hệ, D-028): khách vãng lai gửi `captchaToken` lấy từ widget Turnstile; server xác minh qua Cloudflare. Thiếu/rỗng/sai -> 400 `CAPTCHA_FAILED` ("Xác minh captcha không thành công, vui lòng thử lại"); Cloudflare không gọi được -> 503 `SERVICE_UNAVAILABLE`. Khách đã đăng nhập không cần token. Token chỉ dùng một lần nên bước này chạy SAU nhánh replay idempotency (replay không cần token) và `captchaToken` bị loại khỏi `requestFingerprint`. Chưa cấu hình (mặc định ở localhost) thì không đổi hành vi, `captchaToken` bị bỏ qua.
-**Giới hạn đơn COD đang mở (0.19, D-057).** Chỉ khách vãng lai đặt đơn `COD`: nếu đã có >= `GUEST_COD_MAX_OPEN` (env, mặc định 3) đơn `PENDING`, `COD`, `userId` null có cùng `contactPhone` (chuẩn hóa) HOẶC cùng `contactEmail` (lowercase) -> 409 `TOO_MANY_PENDING_ORDERS` (`details: { max }`; "Bạn đang có quá nhiều đơn hàng chờ xác nhận. Vui lòng chờ cửa hàng xác nhận các đơn trước hoặc liên hệ cửa hàng để được hỗ trợ."), rollback, không trừ kho, không đụng giỏ. Kiểm sau nhánh replay (gửi lại cùng key + cùng body vẫn 200) và trước bước trừ kho. Đếm chạy trong cùng transaction đặt đơn sau hai khóa advisory theo SĐT và email, nên các lần đặt song song cùng SĐT hoặc cùng email không vượt giới hạn (mức đảm bảo: tuần tự hóa theo từng SĐT/email; hai request khác SĐT và khác email không chờ nhau). Đơn của khách có tài khoản và đơn online không bị giới hạn, cũng không tính vào số đếm. Đơn rời `PENDING` (staff xác nhận, hủy, job quá hạn) thì không còn tính.
+**Giới hạn đơn COD đang mở (0.19, D-057).** Chỉ khách vãng lai đặt đơn `COD`: nếu đã có >= `GUEST_COD_MAX_OPEN` (env, mặc định 3) đơn `PENDING`, `COD`, `userId` null có cùng `contactPhone` (chuẩn hóa) HOẶC cùng `contactEmail` (lowercase) -> 409 `TOO_MANY_PENDING_ORDERS` (`details: { max }`; "Bạn đang có quá nhiều đơn hàng chờ xác nhận. Vui lòng chờ cửa hàng xác nhận các đơn trước hoặc liên hệ cửa hàng để được hỗ trợ."), rollback, không trừ kho, không đụng giỏ. Kiểm sau nhánh replay (gửi lại cùng key + cùng body vẫn 200) và trước bước trừ kho. Đếm chạy trong cùng transaction đặt đơn sau hai khóa advisory theo SĐT và email, nên các lần đặt song song cùng SĐT hoặc cùng email không vượt giới hạn (mức đảm bảo: tuần tự hóa theo từng SĐT/email; hai request khác SĐT và khác email không chờ nhau). (0.20, D-061) Giới hạn này cũng áp dụng cho khách vãng lai đặt đơn `BANK_TRANSFER`: đếm các đơn `BANK_TRANSFER`, `PENDING_PAYMENT`, `userId` null cùng SĐT hoặc email (đơn chuyển khoản giữ kho tới `BANK_TRANSFER_HOLD_HOURS`), cùng mã lỗi và `details.max`. Đơn của khách có tài khoản và đơn thanh toán online khác (VNPay, Stripe, MoMo) không bị giới hạn, cũng không tính vào số đếm. Đơn rời `PENDING` (staff xác nhận, hủy, job quá hạn) thì không còn tính.
 **201** `{ "data": Order }` (đơn mới). **200** `{ "data": Order }` nếu `Idempotency-Key` đã dùng với cùng nội dung và cùng người gọi (trả lại đơn cũ ở trạng thái mới nhất, không tạo thêm, không trừ kho lần nữa).
 **Idempotency (làm rõ 0.4):**
 
@@ -1052,8 +1153,18 @@ Làm rõ 0.4: `code` được trim + uppercase; sai định dạng `^BB-\d{6}-[2
     "shippingFee": 20000,
     "shippingDiscount": 0,
     "grandTotal": 317000,
-    "trackingNumber": "GHN123",
-    "carrier": "GHN",
+    "trackingNumber": "BBL-20261112-K5AVT2",
+    "carrier": "BeanBox Logistics (giả lập)",
+    "etaFrom": "2026-11-12",
+    "etaTo": "2026-11-14",
+    "shipment": {
+      "carrier": "BeanBox Logistics (giả lập)",
+      "trackingNumber": "BBL-20261112-K5AVT2",
+      "simulated": true,
+      "events": [
+        { "code": "HANDOVER", "label": "Đã bàn giao cho đơn vị vận chuyển", "at": "2026-11-12T03:00:00.000Z" }
+      ]
+    },
     "cancelReason": null,
     "expiresAt": null,
     "createdAt": "...",
@@ -1066,7 +1177,60 @@ Làm rõ 0.4: `code` được trim + uppercase; sai định dạng `^BB-\d{6}-[2
 }
 ```
 
-`canPay` (0.6): quy tắc riêng cho tra cứu ở §13.1 (chỉ đơn guest). `expiresAt` (0.6.1): hạn thanh toán của đơn (ISO) hoặc `null` (đơn COD hoặc đã qua giai đoạn chờ thanh toán); không phải dữ liệu cá nhân, để khách vãng lai thấy đồng hồ đếm ngược khi `canPay = true`.
+`etaFrom`, `etaTo`, `shipment` (0.21): như `Order` (§9), không có dữ liệu cá nhân. `canPay` (0.6): quy tắc riêng cho tra cứu ở §13.1 (chỉ đơn guest). `expiresAt` (0.6.1): hạn thanh toán của đơn (ISO) hoặc `null` (đơn COD hoặc đã qua giai đoạn chờ thanh toán); không phải dữ liệu cá nhân, để khách vãng lai thấy đồng hồ đếm ngược khi `canPay = true`.
+
+### 9.6 Chuyển khoản / VietQR (0.20, D-061)
+
+Chỉ có khi `BANK_TRANSFER_ENABLED=true` (tắt: không tạo được đơn `BANK_TRANSFER`, §13.0). Đơn `BANK_TRANSFER` được tạo như đơn online khác: `status = PENDING_PAYMENT`, `paymentStatus = UNPAID`, `expiresAt = now + BANK_TRANSFER_HOLD_HOURS` (1..72, mặc định 24 giờ, không theo `order.paymentExpiryMinutes`), trừ kho và giữ lượt mã giống COD. Hết hạn thì job hết hạn (§13.6) tự hủy như đơn online. `canPay` luôn `false` (không có phiên thanh toán để tạo lại).
+
+**Quyền (cả hai endpoint)** giống §13.2: đã đăng nhập -> chỉ chủ đơn (`phone` bị bỏ qua); không đăng nhập -> chỉ đơn guest VÀ `phone` (chuẩn hóa) khớp; trường hợp khác (kể cả `code` sai định dạng) -> 404 `NOT_FOUND`. Rate limit 30/phút/IP cho khách không có Authorization. Điều kiện: `paymentMethod = BANK_TRANSFER`, `status = PENDING_PAYMENT`, `expiresAt > now`, phương thức đang bật; vi phạm -> 409 `PAYMENT_NOT_ALLOWED` với `details.reason` = `METHOD_MISMATCH` | `STATUS` | `UNAVAILABLE` | `EXPIRED`.
+
+#### `GET /orders/:code/bank-transfer` – Optional
+
+Query `phone` (khách chưa đăng nhập). 200:
+
+```json
+{
+  "data": {
+    "orderCode": "BB-261110-K7QP",
+    "amount": 350000,
+    "content": "BB-261110-K7QP",
+    "bankName": "Ngân hàng demo (không có thật)",
+    "bankBin": "999999",
+    "accountNo": "0123456789",
+    "accountName": "BEANBOX DEMO",
+    "qrPayload": "00020101021238...6304XXXX",
+    "qrDataUrl": "data:image/png;base64,...",
+    "expiresAt": "2026-11-11T08:30:00.000Z",
+    "claimedAt": null,
+    "isDemo": true
+  }
+}
+```
+
+- `amount` = `grandTotal` do server; `content` = mã đơn (nội dung chuyển khoản để đối soát thủ công).
+- `qrPayload`: chuỗi VietQR/EMVCo (NAPAS) do server dựng, các trường TLV theo thứ tự `00`="01", `01`="12" (QR động có số tiền), `38` (GUID `A000000727`, dịch vụ `QRIBFTTA`, BIN và số tài khoản), `53`="704", `54` số tiền, `58`="VN", `62` (`08` = nội dung, chỉ chữ/số/khoảng trắng, đã bỏ dấu và cắt theo giới hạn), `63` CRC16-CCITT (poly 0x1021, init 0xFFFF, hex hoa 4 ký tự) tính trên toàn chuỗi gồm cả `6304`. `qrDataUrl`: ảnh PNG của `qrPayload` do server dựng (thư viện `qrcode`); CSP storefront đã cho phép `img-src data:`.
+- `isDemo = true` khi `bankBin = 999999` (BIN không tồn tại, không chuyển tiền thật được) HOẶC khi cổng giả đang bật; FE PHẢI hiện cảnh báo "Tài khoản demo, KHÔNG chuyển tiền thật".
+- Thông tin tài khoản lấy từ setting `payment.bankTransfer` (§14.9), mặc định BIN `999999`.
+
+#### `POST /orders/:code/bank-transfer/claim` – Optional
+
+Body `{ "phone": "0901234567" }` (khách chưa đăng nhập; user không cần). Ghi `Order.transferClaimedAt = now` (lần đầu; gọi lại giữ nguyên mốc cũ, idempotent, an toàn khi song song). 200 `{ "data": { "claimedAt": "<iso>" } }`. **KHÔNG đổi `paymentStatus`/`status`**: đây chỉ là khách báo đã chuyển; hệ thống không đối soát ngân hàng. Đơn chỉ thành `PAID` khi nhân viên xác nhận (§12.1 `POST /admin/orders/:code/bank-transfer/confirm`).
+
+### 9.7 Vận chuyển giả lập và hành trình mô phỏng (0.21, D-062)
+
+Không có hãng vận chuyển thật và không có bảng mới. Hai "hãng" giả lập cố định trong code: `STANDARD` -> `BeanBox Logistics (giả lập)` (mã `BBL`), `EXPRESS` -> `BeanBox Express (giả lập)` (mã `BBE`). Mã vận đơn giả: `<BBL|BBE>-<YYYYMMDD ngày VN>-<6 ký tự>` từ bảng chữ không nhầm lẫn `ABCDEFGHJKMNPQRSTUVWXYZ23456789`, kiểm trùng trong DB và thử lại tối đa 8 lần.
+
+`shipment` (trong `Order`, `TrackedOrder`, `AdminOrder`): `{ carrier, trackingNumber, simulated: true, events[] }` với `events[] = { code, label, at (ISO) }`, tăng dần theo `at`, chỉ gồm mốc có `at <= now`. Hàm thuần `buildShipmentEvents({ history, etaTo, deliveredAt, now })`. Gọi `s` là thời điểm vào `SHIPPING` lần đầu (`OrderStatusHistory`):
+
+| `code`             | Nhãn                              | Thời điểm                                                                 |
+| ------------------ | --------------------------------- | ------------------------------------------------------------------------- |
+| `HANDOVER`         | Đã bàn giao cho đơn vị vận chuyển | `s`                                                                       |
+| `PICKED_UP`        | Đã lấy hàng                       | `s + 2 giờ`                                                               |
+| `IN_TRANSIT`       | Đang trung chuyển                 | chính giữa `PICKED_UP` và `OUT_FOR_DELIVERY`                              |
+| `OUT_FOR_DELIVERY` | Đang giao hàng đến bạn            | `max(08:00 VN ngày etaTo, s + 4 giờ)`; đơn cũ không có `etaTo`: `s + 24 giờ` |
+
+Mốc THẬT theo lịch sử sau lần `SHIPPING` đầu: `FAILED_DELIVERY` ("Giao hàng không thành công"), `REDELIVERING` ("Giao lại đơn hàng", khi `FAILED_DELIVERY -> SHIPPING`), `DELIVERED` ("Giao hàng thành công", lúc `deliveredAt`), `RETURNED`, `CANCELLED`. Mọi mốc giả có `at` >= mốc thật kết thúc đầu tiên (giao thành công/không thành công/hoàn/hủy) bị cắt. Trạng thái đơn thật vẫn do Staff đổi; hệ thống KHÔNG tự chuyển `DELIVERED`. FE phải ghi rõ "Hành trình mô phỏng (giả lập)".
 
 ## 10. Quy tắc tính giá
 
@@ -1089,6 +1253,7 @@ Làm rõ 0.4: `code` được trim + uppercase; sai định dạng `^BB-\d{6}-[2
    - **Freeship ngưỡng:** nếu `subtotal − discountTotal >= 500.000` thì phương thức **STANDARD** có `shippingDiscount = fee` (miễn cả phụ phí). EXPRESS không được miễn.
    - **Mã FREESHIP:** `shippingDiscount = min(fee, maxDiscount ?? fee)` cho phương thức đang chọn (kể cả EXPRESS). Nếu đã freeship ngưỡng thì `shippingDiscount` vẫn là `fee` (không cộng dồn); mã vẫn được tính là đã dùng.
    - `payableFee = fee − shippingDiscount`.
+   - Thời gian giao dự kiến (0.21, D-062) KHÔNG ảnh hưởng giá: chỉ đọc `shipping.eta` theo cùng vùng (§9.1).
 4. `grandTotal = subtotal − discountTotal + fee − shippingDiscount = subtotal − discountTotal + payableFee`, luôn `>= 0`.
 
 **3. Làm tròn:** chỉ PERCENT có phép chia, dùng `floor`. Không có VAT cộng thêm (giá đã gồm VAT).
@@ -1116,7 +1281,7 @@ Làm rõ 0.4: `code` được trim + uppercase; sai định dạng `^BB-\d{6}-[2
 | 4   | `PENDING`          | `CANCELLED`        | CUSTOMER, Staff+, SYSTEM (chỉ job COD guest) | Hoàn kho; hoàn lượt mã; `cancelReason`. SYSTEM: job hủy đơn COD khách vãng lai (`userId` null) quá `GUEST_COD_HOLD_HOURS` (48 giờ) chưa xác nhận, lý do "Quá hạn xác nhận đơn", `actorId` null (D-057) |
 | 5   | `CONFIRMED`        | `PROCESSING`       | Staff+                                     | Đang đóng gói                                                                                                                                 |
 | 6   | `CONFIRMED`        | `CANCELLED`        | CUSTOMER, Staff+                           | Hoàn kho; hoàn lượt mã; nếu đã `PAID` online cần hoàn tiền thủ công                                                                           |
-| 7   | `PROCESSING`       | `SHIPPING`         | Staff+                                     | Bắt buộc `trackingNumber` (`carrier` tùy chọn)                                                                                                |
+| 7   | `PROCESSING`       | `SHIPPING`         | Staff+                                     | `trackingNumber`/`carrier` tùy chọn (0.21, D-062): để trống thì server sinh mã vận đơn giả + hãng giả lập (§9.7)                              |
 | 8   | `PROCESSING`       | `CANCELLED`        | Staff+ (bắt buộc `note`)                   | Hoàn kho; hoàn lượt mã                                                                                                                        |
 | 9   | `SHIPPING`         | `DELIVERED`        | Staff+                                     | `deliveredAt`; COD -> `paymentStatus=PAID`, `paidAt`; `soldCount += qty`                                                                      |
 | 10  | `SHIPPING`         | `FAILED_DELIVERY`  | Staff+                                     | Ghi lý do                                                                                                                                     |
@@ -1138,7 +1303,7 @@ Quyền: S = Staff+ (STAFF hoặc ADMIN), AD = Admin. Quyết định nền: D-0
 
 - **Chặn quyền ở cấp router.** Mọi `/admin/*` mount dưới một router dùng `requireAuth` + `requireStaff`; role luôn đọc lại từ DB mỗi request (§1). Thiếu/sai token -> 401 `UNAUTHORIZED`; CUSTOMER -> 403 `FORBIDDEN`; user DISABLED -> 403 `ACCOUNT_DISABLED`. Endpoint ghi chú **Admin** thêm `requireAdmin` (STAFF -> 403 `FORBIDDEN`).
 - Admin xem được `stock` chính xác và `id` nội bộ. Phân trang theo §1. Tài nguyên không tồn tại -> 404 `NOT_FOUND`. ID trong path phải là chuỗi 1–50 ký tự `[a-z0-9]` (cuid), sai định dạng -> 404.
-- **Audit log (FR-ADM-11).** MỌI thao tác ghi của admin ghi 1 dòng `AuditLog` trong CÙNG transaction với thay đổi: `actorId`, `action`, `entity`, `entityId`, `diff`, `ip` (`req.ip`). `diff` chỉ chứa trường thay đổi, dạng `{ "field": [old, new] }`; tạo mới: `{ "field": [null, new] }` cho các trường chính. Không chứa mật khẩu/token; với đơn hàng không ghi địa chỉ/SĐT. Danh sách `action`: `order.status`, `inventory.adjust`, `product.create|update|delete`, `variant.create|update|delete`, `image.create|update|delete|reorder`, `category.create|update|delete`, `brand.create|update|delete`, `upload.create`; từ 0.6 thêm `coupon.create|update|delete`, `payment.refund` (§13) và `payment.late` (actorId null, hệ thống ghi, §13.5); từ 0.7 thêm `review.hide|show|reply|reply_delete` (§14.1) và `product.restore` (§14.6); từ 0.8 thêm `settings.update` (§14.9), `user.status|role` (§14.10) và `contact.update` (§14.11); từ 0.17 thêm `analytics.export` (entity `analytics`, §16.4).
+- **Audit log (FR-ADM-11).** MỌI thao tác ghi của admin ghi 1 dòng `AuditLog` trong CÙNG transaction với thay đổi: `actorId`, `action`, `entity`, `entityId`, `diff`, `ip` (`req.ip`). `diff` chỉ chứa trường thay đổi, dạng `{ "field": [old, new] }`; tạo mới: `{ "field": [null, new] }` cho các trường chính. Không chứa mật khẩu/token; với đơn hàng không ghi địa chỉ/SĐT. Danh sách `action`: `order.status`, `inventory.adjust`, `product.create|update|delete`, `variant.create|update|delete`, `image.create|update|delete|reorder`, `category.create|update|delete`, `brand.create|update|delete`, `upload.create`; từ 0.6 thêm `coupon.create|update|delete`, `payment.refund` (§13) và `payment.late` (actorId null, hệ thống ghi, §13.5); từ 0.7 thêm `review.hide|show|reply|reply_delete` (§14.1) và `product.restore` (§14.6); từ 0.8 thêm `settings.update` (§14.9), `user.status|role` (§14.10) và `contact.update` (§14.11); từ 0.17 thêm `analytics.export` (entity `analytics`, §16.4); từ 0.22 thêm `user.2fa.enable|disable|backup_regenerate|backup_used|reset` (entity `User`, §6.5, §5.9, §14.10; `actorId` là chính user, trừ `reset` là Admin).
 - **Rate limit.** Chung 100/phút/IP (§1); `POST /admin/uploads` thêm 30/phút/IP (store riêng); từ 0.17 `GET /admin/analytics/export` thêm 10/phút/IP (store riêng, §16.4).
 - **Không cache.** Mọi response admin có `Cache-Control: no-store`.
 - Ngày lọc `from`, `to` dạng `YYYY-MM-DD`, tính theo giờ Việt Nam (UTC+7), bao gồm cả hai đầu, yêu cầu `from <= to`, sai -> 400 `VALIDATION_ERROR`.
@@ -1149,7 +1314,7 @@ Quyền: S = Staff+ (STAFF hoặc ADMIN), AD = Admin. Quyết định nền: D-0
 
 #### `GET /admin/orders`
 
-Query: `status` (OrderStatus[], phân cách phẩy), `paymentStatus` (PaymentStatus[]), `paymentMethod` (PaymentMethod[]), `needsRefund` (`true`, 0.6: chỉ đơn cần hoàn tiền, §13.7), `from`, `to`, `q` (2–50 ký tự), `sort` = `newest` (mặc định) | `oldest`, `page`, `pageSize`.
+Query: `status` (OrderStatus[], phân cách phẩy), `paymentStatus` (PaymentStatus[]), `paymentMethod` (PaymentMethod[]), `needsRefund` (`true`, 0.6: chỉ đơn cần hoàn tiền, §13.7), `transferClaimed` (`true`, 0.20: chỉ đơn `BANK_TRANSFER` mà khách đã báo chuyển khoản, tức `transferClaimedAt` khác null; `false` hoặc bỏ trống = không lọc; giá trị khác -> 400 `VALIDATION_ERROR`), `from`, `to`, `q` (2–50 ký tự), `sort` = `newest` (mặc định) | `oldest`, `page`, `pageSize`.
 
 `q` khớp một trong: `code` chứa chuỗi (không phân biệt hoa thường); `contactPhone` chứa các chữ số của `q` (chỉ khi `q` có >= 3 chữ số; `q` dạng `+84...` được chuẩn hóa về `0` trước); `contactEmail` chứa `q` lowercase.
 
@@ -1180,10 +1345,18 @@ Item `AdminOrderListItem`:
 
 `code` được trim + uppercase; sai định dạng -> 404. `AdminOrder` = mọi trường của `Order` (§9) TRỪ `canCancel`, thêm:
 
-- `id`, `isGuest`, `customer: { id, email, fullName } | null`, `confirmedAt`, `cancelledAt`, `updatedAt`, `totalWeightGram`.
+- `id`, `isGuest`, `customer: { id, email, fullName } | null`, `confirmedAt`, `cancelledAt`, `updatedAt`, `totalWeightGram`. (0.21) `etaFrom`, `etaTo`, `shipment` như `Order` (§9, §9.7).
 - Mỗi dòng `history[]` thêm `actor: { id, fullName, role } | null` (null khi SYSTEM).
 - `allowedTransitions: OrderStatus[]` = `allowedTransitions(status, role người gọi)` (§11), loại các đích v2 (`RETURN_REQUESTED`, `RETURNED`).
-- (0.6) `payments[]` (mới nhất trước) và `needsRefund` cấp đơn: shape ở §13.7. `AdminOrderListItem` thêm `needsRefund` (boolean, cấp đơn, 0.6.1).
+- (0.6) `payments[]` (mới nhất trước) và `needsRefund` cấp đơn: shape ở §13.7. `AdminOrderListItem` thêm `needsRefund` (boolean, cấp đơn, 0.6.1). (0.20) `AdminOrderListItem` và `AdminOrder` thêm `transferClaimedAt` (ISO hoặc `null`).
+
+#### `POST /admin/orders/:code/bank-transfer/confirm` – Staff+ (0.20, D-061)
+
+Nhân viên xác nhận ĐÃ NHẬN tiền chuyển khoản (tự kiểm sao kê; hệ thống không đối soát ngân hàng). Không có body. Quyền Staff trở lên (cùng nhóm với xác nhận thu tiền COD). 200 `{ "data": AdminOrder }` sau khi xử lý.
+
+- Khóa đơn rồi tìm hoặc tạo `Payment` (`provider = BANK_TRANSFER`, `providerRef` = mã đơn, `amount = grandTotal`) và gọi hàm xử lý kết quả chung `applyPaymentResult` (§13.5, idempotent, có nhánh thanh toán muộn D-015): đơn `PENDING_PAYMENT` -> `CONFIRMED`, `paymentStatus = PAID`, `paidAt`. Đơn đã `CANCELLED` (khách chuyển muộn): không mở lại đơn, ghi nhận khoản tiền và `needsRefund` (§13.7). Gọi lại khi đã PAID -> 200, không đổi gì và không ghi audit thêm.
+- Audit log action `payment.bank_transfer_confirm` (`entity = Order`, `diff` gồm `paymentId`, `orderPaymentStatus`, `late`) khi xử lý thực sự được áp dụng; email đổi trạng thái như §13.9.
+- Lỗi: 401, 403, 404 (`code` lạ hoặc sai định dạng), 409 `CONFLICT` (đơn không phải `BANK_TRANSFER`).
 
 #### `PATCH /admin/orders/:code/status`
 
@@ -1194,8 +1367,8 @@ Quy tắc, kiểm theo thứ tự:
 1. `fromStatus` khác trạng thái hiện tại -> 409 `CONFLICT` "Đơn hàng vừa được cập nhật, vui lòng tải lại", `details: { currentStatus }`.
 2. `canTransition(fromStatus, toStatus, role)` sai (§11) -> 409 `INVALID_STATUS_TRANSITION`, `details: { from, to, allowed }`. `PENDING_PAYMENT -> CONFIRMED` là SYSTEM nên staff cũng nhận lỗi này.
 3. Trường bắt buộc theo chuyển (thiếu -> 400 `VALIDATION_ERROR` đúng field):
-   - `PROCESSING -> SHIPPING`: `trackingNumber` bắt buộc; `carrier` tùy chọn.
-   - `FAILED_DELIVERY -> SHIPPING`: `trackingNumber`/`carrier` tùy chọn, có thì ghi đè.
+   - `PROCESSING -> SHIPPING`: `trackingNumber`/`carrier` TÙY CHỌN (0.21, D-062; trước 0.21 `trackingNumber` bắt buộc). Có nhập thì giữ nguyên giá trị đã nhập (`carrier` không nhập thì giữ giá trị cũ của đơn, mặc định `null`). Không nhập `trackingNumber` mà đơn chưa có mã: server sinh mã vận đơn giả (§9.7) và đặt `carrier` = hãng giả lập theo `shippingMethod` (trừ khi có nhập `carrier`).
+   - `FAILED_DELIVERY -> SHIPPING`: `trackingNumber`/`carrier` tùy chọn, có thì ghi đè; không nhập thì dùng lại mã đã có.
    - `-> FAILED_DELIVERY`: `note` (lý do) bắt buộc.
    - `PROCESSING -> CANCELLED`: `note` bắt buộc.
 
@@ -1432,13 +1605,16 @@ Quyết định nền: D-014 (thanh toán online), D-015 (hoàn tiền thủ cô
 
 - **VNPAY** bật khi có cả `VNPAY_TMN_CODE` và `VNPAY_HASH_SECRET`. **STRIPE** bật khi có `STRIPE_SECRET_KEY`; khóa bắt buộc dạng `sk_test_`, khóa `sk_live_` -> backend từ chối khởi động (D-014).
 - Thiếu cấu hình -> phương thức tắt: `POST /checkout/quote` trả `paymentMethods[].enabled = false` (§9.1); `POST /orders` với phương thức đó -> 409 `PAYMENT_METHOD_UNAVAILABLE`.
+- **Cổng giả cho demo (0.20, D-060).** `PAYMENT_MOCKS_ENABLED=true` bật VNPay giả và MoMo giả (§13.10, §13.11); bị TỪ CHỐI khởi động khi `NODE_ENV=production` hoặc khi đã đặt `VNPAY_TMN_CODE` (tránh lẫn với sandbox thật). `PAYMENT_MOCK_SECRET` (>= 16 ký tự) là khóa ký của hai cổng giả; để trống thì sinh ngẫu nhiên mỗi lần khởi động (có cảnh báo; phiên thanh toán giả đang mở mất hiệu lực khi khởi động lại). Backend ghi cảnh báo khi cổng giả bật. Khi bật, `VNPAY` luôn dùng cổng giả và `vnp_ReturnUrl` = `${WEB_APP_URL}/thanh-toan/ket-qua?provider=vnpay` (không theo `VNPAY_RETURN_URL`).
+- **`BANK_TRANSFER_ENABLED=true`** bật phương thức `BANK_TRANSFER` (§9.6); `BANK_TRANSFER_HOLD_HOURS` (1..72, mặc định 24) là thời gian giữ đơn. Không phụ thuộc cổng giả.
+- Mặc định cả hai tắt: `paymentMethods` ở §9.1 không đổi và `POST /orders` với `MOMO`/`BANK_TRANSFER` -> 409 `PAYMENT_METHOD_UNAVAILABLE`.
 - `STRIPE_WEBHOOK_SECRET` tùy chọn. Thiếu thì `POST /payments/stripe/webhook` trả 503 `SERVICE_UNAVAILABLE`; đơn vẫn xác nhận được qua `POST /payments/stripe/sync` (§13.4).
 - Env khác: `VNPAY_PAYMENT_URL` (mặc định `https://sandbox.vnpayment.vn/paymentv2/vpcpay.html`, bắt buộc https), `VNPAY_RETURN_URL` (mặc định `${WEB_APP_URL}/thanh-toan/ket-qua?provider=vnpay`).
 - Rate limit cấu hình qua env (D-016): `ORDER_RATE_LIMIT_PER_MIN` (mặc định 10), `COUPON_RATE_LIMIT_PER_MIN` (10), `QUOTE_RATE_LIMIT_PER_MIN` (30); giới hạn chung toàn API `GENERAL_RATE_LIMIT_PER_MIN` (100, M8). Danh sách đầy đủ biến môi trường: `architecture.md` §8.
 
 ### 13.1 Tạo đơn online
 
-`POST /orders` (§9.2) với `paymentMethod` = `VNPAY` hoặc `STRIPE` (đã bật) -> đơn `PENDING_PAYMENT`, `paymentStatus = UNPAID`, `expiresAt = now + order.paymentExpiryMinutes` (Setting, mặc định 15), `OrderStatusHistory` `null -> PENDING_PAYMENT`. Trừ kho và giữ lượt mã giống COD (D-004). Email xác nhận ghi "vui lòng thanh toán trước <giờ VN>" (định dạng `HH:mm dd/MM/yyyy`, múi giờ Việt Nam).
+`POST /orders` (§9.2) với `paymentMethod` = `VNPAY`, `STRIPE` hoặc `MOMO` (đã bật) -> đơn `PENDING_PAYMENT`, `paymentStatus = UNPAID`, `expiresAt = now + order.paymentExpiryMinutes` (Setting, mặc định 15), `OrderStatusHistory` `null -> PENDING_PAYMENT`. Trừ kho và giữ lượt mã giống COD (D-004). Email xác nhận ghi "vui lòng thanh toán trước <giờ VN>" (định dạng `HH:mm dd/MM/yyyy`, múi giờ Việt Nam).
 
 `canPay` (boolean, thêm vào `Order` §9 và `TrackedOrder` §9.5) = `status = PENDING_PAYMENT` VÀ `expiresAt > now` VÀ phương thức của đơn đang bật. Với `TrackedOrder` thêm điều kiện là đơn guest (`userId IS NULL`), cùng tinh thần quy tắc hủy đơn D-010 (đơn của tài khoản được thanh toán lại trong "Đơn hàng của tôi"). `Order.expiresAt` đã có từ trước.
 
@@ -1624,6 +1800,37 @@ AuditLog `coupon.create|update|delete` (§12.0). Thay đổi có hiệu lực ng
 
 Sau commit, gửi nền tới `contactEmail` khi đơn sang: `CONFIRMED`; `SHIPPING` (kèm mã vận đơn và đơn vị vận chuyển nếu có); `DELIVERED`; `CANCELLED` (kèm lý do; áp dụng cho khách tự hủy, staff hủy và hết hạn thanh toán). Không gửi cho các chuyển khác (`PROCESSING`, `FAILED_DELIVERY`...). Áp dụng cho mọi nguồn chuyển trạng thái (admin, khách, SYSTEM từ thanh toán, job). Link trong email giống email xác nhận đơn (§9.2): user -> `${WEB_APP_URL}/tai-khoan/don-hang/<code>`, guest -> `${WEB_APP_URL}/tra-cuu-don-hang?code=<code>`, KHÔNG đưa SĐT vào URL. Lỗi gửi mail chỉ ghi log, không ảnh hưởng đơn (D-016).
 
+### 13.10 Cổng thanh toán giả: VNPay giả và `POST /mock-gateway/*/complete` (0.20, D-060)
+
+Chỉ tồn tại khi `PAYMENT_MOCKS_ENABLED=true`; tắt thì mọi đường dẫn dưới `/mock-gateway` trả 404 `NOT_FOUND` như route không có thật. Không có tiền thật và không gọi dịch vụ bên ngoài.
+
+**VNPay giả.** Dùng nguyên luồng §13.2/§13.3: `POST /payments/vnpay/create` vẫn trả `redirectUrl`, nhưng URL trỏ tới trang FE `${WEB_APP_URL}/cong-thanh-toan-gia-lap/vnpay?vnp_...` với `vnp_TmnCode = BEANBOXDEMO` và `vnp_SecureHash` ký HMAC-SHA512 bằng `PAYMENT_MOCK_SECRET` (cùng thuật toán §13.2). Trang FE (noindex; `/cong-thanh-toan-gia-lap` thuộc đường dẫn riêng tư) hiển thị cảnh báo "Cổng thanh toán GIẢ LẬP, không trừ tiền thật", mã đơn, số tiền và ba nút "Thanh toán thành công", "Thanh toán thất bại", "Hủy giao dịch". FE chấp nhận điều hướng tới trang này như một ngoại lệ của quy tắc https-only: chỉ cùng origin và chỉ đường dẫn `/cong-thanh-toan-gia-lap/*`.
+
+#### `POST /mock-gateway/vnpay/complete` và `POST /mock-gateway/momo/complete` – Public
+
+Rate limit 30/phút/IP. Body:
+
+```json
+{ "params": { "vnp_TmnCode": "BEANBOXDEMO", "vnp_TxnRef": "...", "vnp_SecureHash": "..." }, "result": "success" }
+```
+
+`params` là NGUYÊN các tham số (chuỗi) FE nhận trên URL cổng giả; `result` = `success` | `failed` | `cancel`. Server (1) kiểm chữ ký của `params` bằng khóa mock (sai hoặc `vnp_TmnCode`/`partnerCode` lạ -> 400 `PAYMENT_SIGNATURE_INVALID`; body sai kiểu -> 400 `VALIDATION_ERROR`), (2) dựng callback giả như nhà cung cấp thật gọi IPN (VNPay: success `vnp_ResponseCode`/`vnp_TransactionStatus` = `00`/`00`, failed `51`/`02`, cancel `24`/`02`; MoMo: success `resultCode` 0, failed 1001, cancel 1006) và ký lại bằng khóa mock, (3) gọi TRỰC TIẾP đúng hàm xử lý IPN thật (`handleVnpayIpn`/`handleMomoIpn` -> `applyPaymentResult`, §13.5; không có đường tắt vào DB) và (4) trả 200 `{ "data": { "returnUrl": "<trang kết quả FE đã ký>" } }`. FE chỉ điều hướng nếu `returnUrl` cùng origin và đúng `/thanh-toan/ket-qua`. Lỗi khác: 404 `NOT_FOUND` (cổng giả tắt hoặc không thấy giao dịch), 400 `VALIDATION_ERROR` (số tiền lệch, như §13.3), 429.
+
+Hành vi như thật: `failed`/`cancel` làm Payment `FAILED` và đơn vẫn `PENDING_PAYMENT` với `paymentStatus = FAILED` (D-001), khách thanh toán lại được tới `expiresAt`; gọi `complete` hai lần cùng kết quả là idempotent (D-015).
+
+### 13.11 MoMo giả (0.20, D-060)
+
+Chỉ khi `PAYMENT_MOCKS_ENABLED=true` (tắt -> `POST /payments/momo/create` 409 `PAYMENT_METHOD_UNAVAILABLE`). Không phải tích hợp MoMo thật: tên trường mô phỏng, không đảm bảo khớp tài liệu MoMo; không dùng khóa MoMo thật.
+
+- `provider = MOMO`, `providerRef = Payment.id` (đặt vào `orderId`), `partnerCode = BEANBOXMOMODEMO`, `amount = grandTotal` (VND, không nhân 100).
+- **Chữ ký:** `signature` = HMAC-SHA256 (hex) của chuỗi `k=v&k=v...` với các khóa sắp theo thứ tự chữ cái, GIÁ TRỊ THÔ (không URL-encode), không gồm `signature`; khóa = `PAYMENT_MOCK_SECRET`; so sánh bằng `timingSafeEqual`. Tập khóa của yêu cầu: `partnerCode, orderId, requestId, amount, orderInfo, redirectUrl, requestType, extraData, lang`; của kết quả/IPN thêm `orderType, transId, resultCode, message, payType, responseTime`. Khóa lạ bị bỏ qua khi ký và khi kiểm (`MOMO_REQUEST_KEYS`/`MOMO_RESULT_KEYS` trong `backend/src/modules/payments/momo.ts`).
+
+`POST /payments/momo/create` – Optional, rate limit và quyền như §13.2; body `{ code, phone? }`; 200 `{ data: { redirectUrl, paymentId, expiresAt } }` với `redirectUrl` = `${WEB_APP_URL}/cong-thanh-toan-gia-lap/momo?partnerCode=...&signature=...`. Lỗi như §13.2.
+
+`POST /payments/momo/ipn` – Public (mô phỏng server-to-server). Body JSON gồm các khóa kết quả + `signature`. Xác minh chữ ký, tìm Payment theo `orderId`, đối chiếu `amount`, rồi `applyPaymentResult`. Xử lý xong (kể cả gọi lại, idempotent) -> 200 `{ "resultCode": 0, "message": "Confirm Success" }`; chữ ký sai -> 400 `PAYMENT_SIGNATURE_INVALID`; không thấy giao dịch -> 404 `NOT_FOUND`; lệch tiền -> 400 `VALIDATION_ERROR`. (MoMo thật trả 204; đây chỉ là mô phỏng.)
+
+`GET /payments/momo/return` – Public. Query = các khóa kết quả + `signature`, FE chuyển nguyên từ `/thanh-toan/ket-qua?provider=momo`. CHỈ ĐỌC: xác minh chữ ký và số tiền rồi trả trạng thái từ DB (`PaymentResult` như §13.3); không ghi trạng thái (IPN là nguồn sự thật, D-014).
+
 ## 14. Hoàn thiện v1 (M6, M6b)
 
 Mục 14.1–14.8 thuộc M6; 14.9–14.12 thuộc M6b (D-021..D-024); chỉ newsletter còn hoãn (14.13). Quyền: P = Public, O = Optional, A = Auth, S = Staff+, AD = Admin. Quyết định nền: D-017..D-020. Quy ước chung ở §1, mã lỗi ở §2, máy trạng thái ở §11, quy ước admin (không cache, audit, ngày lọc giờ VN) ở §12.0 áp dụng nguyên cho các endpoint dưới đây.
@@ -1637,6 +1844,7 @@ Mục 14.1–14.8 thuộc M6; 14.9–14.12 thuộc M6b (D-021..D-024); chỉ new
 - Đăng ngay với `status = PUBLISHED`; staff ẩn sau (hậu kiểm). Review `HIDDEN` không hiện ở API công khai và không tính vào điểm trung bình.
 - Sửa được trong **30 ngày kể từ `createdAt`** (chỉ `rating`, `content`). M6 KHÔNG nhận ảnh: `images` luôn là `[]`.
 - `content` là văn bản thuần (không HTML/Markdown), FE hiển thị dạng text và giữ xuống dòng; server `trim`, không diễn giải thẻ.
+- Đánh giá của tài khoản đã tự xóa (§6.6, D-065) hiển thị `authorName` = "Người dùng đã xóa" (không che bớt).
 - Tên hiển thị `authorName` được che bớt: từ cuối của `fullName` giữ nguyên, các từ trước chỉ lấy chữ cái đầu viết hoa kèm dấu chấm, ví dụ "Nguyễn Văn An" -> "An N. V."; tên một từ giữ nguyên. API công khai không trả email, `userId`.
 - Rate limit ghi đánh giá (`POST /products/:slug/reviews`, `PATCH /reviews/:id`): 10/phút/IP, store riêng, đặt trước bước xác thực như các limiter ở §1.
 
@@ -1804,6 +2012,10 @@ Mục 14.1–14.8 thuộc M6; 14.9–14.12 thuộc M6b (D-021..D-024); chỉ new
 
 Từ 0.17 có thêm action `analytics.export` (xuất CSV phân tích, §16.4): `entity = analytics`, `entityId` = tên báo cáo, `diff` = `{ "<tham số>": [null, <giá trị>] }` gồm `report`, `from`, `to`, `sort`, `limit`, `dimension`, `list`, `slowDays`, `rows` (số dòng); không chứa tên/email khách. Bộ lọc nhóm action `analytics.` có ở trang Nhật ký.
 
+Từ 0.24 (D-065) có thêm action `user.self_delete` (khách tự xóa tài khoản, §6.6) và `user.export` (xuất dữ liệu cá nhân, §6.6): `entity = "User"`, `actorId` = `entityId` = chính user, có `ip`, **không có `diff`** và không chứa email cũ hay nội dung file. Sau `user.self_delete`, `actor` của các dòng nhật ký cũ của user vẫn là người đó nhưng email/tên đã ẩn danh.
+
+Từ 0.22 (D-063) có thêm action `user.2fa.enable`, `user.2fa.disable`, `user.2fa.backup_regenerate`, `user.2fa.backup_used` (`actorId` = chính user; ghi cả khi người thực hiện là Staff) và `user.2fa.reset` (`actorId` = Admin; `entityId` = user bị đặt lại). `entity = "User"`; `diff` chỉ gồm cờ/đếm (`twoFactorEnabled: [false, true]`, `backupCodes: [null, 10]`, `backupCodesRemaining: [n+1, n]`), **không bao giờ chứa secret, mã hay hash**. Bộ lọc `actionPrefix=user.2fa.` dùng được.
+
 `actor` là `null` khi hệ thống ghi (`actorId` null) hoặc tài khoản đã bị xóa. Chỉ Admin xem (D-019); `diff` đã không chứa bí mật/PII theo §12.0, API trả nguyên.
 
 ### 14.5 Redirect khi đổi slug (D-018)
@@ -1861,17 +2073,19 @@ Quyết định: D-021. Chỉ **Admin** (cả `GET` và `PUT /admin/settings`; S
 | Key                               | Giá trị / ràng buộc                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `shipping.rates`                  | `{ inner: { STANDARD, EXPRESS }, other: { STANDARD, EXPRESS } }`, mỗi giá trị số nguyên 0–1.000.000                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `shipping.eta`                    | (0.21, D-062) `{ inner: { STANDARD, EXPRESS }, other: { STANDARD, EXPRESS } }`, mỗi phần tử `{ minDays, maxDays }` số nguyên 0–30 và `minDays <= maxDays` (sai -> 400, `details[].field` ví dụ `shipping.eta.inner.STANDARD.minDays`). Mặc định nội thành Tiêu chuẩn 1–2, Nhanh 0–1; ngoài nội thành Tiêu chuẩn 3–5, Nhanh 1–3. Có trong `GET /settings/public` (`shipping.eta`, để trang chính sách vận chuyển nói đúng số ngày) |
 | `shipping.innerCityProvinceCodes` | Mảng tối đa 34 phần tử, mỗi mã `^\d{2}$` và phải tồn tại trong danh mục tỉnh (§7); server bỏ trùng; có thể rỗng                                                                                                                                                                                                                                                                                                                                                                                              |
 | `shipping.innerCityWardCodes`     | Mảng tối đa 500 phần tử, mỗi mã `^\d{5}$` và phải tồn tại trong danh mục phường; server bỏ trùng                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `shipping.freeShippingThreshold`  | Số nguyên 0–100.000.000                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | `shipping.weightSurcharge`        | `{ freeGram 0–100.000, stepGram 1–100.000, feePerStep 0–1.000.000 }` (số nguyên; shape như `db-schema.md` §6)                                                                                                                                                                                                                                                                                                                                                                                                |
 | `order.paymentExpiryMinutes`      | Số nguyên 5–120                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `store.contact`                   | `{ name 1–100, email hợp lệ <= 254 (lowercase), phone "" hoặc SĐT chuẩn hóa D-007, address 0–300 }`; `name`/`address` không chứa ký tự điều khiển (CR/LF...)                                                                                                                                                                                                                                                                                                                                                 |
+| `payment.bankTransfer`            | (0.20, D-061) `{ bankBin ^\d{6}$, bankName 1–100, accountNo ^\d{6,19}$, accountName 1–100 }`; tên không chứa ký tự điều khiển. Mặc định `{ 999999, "Ngân hàng demo (không có thật)", "0123456789", "BEANBOX DEMO" }` (BIN 999999 = tài khoản demo). KHÔNG nằm trong `GET /settings/public` |
 | `home.banners`                    | Mảng tối đa 5 phần tử `{ imageUrl, alt 1–200, title 0–100, subtitle 0–200, href, isActive }`. `imageUrl` CHỈ chấp nhận đường dẫn tương đối `/uploads/...` theo quy tắc (a) của §12.3 (không nhận `https://` ngoài vì CSP `img-src 'self'` và `next/image` chỉ cho ảnh nội bộ). `href` là `null` hoặc đường dẫn tương đối bắt đầu bằng `/`, không bắt đầu bằng `//`, không chứa `\` hay ký tự điều khiển, <= 300 ký tự (không nhận URL ngoài để tránh open redirect/link lạ từ trang chủ). `isActive` boolean |
 
 Giá trị ĐỌC từ DB được kiểm theo schema nới hơn (giá trị cũ hợp lệ trước đây không làm hỏng tính giá); giá trị DB sai định dạng thì dùng mặc định và log cảnh báo (chỉ tên key).
 
-**`GET /admin/settings` – Admin.** `{ data: { "<key>": value, ... }, meta: { updatedAt: { "<key>": "<iso>" | null } } }`. `data` luôn đủ mọi key ở bảng trên; key chưa có trong DB hoặc có giá trị sai định dạng trả giá trị mặc định (`db-schema.md` §6) và `updatedAt` của key đó là `null`.
+**`GET /admin/settings` – Admin.** `{ data: { "<key>": value, ... }, meta: { updatedAt: { "<key>": "<iso>" | null } } }`. `data` luôn đủ mọi key ở bảng trên (từ 0.20 gồm cả `payment.bankTransfer`, từ 0.21 gồm cả `shipping.eta`); key chưa có trong DB hoặc có giá trị sai định dạng trả giá trị mặc định (`db-schema.md` §6) và `updatedAt` của key đó là `null`.
 
 **`PUT /admin/settings` – Admin.** Body là object chỉ chứa các key cần đổi (>= 1 key). Key lạ (ngoài bảng trên) -> 400 `VALIDATION_ERROR` với `details[].field` = tên key. Mỗi key validate theo bảng ràng buộc ghi ở trên; lỗi lồng nhau báo `details[].field` là đường dẫn đầy đủ, ví dụ `shipping.rates.inner.STANDARD`, `home.banners.0.imageUrl`. Key có giá trị mới giống hệt giá trị hiện tại thì bỏ qua; không có key nào đổi -> 200, không ghi audit. Ghi trong 1 transaction cùng 1 dòng AuditLog `settings.update` cho cả request (`entity = "Setting"`, `entityId = null`, `diff = { "<key>": [old, new] }` chỉ gồm key đổi; không chứa dữ liệu nhạy cảm). Ghi đè theo key, người ghi sau thắng (không có khóa lạc quan; chấp nhận vì ít admin). Thành công 200, response giống `GET /admin/settings`. Tính giá (quote/đặt đơn) có hiệu lực ngay: `getShopSettings` không cache giữa các request.
 
@@ -1884,6 +2098,10 @@ Giá trị ĐỌC từ DB được kiểm theo schema nới hơn (giá trị cũ
       "rates": {
         "inner": { "STANDARD": 20000, "EXPRESS": 35000 },
         "other": { "STANDARD": 35000, "EXPRESS": 55000 }
+      },
+      "eta": {
+        "inner": { "STANDARD": { "minDays": 1, "maxDays": 2 }, "EXPRESS": { "minDays": 0, "maxDays": 1 } },
+        "other": { "STANDARD": { "minDays": 3, "maxDays": 5 }, "EXPRESS": { "minDays": 1, "maxDays": 3 } }
       },
       "freeShippingThreshold": 500000,
       "innerCityWardCount": 0,
@@ -1920,10 +2138,11 @@ Giá trị ĐỌC từ DB được kiểm theo schema nới hơn (giá trị cũ
 
 Quyết định: D-022. Toàn bộ endpoint dưới đây chỉ **Admin** (Staff nhận 403 `FORBIDDEN`).
 
-- `GET /admin/users`: query `q` (2–100 ký tự; khớp email/họ tên/SĐT, escape LIKE), `role` (một hoặc nhiều, phân cách phẩy), `status` (một hoặc nhiều), `sort` = `newest` (mặc định) | `oldest` | `lastLogin` (`lastLoginAt DESC NULLS LAST`, rồi `createdAt DESC`), `page`, `pageSize`. Item: `{ id, email, fullName, phone, role, status, emailVerified, lastLoginAt, lockedUntil, createdAt, orderCount }`.
+- `GET /admin/users`: query `q` (2–100 ký tự; khớp email/họ tên/SĐT, escape LIKE), `role` (một hoặc nhiều, phân cách phẩy), `status` (một hoặc nhiều), `sort` = `newest` (mặc định) | `oldest` | `lastLogin` (`lastLoginAt DESC NULLS LAST`, rồi `createdAt DESC`), `page`, `pageSize`. Item: `{ id, email, fullName, phone, role, status, emailVerified, twoFactorEnabled, lastLoginAt, lockedUntil, deleted, createdAt, orderCount }` (`twoFactorEnabled` thêm từ 0.22; `deleted` thêm từ 0.24: khách đã tự xóa tài khoản, dữ liệu đã ẩn danh, `status` là `DISABLED`; PATCH status/role và reset 2FA trên tài khoản này -> 409 `ACCOUNT_DELETED`).
 - `GET /admin/users/:id`: item như trên cộng `addressCount`, `orders: { count, paidTotal, recent }` (`paidTotal` = Σ `grandTotal` của đơn `paymentStatus = PAID` có `status` không thuộc `CANCELLED`/`RETURNED`; `recent` = 5 đơn mới nhất `{ code, status, grandTotal, createdAt }`) và `activeSessions` (số refresh token chưa thu hồi, chưa hết hạn). Không bao giờ trả `passwordHash` hay token.
 - `PATCH /admin/users/:id/status` body `{ status: "ACTIVE" | "DISABLED", reason?: 0–255 ký tự }`.
 - `PATCH /admin/users/:id/role` body `{ role: "CUSTOMER" | "STAFF" | "ADMIN" }`.
+- `POST /admin/users/:id/2fa/reset` (0.22, D-063; không body): đặt lại 2FA của người dùng khác khi họ mất điện thoại và mã dự phòng. 200 trả item chi tiết (như `GET /admin/users/:id`, `twoFactorEnabled = false`). Trong 1 transaction: tắt 2FA (xóa secret, secret chờ, `lastStep`), xóa mã dự phòng và thử thách, **thu hồi MỌI phiên** của người đó, audit `user.2fa.reset` (`diff = { twoFactorEnabled: [true, false] }`). Lỗi: 404 (không tồn tại/id sai định dạng); 409 `CANNOT_MODIFY_SELF` (không áp cho chính mình, dùng `POST /me/2fa/disable`); 409 `TWO_FACTOR_NOT_ENABLED` (chưa bật; thao tác nguyên tử nên hai request đồng thời chỉ một bên thành công); 403 (Staff).
 
 Quy tắc (hai PATCH), thực hiện trong 1 transaction. Thứ tự kiểm: 404 (user không tồn tại) -> `CANNOT_MODIFY_SELF` -> 403 người thao tác -> `LAST_ADMIN` -> no-op. 0. Đọc lại người thao tác bằng `SELECT ... FOR UPDATE` cùng các ADMIN `ACTIVE`; nếu người thao tác không còn là ADMIN `ACTIVE` -> 403 `FORBIDDEN`. Lý do: hai admin khóa chéo nhau đồng thời; nhờ khóa dòng và kiểm lại người thao tác, yêu cầu thứ hai bị chặn, hệ thống luôn còn >= 1 ADMIN `ACTIVE`.
 
@@ -2086,7 +2305,7 @@ Từ 0.15 (D-051). Cả ba endpoint chỉ ADMIN, `no-store`, dùng **cùng `from
   - `basis: "order"` (`paymentMethod`, `shippingMethod`, `province`): `revenue` = Σ `grandTotal`, `orders` = số đơn, `quantity` = `null`. Mỗi đơn thuộc đúng một nhóm nên tổng các nhóm = `kpis.revenue.current` của §16.1 cùng khoảng, và Σ `orders` = `total.orders`.
   - `basis: "item"` (`category`, `brand`): `revenue` = Σ `OrderItem.lineTotal` ("doanh thu hàng hóa": chưa trừ giảm giá cấp đơn, không gồm phí vận chuyển nên khác doanh thu §16.1), `quantity` = Σ `quantity`, `orders` = số đơn **khác nhau** có dòng hàng thuộc nhóm. Một đơn có thể thuộc nhiều nhóm nên Σ `orders` của các nhóm có thể lớn hơn `total.orders`. Tổng `revenue` các nhóm = `total.revenue` = Σ `lineTotal` của tập đơn nguồn.
 - Phân loại: danh mục/thương hiệu lấy theo `Product` **hiện tại** (không cuộn lên danh mục cha; `OrderItem` không lưu snapshot nên đổi danh mục sản phẩm làm số liệu quá khứ đổi theo, D-049/D-051). Sản phẩm xóa mềm vẫn tính. Tỉnh/thành lấy từ snapshot `shippingAddress` (`provinceCode`, `provinceName`).
-- Nhãn: `label` do backend trả bằng tiếng Việt cho mọi chiều (FE không map): thanh toán `COD` "Thanh toán khi nhận hàng (COD)", `VNPAY` "VNPay (ATM/QR/thẻ)", `STRIPE` "Thẻ quốc tế (Stripe)"; giao hàng `STANDARD` "Tiêu chuẩn", `EXPRESS` "Nhanh"; `key` luôn là mã enum/id.
+- Nhãn: `label` do backend trả bằng tiếng Việt cho mọi chiều (FE không map): thanh toán `COD` "Thanh toán khi nhận hàng (COD)", `VNPAY` "VNPay (ATM/QR/thẻ)", `STRIPE` "Thẻ quốc tế (Stripe)", `MOMO` "MoMo (giả lập)", `BANK_TRANSFER` "Chuyển khoản / VietQR"; giao hàng `STANDARD` "Tiêu chuẩn", `EXPRESS` "Nhanh"; `key` luôn là mã enum/id.
 
 ```json
 {

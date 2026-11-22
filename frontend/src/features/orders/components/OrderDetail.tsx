@@ -1,8 +1,14 @@
 import { formatDateTime } from "@/lib/format";
 import type { Order } from "@/types/order";
-import { paymentMethodLabel, paymentStatusLabel, shippingMethodLabel } from "../labels";
+import {
+  deliveryEtaText,
+  paymentMethodLabel,
+  paymentStatusLabel,
+  shippingMethodLabel,
+} from "../labels";
 import { OrderItemsList } from "./OrderItemsList";
 import { OrderTimeline } from "./OrderTimeline";
+import { ShipmentTimeline } from "./ShipmentTimeline";
 import { OrderTotals } from "./OrderTotals";
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
@@ -17,6 +23,7 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
 /** Thông tin đầy đủ của một đơn (dùng cho trang thành công và chi tiết đơn trong tài khoản). */
 export function OrderDetail({ order, timeline = true }: { order: Order; timeline?: boolean }) {
   const a = order.shippingAddress;
+  const eta = deliveryEtaText(order);
   return (
     <div className="space-y-4">
       <Card title="Thông tin đơn hàng">
@@ -35,7 +42,13 @@ export function OrderDetail({ order, timeline = true }: { order: Order; timeline
             <dt className="text-sm text-coffee-700">Vận chuyển</dt>
             <dd>{shippingMethodLabel(order.shippingMethod)}</dd>
           </div>
-          {order.trackingNumber ? (
+          {eta ? (
+            <div>
+              <dt className="text-sm text-coffee-700">Dự kiến giao</dt>
+              <dd>{eta}</dd>
+            </div>
+          ) : null}
+          {order.trackingNumber && !order.shipment ? (
             <div>
               <dt className="text-sm text-coffee-700">Mã vận đơn</dt>
               <dd>
@@ -64,6 +77,8 @@ export function OrderDetail({ order, timeline = true }: { order: Order; timeline
           ) : null}
         </dl>
       </Card>
+
+      {order.shipment ? <ShipmentTimeline shipment={order.shipment} /> : null}
 
       <Card title="Địa chỉ giao hàng">
         <address className="space-y-0.5 not-italic text-coffee-900">

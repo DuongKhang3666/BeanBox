@@ -130,8 +130,13 @@ describe("CartProvider", () => {
       meta: { merged: true, adjustments: [] },
     });
     await act(async () => ctx.reload());
-    await waitFor(() => expect(ctx.error).toBeNull());
-    expect(window.localStorage.getItem(CART_TOKEN_KEY)).toBeNull();
+    // Ngay sau reload() status = "loading" và error = null (chưa xong merge): phải chờ merge
+    // thật sự hoàn tất (token guest bị xóa, giỏ ready) rồi mới kiểm error; nếu không, máy bận sẽ
+    // thấy error = null sớm và assertion token chạy trước khi merge kết thúc.
+    await waitFor(() => expect(window.localStorage.getItem(CART_TOKEN_KEY)).toBeNull());
+    await waitFor(() => expect(screen.getByTestId("s")).toHaveTextContent("ready:2"));
+    expect(api.mergeCart).toHaveBeenCalledTimes(2);
+    expect(ctx.error).toBeNull();
   });
 
   it("đăng xuất (authenticated -> anonymous) tải lại giỏ guest", async () => {

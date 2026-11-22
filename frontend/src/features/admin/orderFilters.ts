@@ -6,7 +6,7 @@ export const ADMIN_ORDERS_BASE = "/admin/don-hang";
 export const ADMIN_PAGE_SIZE = 20;
 
 export const PAYMENT_STATUSES: PaymentStatus[] = ["UNPAID", "PAID", "FAILED", "REFUNDED"];
-export const PAYMENT_METHODS: PaymentMethod[] = ["COD", "VNPAY", "STRIPE"];
+export const PAYMENT_METHODS: PaymentMethod[] = ["COD", "VNPAY", "STRIPE", "MOMO", "BANK_TRANSFER"];
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -28,6 +28,7 @@ export function parseOrderFilters(params: URLSearchParams): AdminOrderQuery {
     paymentStatus: oneOf(params.get("paymentStatus"), PAYMENT_STATUSES),
     paymentMethod: oneOf(params.get("paymentMethod"), PAYMENT_METHODS),
     needsRefund: params.get("needsRefund") === "true" ? true : undefined,
+    transferClaimed: params.get("transferClaimed") === "true" ? true : undefined,
     from: from && DATE_RE.test(from) ? from : undefined,
     to: to && DATE_RE.test(to) ? to : undefined,
     q: q.length >= 2 ? q : undefined,
@@ -52,6 +53,7 @@ export function orderFiltersHref(filters: AdminOrderQuery): string {
     if (v) qs.set(key, v);
   }
   if (filters.needsRefund) qs.set("needsRefund", "true");
+  if (filters.transferClaimed) qs.set("transferClaimed", "true");
   if (filters.sort === "oldest") qs.set("sort", "oldest");
   if (filters.page && filters.page > 1) qs.set("page", String(filters.page));
   const s = qs.toString();

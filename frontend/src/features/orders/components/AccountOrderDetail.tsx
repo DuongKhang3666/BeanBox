@@ -6,6 +6,7 @@ import { Button, buttonClasses } from "@/components/ui/Button";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { FormNotice } from "@/features/auth/components/FormError";
+import { BankTransferPanel } from "@/features/payments/components/BankTransferPanel";
 import { PayAgainButton } from "@/features/payments/components/PayAgainButton";
 import { ApiError } from "@/lib/api/errors";
 import { cancelOrder, getOrder } from "../api";
@@ -107,6 +108,9 @@ export function AccountOrderDetail({ code }: { code: string }) {
             expiresAt={order.expiresAt}
           />
         </section>
+      ) : null}
+      {order.paymentMethod === "BANK_TRANSFER" && order.status === "PENDING_PAYMENT" ? (
+        <BankTransferPanel code={order.code} />
       ) : null}
       <OrderDetail order={order} />
       {open ? (

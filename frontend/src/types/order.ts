@@ -14,7 +14,7 @@ export type OrderStatus =
   | "RETURNED";
 
 export type PaymentStatus = "UNPAID" | "PAID" | "FAILED" | "REFUNDED";
-export type PaymentMethod = "COD" | "VNPAY" | "STRIPE";
+export type PaymentMethod = "COD" | "VNPAY" | "STRIPE" | "MOMO" | "BANK_TRANSFER";
 export type ShippingMethod = "STANDARD" | "EXPRESS";
 
 export interface OrderShippingAddress {
@@ -47,6 +47,21 @@ export interface OrderHistoryEntry {
   createdAt: string;
 }
 
+/** D-062: một mốc vận chuyển MÔ PHỎNG (giả lập). `at` là ISO. */
+export interface ShipmentEvent {
+  code: string;
+  label: string;
+  at: string;
+}
+
+/** D-062: hành trình giả lập; null khi đơn chưa từng chuyển sang SHIPPING. */
+export interface Shipment {
+  carrier: string | null;
+  trackingNumber: string | null;
+  simulated: true;
+  events: ShipmentEvent[];
+}
+
 export interface Order {
   code: string;
   status: OrderStatus;
@@ -65,8 +80,14 @@ export interface Order {
   note: string | null;
   trackingNumber: string | null;
   carrier: string | null;
+  /** D-062: ngày giao dự kiến `YYYY-MM-DD` (ngày VN); null/thiếu với đơn cũ. */
+  etaFrom?: string | null;
+  etaTo?: string | null;
+  shipment?: Shipment | null;
   cancelReason: string | null;
   expiresAt: string | null;
+  /** D-061: khách đã báo chuyển khoản (đơn BANK_TRANSFER), chưa phải đã nhận tiền. */
+  transferClaimedAt?: string | null;
   paidAt: string | null;
   deliveredAt: string | null;
   createdAt: string;
@@ -111,6 +132,9 @@ export interface TrackedOrder {
   grandTotal: number;
   trackingNumber: string | null;
   carrier: string | null;
+  etaFrom?: string | null;
+  etaTo?: string | null;
+  shipment?: Shipment | null;
   cancelReason: string | null;
   createdAt: string;
   history: OrderHistoryEntry[];
@@ -119,13 +143,17 @@ export interface TrackedOrder {
   canPay: boolean;
   /** §9.5 (0.6.1): hạn thanh toán, null khi không áp dụng; không phải dữ liệu cá nhân. */
   expiresAt: string | null;
+  transferClaimedAt?: string | null;
 }
 
 /** §9.1 */
 export interface ShippingOption {
   method: ShippingMethod;
   label: string;
+  /** Giữ để tương thích; dùng `eta` khi có. */
   estimatedDays: string;
+  /** D-062: ngày giao dự kiến (ngày VN, tính từ ngày đặt). */
+  eta?: { minDays: number; maxDays: number; fromDate: string; toDate: string };
   baseFee: number;
   weightSurcharge: number;
   fee: number;
@@ -138,6 +166,8 @@ export interface ShippingOption {
 export interface PaymentOption {
   method: PaymentMethod;
   enabled: boolean;
+  /** D-060: cổng đang là bản GIẢ LẬP (chỉ khi backend bật PAYMENT_MOCKS_ENABLED). */
+  mock?: boolean;
 }
 
 export interface QuoteIssue {

@@ -6,6 +6,16 @@ import { loadLocations } from './modules/locations/locations.data.js';
 import { disconnectPrisma } from './lib/prisma.js';
 
 const app = createApp();
+if (env.PAYMENT_MOCKS_ENABLED) {
+  logger.warn(
+    'PAYMENT_MOCKS_ENABLED=true: VNPay/MoMo là cổng thanh toán GIẢ LẬP (chỉ dùng demo, không trừ tiền thật).',
+  );
+  if (env.PAYMENT_MOCK_SECRET_GENERATED) {
+    logger.warn(
+      'PAYMENT_MOCK_SECRET chưa đặt: đã sinh khóa ngẫu nhiên cho lần chạy này (liên kết cổng giả cũ sẽ hết hiệu lực khi khởi động lại).',
+    );
+  }
+}
 const locations = loadLocations();
 logger.info(
   `Đã nạp danh mục hành chính: ${locations.provinceCount} tỉnh/thành, ${locations.wardCount} phường/xã`,

@@ -190,6 +190,11 @@ export function StatusDialog({
                 <Label htmlFor="st-tracking">
                   Mã vận đơn{action.trackingRequired ? " (bắt buộc)" : ""}
                 </Label>
+                {!action.trackingRequired ? (
+                  <p id="st-tracking-hint" className="mb-1 text-sm text-coffee-700">
+                    Để trống để hệ thống tạo mã vận đơn giả lập.
+                  </p>
+                ) : null}
                 <Input
                   id="st-tracking"
                   data-autofocus
@@ -197,7 +202,13 @@ export function StatusDialog({
                   maxLength={50}
                   autoComplete="off"
                   invalid={Boolean(errors.trackingNumber)}
-                  aria-describedby={errors.trackingNumber ? "st-tracking-err" : undefined}
+                  aria-describedby={
+                    errors.trackingNumber
+                      ? "st-tracking-err"
+                      : !action.trackingRequired
+                        ? "st-tracking-hint"
+                        : undefined
+                  }
                   onChange={(e) => setTracking(e.target.value)}
                 />
                 <FieldError id="st-tracking-err">{errors.trackingNumber}</FieldError>

@@ -40,8 +40,14 @@ export function formatKg(gram: number): string {
 }
 
 function buildShipping(settings: PublicSettings): Policy {
-  const { rates, freeShippingThreshold, weightSurcharge, innerCityProvinces, innerCityWardCount } =
-    settings.shipping;
+  const {
+    rates,
+    eta,
+    freeShippingThreshold,
+    weightSurcharge,
+    innerCityProvinces,
+    innerCityWardCount,
+  } = settings.shipping;
   const names = innerCityProvinces.map((p) => p.name);
   const hasWards = innerCityWardCount > 0;
   const hasInner = names.length > 0 || hasWards;
@@ -57,11 +63,20 @@ function buildShipping(settings: PublicSettings): Policy {
       "Hiện không có khu vực nội thành riêng; mọi địa chỉ được tính theo mức của tỉnh/thành khác.";
   }
 
-  const rateLine = (area: string, r: { STANDARD: number; EXPRESS: number }) =>
-    `${area}: Tiêu chuẩn ${formatVND(r.STANDARD)} (3–5 ngày), Nhanh ${formatVND(r.EXPRESS)} (1–2 ngày).`;
+  const days = (r: { minDays: number; maxDays: number }) =>
+    r.minDays === r.maxDays ? `${r.minDays}` : `${r.minDays}–${r.maxDays}`;
+  const rateLine = (
+    area: string,
+    r: { STANDARD: number; EXPRESS: number },
+    e: {
+      STANDARD: { minDays: number; maxDays: number };
+      EXPRESS: { minDays: number; maxDays: number };
+    },
+  ) =>
+    `${area}: Tiêu chuẩn ${formatVND(r.STANDARD)} (${days(e.STANDARD)} ngày), Nhanh ${formatVND(r.EXPRESS)} (${days(e.EXPRESS)} ngày).`;
   const bullets = [
-    ...(hasInner ? [rateLine("Nội thành", rates.inner)] : []),
-    rateLine(hasInner ? "Tỉnh/thành khác" : "Mọi tỉnh/thành", rates.other),
+    ...(hasInner ? [rateLine("Nội thành", rates.inner, eta.inner)] : []),
+    rateLine(hasInner ? "Tỉnh/thành khác" : "Mọi tỉnh/thành", rates.other, eta.other),
   ];
 
   const freeText =

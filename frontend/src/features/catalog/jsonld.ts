@@ -1,4 +1,4 @@
-import { SITE_URL } from "@/lib/site";
+import { DEFAULT_OG_IMAGE, SITE_URL } from "@/lib/site";
 import type { ProductDetail } from "@/types/catalog";
 
 function abs(siteUrl: string, pathOrUrl: string): string {
@@ -19,7 +19,7 @@ export function buildProductJsonLd(product: ProductDetail, siteUrl: string = SIT
     "@context": "https://schema.org",
     "@type": "Product",
     name: product.name,
-    image: product.images.map((i) => abs(siteUrl, i.url)),
+    ...(product.images.length ? { image: product.images.map((i) => abs(siteUrl, i.url)) } : {}),
     description: product.seo.description || product.shortDesc || product.name,
     url: `${siteUrl}/san-pham/${product.slug}`,
     ...(product.variants[0] ? { sku: product.variants[0].sku } : {}),
@@ -31,6 +31,7 @@ export function buildProductJsonLd(product: ProductDetail, siteUrl: string = SIT
       highPrice,
       offerCount: Math.max(product.variants.length, 1),
       availability: available ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
+      itemCondition: "https://schema.org/NewCondition",
     },
   };
   if (product.ratingCount > 0) {
@@ -79,6 +80,8 @@ export function buildOrganizationJsonLd(
     "@type": "Organization",
     name: site.name,
     url: siteUrl,
+    // Ảnh OG mặc định 1200x630 (app/opengraph-image.tsx) làm logo; chưa có file logo riêng.
+    logo: `${siteUrl}${DEFAULT_OG_IMAGE}`,
     description: site.description,
   };
 }
@@ -103,5 +106,29 @@ export function buildWebSiteJsonLd(
       },
       "query-input": "required name=search_term_string",
     },
+  };
+}
+
+export interface ItemListEntry {
+  /** Đường dẫn tương đối hoặc URL tuyệt đối. */
+  path: string;
+  name?: string;
+}
+
+/** schema.org/ItemList cho trang danh sách; `startPosition` = vị trí của mục đầu (phân trang). */
+export function buildItemListJsonLd(
+  entries: ItemListEntry[],
+  startPosition = 1,
+  siteUrl: string = SITE_URL,
+) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "ItemList",
+    itemListElement: entries.map((e, i) => ({
+      "@type": "ListItem",
+      position: startPosition + i,
+      url: abs(siteUrl, e.path),
+      ...(e.name ? { name: e.name } : {}),
+    })),
   };
 }

@@ -30,6 +30,7 @@ describe('parseEnv: COOKIE_SECURE ở production (B3)', () => {
     NODE_ENV: 'production',
     JWT_ACCESS_SECRET: GOOD_SECRET,
     INTERNAL_API_SECRET: GOOD_SECRET,
+    TOTP_ENCRYPTION_KEY: 'a1'.repeat(32),
   } as NodeJS.ProcessEnv;
 
   it('production + COOKIE_SECURE=false -> lỗi cấu hình, không in secret', () => {
@@ -98,6 +99,7 @@ describe('parseEnv: secret mẫu "dev-"', () => {
       NODE_ENV: 'production',
       JWT_ACCESS_SECRET: GOOD_SECRET,
       INTERNAL_API_SECRET: GOOD_SECRET,
+      TOTP_ENCRYPTION_KEY: 'a1'.repeat(32),
     });
     expect(e.NODE_ENV).toBe('production');
   });

@@ -699,16 +699,21 @@ describe('PATCH /admin/orders/:code/status', () => {
     );
   });
 
-  it('thiếu trackingNumber khi PROCESSING -> SHIPPING -> 400 field trackingNumber', async () => {
+  it('không nhập trackingNumber khi PROCESSING -> SHIPPING -> server sinh mã giả + hãng theo phương thức (D-062)', async () => {
     const v = await fx.mkVariant('trk', { stock: 5 });
     const { order } = await placeGuestOrder(fx, [[v.id, 1]]);
     const code = order.code as string;
     await advance(code, ['CONFIRMED', 'PROCESSING']);
     const res = await patchStatus(code, { fromStatus: 'PROCESSING', toStatus: 'SHIPPING' });
-    expect(res.status).toBe(400);
-    expect(errOf(res).code).toBe('VALIDATION_ERROR');
-    expect(errOf(res).details).toEqual([expect.objectContaining({ field: 'trackingNumber' })]);
-    expect((await prisma.order.findUniqueOrThrow({ where: { code } })).status).toBe('PROCESSING');
+    expect(res.status).toBe(200);
+    expect(dataOf(res)).toMatchObject({
+      status: 'SHIPPING',
+      trackingNumber: expect.stringMatching(/^BBL-\d{8}-[A-HJKMNP-Z2-9]{6}$/),
+      carrier: 'BeanBox Logistics (giả lập)',
+      shipment: { simulated: true, events: [expect.objectContaining({ code: 'HANDOVER' })] },
+    });
+    const row = await prisma.order.findUniqueOrThrow({ where: { code } });
+    expect(row.trackingNumber).toBe(dataOf(res).trackingNumber);
   });
 
   it('body sai -> 400: thiếu fromStatus/toStatus, enum sai, tracking sai, note quá dài', async () => {

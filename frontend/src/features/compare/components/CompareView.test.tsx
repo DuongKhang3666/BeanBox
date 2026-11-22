@@ -25,6 +25,7 @@ function item(slug: string, over: Partial<CompareItem> = {}): CompareItem {
     compareAtPrice: null,
     inStock: true,
     isFeatured: false,
+    updatedAt: "2026-11-01T00:00:00.000Z",
     ratingAvg: 4.5,
     ratingCount: 10,
     tags: [],

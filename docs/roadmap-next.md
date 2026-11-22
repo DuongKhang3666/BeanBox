@@ -9,7 +9,7 @@
 Chủ dự án chốt: BeanBox là dự án portfolio/CV, chỉ chạy localhost, không deploy thật, thanh toán chỉ ở chế độ demo. Hệ quả cho roadmap:
 
 - Toàn bộ phần (b) R-25..R-37 là NGOÀI PHẠM VI (cột Ưu tiên ghi "Ngoài phạm vi"; các mô tả bên dưới giữ nguyên để tham khảo).
-- Phần pháp lý của R-03 (đồng ý, chính sách bảo mật, thời hạn lưu theo luật) là NGOÀI PHẠM VI. Phần kỹ thuật của R-03 (xóa/xuất tài khoản) hoãn sang đợt sau vì không nhỏ.
+- Phần pháp lý của R-03 (đồng ý, chính sách bảo mật, thời hạn lưu theo luật) là NGOÀI PHẠM VI. Phần kỹ thuật của R-03 (xóa/xuất tài khoản) đã làm ở Đợt 2 (D-065).
 - Vận chuyển nếu làm sẽ là giả lập (không tích hợp hãng thật); không làm nhận tại cửa hàng (R-37).
 - R-08 không làm bảng tổng hợp (R-19).
 - Việc để sau: ghim SHA cho GitHub Actions (R-07 chỉ ghim theo tag).
@@ -117,6 +117,7 @@ Nhãn "(chưa xác minh)" nghĩa là chưa kiểm chứng được trong lần r
 - **Rủi ro:** Thấp.
 
 ### R-03 Quyền dữ liệu cá nhân (Nghị định 13/2023)
+- **Trạng thái:** Đã làm phần kỹ thuật (Đợt 2, D-065): `DELETE /me` (ẩn danh hóa) và `GET /me/export`, kèm UI ở `/tai-khoan`. CHƯA làm (pháp lý/nội dung, ngoài phạm vi): ghi nhận đồng ý (`consentAt`/`consentVersion`), cập nhật chính sách bảo mật, thời hạn giữ AuditLog (có IP).
 - **Nhóm:** Pháp lý-dữ liệu.
 - **Mô tả:**
   - `DELETE /me`: xác nhận mật khẩu, ẩn danh hóa User, xóa địa chỉ/wishlist/giỏ, thu hồi phiên, giữ đơn ở dạng ẩn danh.
@@ -207,6 +208,7 @@ Nhãn "(chưa xác minh)" nghĩa là chưa kiểm chứng được trong lần r
 - **Rủi ro:** Giá/tồn hiển thị trễ vài chục giây (đặt hàng vẫn tính lại ở server).
 
 ### R-10 Trang chủ ISR
+- **Trạng thái:** Đã làm (Đợt 2, D-064): `revalidate = 60`, bỏ `connection()`, build qua khi backend tắt; chưa đo lại TTFB.
 - **Nhóm:** Hiệu năng FE/SEO.
 - **Mô tả:** Đề xuất `revalidate=60` và cách build không cần backend.
 - **Lý do / bằng chứng:** `frontend/src/app/page.tsx:11-15` gọi `await connection()` nên trang chủ render động mỗi request (TTFB phụ thuộc 5 lời gọi API); Lighthouse 100 đo với backend local, chưa đại diện production.
@@ -217,6 +219,7 @@ Nhãn "(chưa xác minh)" nghĩa là chưa kiểm chứng được trong lần r
 - **Rủi ro:** HTML cũ tối đa 60 giây.
 
 ### R-11 SEO kỹ thuật
+- **Trạng thái:** Đã làm (Đợt 2, D-064): ảnh OG, canonical trang chủ và `?page=N`, noindex URL có lọc, sitemap `lastmod` (`updatedAt`), JSON-LD (`logo`, `itemCondition`, `ItemList`). Cố ý KHÔNG làm `shippingDetails`/`hasMerchantReturnPolicy` (dữ liệu demo). Chưa làm: logo thương hiệu riêng, Rich Results Test thực tế (cần domain công khai), chỉnh `robots.txt` cho trang noindex.
 - **Nhóm:** SEO.
 - **Mô tả:**
   - Thêm ảnh OG mặc định/`opengraph-image`; OG danh mục có ảnh; trang chủ thêm canonical.

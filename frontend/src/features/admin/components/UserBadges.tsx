@@ -17,8 +17,16 @@ export function UserRoleBadge({ role }: { role: UserRole }) {
 export function UserStatusBadges({
   user,
 }: {
-  user: Pick<AdminUserItem, "status" | "lockedUntil">;
+  user: Pick<AdminUserItem, "status" | "lockedUntil" | "deleted">;
 }) {
+  if (user.deleted) {
+    // Tài khoản khách tự xóa: không hiện "Đã khóa" (đó là trạng thái nội bộ để chặn đăng nhập).
+    return (
+      <span className="inline-flex flex-wrap gap-1">
+        <span className={`${base} bg-coffee-100 text-coffee-800`}>Đã xóa</span>
+      </span>
+    );
+  }
   return (
     <span className="inline-flex flex-wrap gap-1">
       <span

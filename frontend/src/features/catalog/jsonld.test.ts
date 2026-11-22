@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { makeDetail, makeVariant } from "./fixtures";
 import {
   buildBreadcrumbJsonLd,
+  buildItemListJsonLd,
   buildOrganizationJsonLd,
   buildProductJsonLd,
   buildWebSiteJsonLd,
@@ -32,7 +33,14 @@ describe("buildProductJsonLd", () => {
       highPrice: 380000,
       offerCount: 2,
       availability: "https://schema.org/InStock",
+      itemCondition: "https://schema.org/NewCondition",
     });
+    expect(ld).toMatchObject({
+      "@context": "https://schema.org",
+      url: `${SITE}/san-pham/ethiopia-yirgacheffe`,
+      name: "Ethiopia Yirgacheffe",
+    });
+    expect(ld).toHaveProperty("description");
     expect(ld.aggregateRating).toMatchObject({ ratingValue: 4.6, reviewCount: 18 });
   });
 
@@ -47,6 +55,47 @@ describe("buildProductJsonLd", () => {
       SITE,
     ) as unknown as Ld;
     expect(ld.offers.availability).toBe("https://schema.org/OutOfStock");
+  });
+});
+
+describe("buildProductJsonLd - URL tuyệt đối và dữ liệu thiếu", () => {
+  it("image đã tuyệt đối giữ nguyên; không ảnh -> bỏ khóa image; không shippingDetails/returnPolicy", () => {
+    const abs = buildProductJsonLd(
+      makeDetail({
+        images: [{ id: "i", url: "https://cdn.test/a.jpg", alt: null, isPrimary: true }],
+      }),
+      SITE,
+    ) as unknown as Ld;
+    expect(abs.image).toEqual(["https://cdn.test/a.jpg"]);
+    const none = buildProductJsonLd(makeDetail({ images: [] }), SITE);
+    expect(none).not.toHaveProperty("image");
+    const all = JSON.stringify(buildProductJsonLd(makeDetail(), SITE));
+    expect(all).not.toContain("shippingDetails");
+    expect(all).not.toContain("hasMerchantReturnPolicy");
+  });
+
+  it("không brand -> bỏ khóa brand", () => {
+    expect(buildProductJsonLd(makeDetail({ brand: null }), SITE)).not.toHaveProperty("brand");
+  });
+});
+
+describe("buildItemListJsonLd", () => {
+  it("position liên tục từ startPosition, url tuyệt đối", () => {
+    const ld = buildItemListJsonLd(
+      [{ path: "/san-pham/a", name: "A" }, { path: "/san-pham/b" }],
+      13,
+      SITE,
+    );
+    expect(ld["@type"]).toBe("ItemList");
+    expect(ld.itemListElement).toEqual([
+      { "@type": "ListItem", position: 13, url: `${SITE}/san-pham/a`, name: "A" },
+      { "@type": "ListItem", position: 14, url: `${SITE}/san-pham/b` },
+    ]);
+  });
+
+  it("escape < khi serialize", () => {
+    const s = serializeJsonLd(buildItemListJsonLd([{ path: "/x", name: "</script>" }], 1, SITE));
+    expect(s).not.toContain("<");
   });
 });
 
@@ -85,6 +134,7 @@ describe("Organization / WebSite JSON-LD", () => {
       "@type": "Organization",
       name: "BeanBox",
       url: SITE,
+      logo: `${SITE}/opengraph-image`,
     });
   });
 

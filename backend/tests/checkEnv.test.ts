@@ -48,6 +48,7 @@ describe('checkEnv (entrypoint kiểm env trước migrate)', () => {
       DATABASE_URL: 'postgresql://u:pw-secret-xyz@db:5432/x',
       JWT_ACCESS_SECRET: GOOD_SECRET,
       INTERNAL_API_SECRET: GOOD_INTERNAL,
+      TOTP_ENCRYPTION_KEY: 'a1'.repeat(32),
     });
     expect(r.code).toBe(0);
     expect(r.out).not.toContain(GOOD_SECRET);

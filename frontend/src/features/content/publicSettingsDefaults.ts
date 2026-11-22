@@ -7,6 +7,10 @@ export const DEFAULT_PUBLIC_SETTINGS: PublicSettings = {
       inner: { STANDARD: 20000, EXPRESS: 35000 },
       other: { STANDARD: 35000, EXPRESS: 55000 },
     },
+    eta: {
+      inner: { STANDARD: { minDays: 1, maxDays: 2 }, EXPRESS: { minDays: 0, maxDays: 1 } },
+      other: { STANDARD: { minDays: 3, maxDays: 5 }, EXPRESS: { minDays: 1, maxDays: 3 } },
+    },
     freeShippingThreshold: 500000,
     innerCityWardCount: 0,
     weightSurcharge: { freeGram: 2000, stepGram: 1000, feePerStep: 5000 },
@@ -25,6 +29,26 @@ const isObj = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 const isInt = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v) && v >= 0;
 const isStr = (v: unknown): v is string => typeof v === "string";
+
+function etaRange(v: unknown): { minDays: number; maxDays: number } | null {
+  if (!isObj(v) || !isInt(v.minDays) || !isInt(v.maxDays) || v.minDays > v.maxDays) return null;
+  return { minDays: v.minDays, maxDays: v.maxDays };
+}
+
+/** `shipping.eta` (D-062): backend cũ chưa có hoặc sai shape -> dùng mặc định. */
+function normalizeEta(raw: unknown): PublicSettings["shipping"]["eta"] {
+  const d = DEFAULT_PUBLIC_SETTINGS.shipping.eta;
+  if (!isObj(raw) || !isObj(raw.inner) || !isObj(raw.other)) return d;
+  const parts = [
+    etaRange(raw.inner.STANDARD),
+    etaRange(raw.inner.EXPRESS),
+    etaRange(raw.other.STANDARD),
+    etaRange(raw.other.EXPRESS),
+  ];
+  if (parts.some((p) => p === null)) return d;
+  const [is, ie, os, oe] = parts as { minDays: number; maxDays: number }[];
+  return { inner: { STANDARD: is!, EXPRESS: ie! }, other: { STANDARD: os!, EXPRESS: oe! } };
+}
 
 /** Kiểm shape; sai bất kỳ chỗ nào thì trả null (caller dùng mặc định). */
 export function normalizePublicSettings(raw: unknown): PublicSettings | null {
@@ -75,6 +99,7 @@ export function normalizePublicSettings(raw: unknown): PublicSettings | null {
         inner: { STANDARD: inner.STANDARD as number, EXPRESS: inner.EXPRESS as number },
         other: { STANDARD: other.STANDARD as number, EXPRESS: other.EXPRESS as number },
       },
+      eta: normalizeEta(shipping.eta),
       freeShippingThreshold: shipping.freeShippingThreshold,
       innerCityWardCount: shipping.innerCityWardCount,
       weightSurcharge: {

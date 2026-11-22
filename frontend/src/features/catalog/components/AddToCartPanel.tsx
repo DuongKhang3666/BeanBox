@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useId, useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/Button";
 import { Label } from "@/components/ui/Input";
 import { useCart } from "@/features/cart/CartProvider";
@@ -23,11 +23,19 @@ const STOCK_STYLE = {
   OUT_OF_STOCK: "text-danger-600",
 } as const;
 
+// useSyncExternalStore: false ở server và lúc hydrate, true ngay sau khi hydrate xong.
+const subscribeNever = () => () => {};
+const getClientSnapshot = () => true;
+const getServerSnapshot = () => false;
+
 export function AddToCartPanel({ variants }: { variants: Variant[] }) {
   const [selectedId, setSelectedId] = useState(() => pickDefaultVariant(variants)?.id ?? "");
   const [quantity, setQuantity] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const qtyId = useId();
+  // Trang được render sẵn trên server: nút hiện ra trước khi React hydrate nên một cú bấm sớm sẽ
+  // mất (onClick chưa gắn). Giữ nút disabled tới khi hydrate xong; `data-ready` cho E2E chờ.
+  const hydrated = useSyncExternalStore(subscribeNever, getClientSnapshot, getServerSnapshot);
   const { addItem, openMiniCart, pending } = useCart();
 
   const variant = variants.find((v) => v.id === selectedId) ?? pickDefaultVariant(variants);
@@ -122,7 +130,8 @@ export function AddToCartPanel({ variants }: { variants: Variant[] }) {
       <Button
         size="lg"
         className="w-full sm:w-auto sm:min-w-56"
-        disabled={outOfStock || pending.adding}
+        disabled={outOfStock || pending.adding || !hydrated}
+        data-ready={hydrated ? "true" : "false"}
         onClick={onAdd}
       >
         {outOfStock ? "Hết hàng" : pending.adding ? "Đang thêm..." : "Thêm vào giỏ"}

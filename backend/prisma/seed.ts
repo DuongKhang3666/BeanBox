@@ -122,6 +122,10 @@ const SETTINGS: Record<string, Prisma.InputJsonValue> = {
     inner: { STANDARD: 20000, EXPRESS: 35000 },
     other: { STANDARD: 35000, EXPRESS: 55000 },
   },
+  'shipping.eta': {
+    inner: { STANDARD: { minDays: 1, maxDays: 2 }, EXPRESS: { minDays: 0, maxDays: 1 } },
+    other: { STANDARD: { minDays: 3, maxDays: 5 }, EXPRESS: { minDays: 1, maxDays: 3 } },
+  },
   'shipping.innerCityProvinceCodes': ['01', '79'],
   'shipping.innerCityWardCodes': [],
   'shipping.freeShippingThreshold': 500000,

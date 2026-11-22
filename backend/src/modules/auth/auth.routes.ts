@@ -2,6 +2,7 @@ import { Router, type RequestHandler } from 'express';
 import { requireAuth } from '../../middlewares/auth.js';
 import { requireAllowedOrigin } from '../../middlewares/originCheck.js';
 import { validate } from '../../middlewares/validate.js';
+import { loginTwoFactorSchema } from '../twoFactor/twoFactor.schema.js';
 import * as controller from './auth.controller.js';
 import {
   changePasswordSchema,
@@ -21,6 +22,12 @@ export function createAuthRouter({ sensitiveLimiter }: AuthRouterOptions): Route
 
   router.post('/auth/register', sensitiveLimiter, validate(registerSchema), controller.register);
   router.post('/auth/login', sensitiveLimiter, validate(loginSchema), controller.login);
+  router.post(
+    '/auth/login/2fa',
+    sensitiveLimiter,
+    validate(loginTwoFactorSchema),
+    controller.loginTwoFactor,
+  );
   router.post('/auth/refresh', requireAllowedOrigin, controller.refresh);
   router.post('/auth/logout', requireAllowedOrigin, controller.logout);
   router.post(

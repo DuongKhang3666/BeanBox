@@ -4,7 +4,7 @@ import { normalizePhone } from '../../../lib/phone.js';
 import { loadLocations } from '../../locations/locations.data.js';
 import { isSafeHref, isSafeUploadUrl, type SettingKey } from '../../settings/settings.service.js';
 
-/** Schema GHI cho 8 key cài đặt (api-contract §14.9, D-021). Chặt hơn schema đọc. */
+/** Schema GHI cho 10 key cài đặt (api-contract §14.9, D-021). Chặt hơn schema đọc. */
 
 // eslint-disable-next-line no-control-regex
 const CONTROL_CHARS = /[\u0000-\u001F\u007F]/;
@@ -19,6 +19,22 @@ const int = (label: string, min: number, max: number) =>
 const fee = (label: string) => int(label, 0, 1_000_000);
 const feeByMethod = (label: string) =>
   z.object({ STANDARD: fee(`${label} (STANDARD)`), EXPRESS: fee(`${label} (EXPRESS)`) });
+
+const etaRange = (label: string) =>
+  z
+    .object({
+      minDays: int(`${label}: số ngày tối thiểu`, 0, 30),
+      maxDays: int(`${label}: số ngày tối đa`, 0, 30),
+    })
+    .refine((r) => r.minDays <= r.maxDays, {
+      message: `${label}: số ngày tối thiểu không được lớn hơn tối đa`,
+      path: ['minDays'],
+    });
+const etaByMethod = (label: string) =>
+  z.object({
+    STANDARD: etaRange(`${label} (STANDARD)`),
+    EXPRESS: etaRange(`${label} (EXPRESS)`),
+  });
 
 /** Bỏ trùng, giữ thứ tự xuất hiện đầu. */
 const dedupe = (arr: string[]) => [...new Set(arr)];
@@ -48,10 +64,27 @@ const banner = z.object({
   isActive: z.boolean({ error: 'Trạng thái hiển thị phải là true/false' }),
 });
 
+const bankTransfer = z.object({
+  bankBin: z
+    .string({ error: 'Mã BIN ngân hàng không hợp lệ' })
+    .trim()
+    .regex(/^\d{6}$/, 'Mã BIN ngân hàng phải gồm đúng 6 chữ số'),
+  bankName: text('Tên ngân hàng', 1, 100, true),
+  accountNo: z
+    .string({ error: 'Số tài khoản không hợp lệ' })
+    .trim()
+    .regex(/^\d{6,19}$/, 'Số tài khoản phải gồm 6 đến 19 chữ số'),
+  accountName: text('Tên chủ tài khoản', 1, 100, true),
+});
+
 export const SETTING_WRITE_SCHEMAS: Record<SettingKey, z.ZodType> = {
   'shipping.rates': z.object({
     inner: feeByMethod('Phí nội thành'),
     other: feeByMethod('Phí ngoại thành'),
+  }),
+  'shipping.eta': z.object({
+    inner: etaByMethod('Thời gian giao nội thành'),
+    other: etaByMethod('Thời gian giao ngoại thành'),
   }),
   'shipping.innerCityProvinceCodes': z
     .array(
@@ -105,6 +138,7 @@ export const SETTING_WRITE_SCHEMAS: Record<SettingKey, z.ZodType> = {
   'home.banners': z
     .array(banner, { error: 'Danh sách banner không hợp lệ' })
     .max(5, 'Tối đa 5 banner'),
+  'payment.bankTransfer': bankTransfer,
 };
 
 const isKey = (k: string): k is SettingKey => Object.hasOwn(SETTING_WRITE_SCHEMAS, k);

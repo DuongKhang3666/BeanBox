@@ -185,4 +185,75 @@ describe("AdminUserDetail", () => {
     );
     expect(await screen.findByRole("alert")).toHaveTextContent("ít nhất một quản trị viên");
   });
+  describe("xác thực 2 lớp (D-063)", () => {
+    const postCalls = (m: ReturnType<typeof stub>) =>
+      m.mock.calls.filter((c) => (c[1] as RequestInit | undefined)?.method === "POST");
+
+    it("hiện trạng thái Chưa bật và không có nút đặt lại", async () => {
+      stub();
+      render(<AdminUserDetail id="ckuser1" />);
+      const label = await screen.findByText("Xác thực 2 lớp");
+      expect(label.nextElementSibling).toHaveTextContent("Chưa bật");
+      expect(screen.queryByRole("button", { name: "Đặt lại xác thực 2 lớp" })).toBeNull();
+    });
+
+    it("đã bật: hiện Đã bật + nút đặt lại; hộp xác nhận nêu hệ quả; POST đúng route và cập nhật trạng thái", async () => {
+      const on = makeAdminUserDetail({ role: "STAFF", twoFactorEnabled: true, activeSessions: 2 });
+      const off = makeAdminUserDetail({
+        role: "STAFF",
+        twoFactorEnabled: false,
+        activeSessions: 0,
+      });
+      const mock = vi.fn(async (_url: string, init: RequestInit = {}) =>
+        jsonRes(200, { data: init.method === "POST" ? off : on }),
+      );
+      vi.stubGlobal("fetch", mock);
+      render(<AdminUserDetail id="ckuser1" />);
+      const label = await screen.findByText("Xác thực 2 lớp");
+      expect(label.nextElementSibling).toHaveTextContent("Đã bật");
+
+      await userEvent.click(screen.getByRole("button", { name: "Đặt lại xác thực 2 lớp" }));
+      const dialog = screen.getByRole("dialog");
+      expect(dialog).toHaveTextContent("đăng xuất khỏi mọi thiết bị");
+      // Hủy: không gửi gì
+      await userEvent.click(within(dialog).getByRole("button", { name: "Hủy" }));
+      expect(postCalls(mock)).toHaveLength(0);
+
+      await userEvent.click(screen.getByRole("button", { name: "Đặt lại xác thực 2 lớp" }));
+      await userEvent.click(
+        within(screen.getByRole("dialog")).getByRole("button", { name: "Đặt lại 2FA" }),
+      );
+      expect(await screen.findByText(/Đã đặt lại xác thực 2 lớp/)).toBeInTheDocument();
+      const [call] = postCalls(mock);
+      expect(String(call![0])).toContain("/admin/users/ckuser1/2fa/reset");
+      expect(screen.getByText("Xác thực 2 lớp").nextElementSibling).toHaveTextContent("Chưa bật");
+      expect(screen.queryByRole("button", { name: "Đặt lại xác thực 2 lớp" })).toBeNull();
+    });
+
+    it("xem chính mình: không có nút đặt lại", async () => {
+      stub(undefined, makeAdminUserDetail({ id: "me", twoFactorEnabled: true }));
+      render(<AdminUserDetail id="me" />);
+      const label = await screen.findByText("Xác thực 2 lớp");
+      expect(label.nextElementSibling).toHaveTextContent("Đã bật");
+      expect(screen.queryByRole("button", { name: "Đặt lại xác thực 2 lớp" })).toBeNull();
+    });
+
+    it("lỗi 409 TWO_FACTOR_NOT_ENABLED hiện thông báo tiếng Việt", async () => {
+      const on = makeAdminUserDetail({ twoFactorEnabled: true });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (_u: string, init: RequestInit = {}) =>
+          init.method === "POST"
+            ? errRes(409, "TWO_FACTOR_NOT_ENABLED", "")
+            : jsonRes(200, { data: on }),
+        ),
+      );
+      render(<AdminUserDetail id="ckuser1" />);
+      await userEvent.click(await screen.findByRole("button", { name: "Đặt lại xác thực 2 lớp" }));
+      await userEvent.click(
+        within(screen.getByRole("dialog")).getByRole("button", { name: "Đặt lại 2FA" }),
+      );
+      expect(await screen.findByRole("alert")).toHaveTextContent("chưa bật xác thực 2 lớp");
+    });
+  });
 });

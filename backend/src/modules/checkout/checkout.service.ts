@@ -43,8 +43,10 @@ export interface CheckoutContext {
 }
 
 export interface PaymentMethodOption {
-  method: 'COD' | 'VNPAY' | 'STRIPE';
+  method: 'COD' | 'VNPAY' | 'STRIPE' | 'MOMO' | 'BANK_TRANSFER';
   enabled: boolean;
+  /** true khi cổng đang là bản GIẢ (D-060); chỉ xuất hiện khi PAYMENT_MOCKS_ENABLED. */
+  mock?: true;
 }
 
 export interface QuoteDto {
@@ -59,11 +61,20 @@ export interface QuoteDto {
   issues: CheckoutIssue[];
 }
 
-/** COD luôn bật; VNPAY/STRIPE theo cấu hình (api-contract §13.0). */
+/**
+ * COD luôn bật; VNPAY/STRIPE theo cấu hình (api-contract §13.0). MOMO (giả) và BANK_TRANSFER chỉ được
+ * LIỆT KÊ khi đã bật (D-060/D-061), nên cấu hình mặc định cho đúng danh sách ba phương thức cũ.
+ */
 export function paymentMethodOptions(config: PaymentConfig): PaymentMethodOption[] {
-  return (['COD', 'VNPAY', 'STRIPE'] as const).map((method) => ({
+  const methods: PaymentMethodOption['method'][] = ['COD', 'VNPAY', 'STRIPE'];
+  if (config.momo) methods.push('MOMO');
+  if (config.bankTransfer) methods.push('BANK_TRANSFER');
+  return methods.map((method) => ({
     method,
     enabled: isProviderEnabled(config, method),
+    ...(config.mocksEnabled && (method === 'VNPAY' || method === 'MOMO')
+      ? { mock: true as const }
+      : {}),
   }));
 }
 

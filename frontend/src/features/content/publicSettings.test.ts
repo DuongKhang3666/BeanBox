@@ -48,6 +48,28 @@ describe("getPublicSettings", () => {
     expect((await getPublicSettings()).contactCaptcha).toBeNull();
   });
 
+  it("shipping.eta (D-062): giữ giá trị hợp lệ; thiếu hoặc min > max -> mặc định", async () => {
+    const data = structuredClone(DEFAULT_PUBLIC_SETTINGS);
+    data.shipping.eta.other.STANDARD = { minDays: 6, maxDays: 8 };
+    serverGet.mockResolvedValue({ data });
+    expect((await getPublicSettings()).shipping.eta.other.STANDARD).toEqual({
+      minDays: 6,
+      maxDays: 8,
+    });
+
+    const old = structuredClone(DEFAULT_PUBLIC_SETTINGS) as unknown as {
+      shipping: Record<string, unknown>;
+    };
+    delete old.shipping.eta;
+    serverGet.mockResolvedValue({ data: old });
+    expect((await getPublicSettings()).shipping.eta).toEqual(DEFAULT_PUBLIC_SETTINGS.shipping.eta);
+
+    const bad = structuredClone(DEFAULT_PUBLIC_SETTINGS);
+    bad.shipping.eta.inner.EXPRESS = { minDays: 5, maxDays: 1 };
+    serverGet.mockResolvedValue({ data: bad });
+    expect((await getPublicSettings()).shipping.eta).toEqual(DEFAULT_PUBLIC_SETTINGS.shipping.eta);
+  });
+
   it("lỗi mạng -> mặc định", async () => {
     serverGet.mockImplementation(async () => {
       throw new ApiError(0, "NETWORK_ERROR", "x");

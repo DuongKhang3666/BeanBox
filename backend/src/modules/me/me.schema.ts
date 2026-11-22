@@ -101,3 +101,17 @@ export const updateAddressSchema = z
     }
   });
 export type UpdateAddressInput = z.infer<typeof updateAddressSchema>;
+
+/** D-065: cụm xác nhận cố định, so sánh chính xác (FE hiển thị rõ cho người dùng gõ). */
+export const DELETE_CONFIRMATION = 'XOA TAI KHOAN';
+
+export const deleteAccountSchema = z.object({
+  password: z
+    .string({ error: 'Vui lòng nhập mật khẩu' })
+    .min(1, 'Vui lòng nhập mật khẩu')
+    .max(72, 'Mật khẩu tối đa 72 ký tự'),
+  confirmText: z
+    .string({ error: 'Vui lòng nhập cụm xác nhận' })
+    .refine((v) => v === DELETE_CONFIRMATION, `Vui lòng gõ chính xác "${DELETE_CONFIRMATION}"`),
+});
+export type DeleteAccountInput = z.infer<typeof deleteAccountSchema>;

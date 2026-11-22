@@ -1,4 +1,5 @@
 import { env } from '../../config/env.js';
+import { formatEtaRange } from '../../lib/eta.js';
 import { escapeHtml, type MailMessage } from '../../lib/mailer.js';
 import { formatVnDateTime } from '../../lib/vnTime.js';
 import type { OrderDto } from './orders.dto.js';
@@ -18,6 +19,8 @@ const PAYMENT_LABEL: Record<string, string> = {
   COD: 'Thanh toán khi nhận hàng (COD)',
   VNPAY: 'VNPay',
   STRIPE: 'Thẻ quốc tế (Stripe)',
+  MOMO: 'MoMo (giả lập)',
+  BANK_TRANSFER: 'Chuyển khoản / VietQR',
 };
 
 export function buildOrderConfirmationEmail(
@@ -29,6 +32,12 @@ export function buildOrderConfirmationEmail(
   const address = `${a.line1}, ${a.wardName}, ${a.provinceName}`;
   const payment = PAYMENT_LABEL[order.paymentMethod] ?? order.paymentMethod;
   const shipLabel = order.shippingMethod === 'EXPRESS' ? 'Nhanh' : 'Tiêu chuẩn';
+
+  // D-062: ngày giao dự kiến (ngày lịch, chỉ là ước tính).
+  const etaText =
+    order.etaFrom && order.etaTo
+      ? `Dự kiến giao: ${formatEtaRange(order.etaFrom, order.etaTo)}`
+      : null;
 
   // Đơn online chờ thanh toán: ghi hạn thanh toán theo giờ Việt Nam (§13.1).
   const payBefore =
@@ -65,6 +74,7 @@ export function buildOrderConfirmationEmail(
     `Giao tới: ${a.fullName}, ${a.phone}`,
     address,
     `Vận chuyển: ${shipLabel}`,
+    ...(etaText ? [etaText] : []),
     `Thanh toán: ${payment}`,
     ...(payBefore ? [payBefore] : []),
     ...(order.note ? [`Ghi chú: ${order.note}`] : []),
@@ -94,7 +104,7 @@ export function buildOrderConfirmationEmail(
 <table style="width:100%;border-collapse:collapse;border-top:1px solid #e5dccf;border-bottom:1px solid #e5dccf">${rows}</table>
 <table style="width:100%;border-collapse:collapse;margin-top:8px">${totalRows}</table>
 <p><strong>Giao tới:</strong> ${escapeHtml(a.fullName)}, ${escapeHtml(a.phone)}<br>${escapeHtml(address)}</p>
-<p><strong>Vận chuyển:</strong> ${shipLabel}<br><strong>Thanh toán:</strong> ${escapeHtml(payment)}</p>
+<p><strong>Vận chuyển:</strong> ${shipLabel}${etaText ? `<br>${escapeHtml(etaText)}` : ''}<br><strong>Thanh toán:</strong> ${escapeHtml(payment)}</p>
 ${payBefore ? `<p><strong>${escapeHtml(payBefore)}</strong></p>` : ''}
 ${order.note ? `<p><strong>Ghi chú:</strong> ${escapeHtml(order.note)}</p>` : ''}
 <p><a href="${escapeHtml(url)}" style="display:inline-block;padding:10px 20px;background:#4a6741;color:#fff;border-radius:6px;text-decoration:none">Xem đơn hàng</a></p>

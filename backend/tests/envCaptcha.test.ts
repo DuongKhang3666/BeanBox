@@ -77,7 +77,12 @@ describe('parseEnv: INTERNAL_API_SECRET ở production', () => {
   });
   it('production có INTERNAL_API_SECRET -> ok', () => {
     expect(() =>
-      parseEnv({ ...base, NODE_ENV: 'production', INTERNAL_API_SECRET: GOOD_SECRET }),
+      parseEnv({
+        ...base,
+        NODE_ENV: 'production',
+        INTERNAL_API_SECRET: GOOD_SECRET,
+        TOTP_ENCRYPTION_KEY: 'a1'.repeat(32),
+      }),
     ).not.toThrow();
   });
   it('development thiếu INTERNAL_API_SECRET -> ok', () => {

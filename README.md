@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/DuongKhang3666/BeanBox/actions/workflows/ci.yml/badge.svg)](https://github.com/DuongKhang3666/BeanBox/actions/workflows/ci.yml)
 
-BeanBox là web thương mại điện tử bán hạt cà phê, dụng cụ pha chế và phụ kiện. Giao diện tiếng Việt, tiền tệ VND. Dự án full-stack gồm storefront (Next.js), REST API (Express + Prisma + PostgreSQL), trang quản trị, thanh toán sandbox (VNPay, Stripe test mode) và bộ vận hành (Caddy, backup, CI) để chạy được trên một VPS.
+BeanBox là web thương mại điện tử bán hạt cà phê, dụng cụ pha chế và phụ kiện. Giao diện tiếng Việt, tiền tệ VND. Dự án full-stack gồm storefront (Next.js), REST API (Express + Prisma + PostgreSQL), trang quản trị, thanh toán sandbox (VNPay, Stripe test mode) cùng chế độ giả lập cho demo (VNPay/MoMo giả, chuyển khoản VietQR demo) và bộ vận hành (Caddy, backup, CI) để chạy được trên một VPS.
 
 ## Mục lục
 
@@ -25,11 +25,12 @@ BeanBox là web thương mại điện tử bán hạt cà phê, dụng cụ pha
 - Gợi ý sản phẩm: "Sản phẩm liên quan" chấm điểm theo danh mục, thương hiệu, tag, thông số cà phê và khoảng giá; "Thường được mua cùng" tính từ đơn hàng thật, chỉ hiện khi có ít nhất 2 khách khác nhau đã mua cùng (ngưỡng riêng tư). Dữ liệu demo không có đơn giả nên mục này trống cho tới khi có đơn thật.
 - So sánh sản phẩm: chọn 2–4 sản phẩm bằng nút "So sánh" (lưu ở trình duyệt, không cần đăng nhập), xem bảng so sánh giá, biến thể, đánh giá và thông số cà phê (xuất xứ, sơ chế, mức rang, hương vị, cách pha) tại `/so-sanh`; có thể chỉ hiện điểm khác nhau và chia sẻ bằng đường dẫn `?sp=`.
 - Giỏ hàng lưu ở server cho cả khách vãng lai (token giỏ) lẫn người đăng nhập; gộp giỏ khi đăng nhập.
-- Checkout: mã giảm giá, phí vận chuyển tính theo khu vực, phương thức giao và khối lượng, thanh toán COD, VNPay sandbox hoặc Stripe test mode.
+- Checkout: mã giảm giá, phí vận chuyển tính theo khu vực, phương thức giao và khối lượng, thanh toán COD, VNPay sandbox hoặc Stripe test mode. Chế độ demo (tắt mặc định, bật bằng `PAYMENT_MOCKS_ENABLED` và `BANK_TRANSFER_ENABLED`, xem [docs/payments-setup.md](docs/payments-setup.md)) thêm cổng VNPay/MoMo giả và chuyển khoản VietQR với tài khoản demo, không có tiền thật.
 - Khách vãng lai tra cứu và hủy đơn bằng mã đơn + số điện thoại; email xác nhận và email đổi trạng thái đơn.
 - Tài khoản: đăng ký, xác thực email, quên/đặt lại mật khẩu, sổ địa chỉ (dữ liệu hành chính 2 cấp), lịch sử đơn hàng, danh sách yêu thích.
+- Dữ liệu cá nhân: khách tải bản sao dữ liệu (JSON) và tự xóa tài khoản (ẩn danh hóa, giữ đơn để đối soát; chặn khi còn đơn đang xử lý).
 - Đánh giá sản phẩm (chỉ người đã nhận hàng), trang chính sách, giới thiệu, form liên hệ (captcha Cloudflare Turnstile tùy chọn).
-- SEO: `sitemap.xml`, `robots.txt`, metadata từng trang, redirect slug khi đổi tên sản phẩm.
+- SEO: `sitemap.xml` (có `lastmod`), `robots.txt`, metadata và canonical từng trang (noindex cho URL có bộ lọc), ảnh Open Graph tự sinh (mặc định và theo sản phẩm), JSON-LD, trang chủ ISR 60 giây, redirect slug khi đổi tên sản phẩm (D-064).
 
 ### Admin / Staff
 
@@ -37,6 +38,7 @@ BeanBox là web thương mại điện tử bán hạt cà phê, dụng cụ pha
 - Quản lý sản phẩm (biến thể, ảnh, khôi phục), danh mục, thương hiệu, tồn kho kèm lịch sử nhập/xuất, mã giảm giá.
 - Duyệt đánh giá (ẩn/hiện, trả lời), hộp thư liên hệ, nhật ký thao tác (audit log).
 - Chỉ Admin: cài đặt cửa hàng (phí ship, ngưỡng freeship, thông tin liên hệ...), quản lý người dùng.
+- Xác thực 2 lớp (TOTP, tùy chọn) cho Staff/Admin: quét mã QR bằng ứng dụng xác thực, 10 mã dự phòng dùng một lần; Admin có thể reset 2FA của người khác.
 
 **Phân tích kinh doanh (chỉ Admin, `/admin/phan-tich`)**: kế hoạch ở [docs/admin-dashboard-plan.md](docs/admin-dashboard-plan.md), API ở [api-contract §16](docs/api-contract.md).
 

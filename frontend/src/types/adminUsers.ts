@@ -13,8 +13,11 @@ export interface AdminUserItem {
   role: UserRole;
   status: AdminUserStatus;
   emailVerified: boolean;
+  twoFactorEnabled: boolean;
   lastLoginAt: string | null;
   lockedUntil: string | null;
+  /** D-065: khách đã tự xóa tài khoản (đã ẩn danh); khác DISABLED do admin khóa. */
+  deleted: boolean;
   createdAt: string;
   orderCount: number;
 }

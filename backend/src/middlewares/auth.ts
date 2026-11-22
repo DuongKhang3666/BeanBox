@@ -27,6 +27,7 @@ async function authenticate(req: Request): Promise<void> {
       id: true,
       role: true,
       status: true,
+      deletedAt: true,
       refreshTokens: {
         where: { familyId: claims.sid, revokedAt: null, expiresAt: { gt: new Date() } },
         select: { id: true },
@@ -35,6 +36,8 @@ async function authenticate(req: Request): Promise<void> {
     },
   });
   if (!user) throw new AppError(401, 'UNAUTHORIZED', 'Phiên đăng nhập đã hết hạn');
+  // D-065: tài khoản đã tự xóa -> 401 như phiên hết hạn (không lộ khác biệt với user bị khóa).
+  if (user.deletedAt) throw new AppError(401, 'UNAUTHORIZED', 'Phiên đăng nhập đã hết hạn');
   // Thứ tự: tài khoản bị khóa (403) được báo trước khi xét phiên (401).
   if (user.status === 'DISABLED') {
     throw new AppError(403, 'ACCOUNT_DISABLED', 'Tài khoản đã bị khóa');

@@ -38,6 +38,29 @@ describe('shipping.rates', () => {
   });
 });
 
+describe('shipping.eta (D-062)', () => {
+  const r = (minDays: unknown, maxDays: unknown) => ({ minDays, maxDays });
+  const eta = (std: unknown) => ({
+    inner: { STANDARD: std, EXPRESS: r(0, 1) },
+    other: { STANDARD: r(3, 5), EXPRESS: r(1, 3) },
+  });
+  it('hợp lệ: biên 0..30, min = max được', () => {
+    expect(ok({ 'shipping.eta': eta(r(0, 0)) })).toBeTruthy();
+    expect(ok({ 'shipping.eta': eta(r(30, 30)) })).toBeTruthy();
+  });
+  it('min > max -> lỗi ở inner.STANDARD.minDays', () => {
+    expect(fields({ 'shipping.eta': eta(r(3, 2)) })).toEqual([
+      'shipping.eta.inner.STANDARD.minDays',
+    ]);
+  });
+  it('ngoài 0..30, không nguyên, thiếu trường -> lỗi', () => {
+    for (const v of [r(-1, 2), r(0, 31), r(1.5, 2), r('1', 2), { minDays: 1 }]) {
+      bad('shipping.eta', eta(v));
+    }
+    bad('shipping.eta', { inner: eta(r(1, 2)).inner });
+  });
+});
+
 describe('shipping.innerCityProvinceCodes / WardCodes', () => {
   it('hợp lệ, bỏ trùng, được rỗng', () => {
     expect(ok({ 'shipping.innerCityProvinceCodes': ['79', '01', '79'] })).toEqual({
@@ -159,5 +182,39 @@ describe('home.banners', () => {
     bad('home.banners', [b({ alt: '' })]);
     bad('home.banners', [b({ title: 'x'.repeat(101) })]);
     bad('home.banners', [b({ isActive: 'yes' })]);
+  });
+});
+
+describe('payment.bankTransfer (D-061)', () => {
+  const bank = (over: Record<string, unknown> = {}) => ({
+    bankBin: '999999',
+    bankName: 'Ngân hàng demo',
+    accountNo: '0123456789',
+    accountName: 'BEANBOX DEMO',
+    ...over,
+  });
+  it('hợp lệ: tự cắt khoảng trắng', () => {
+    const out = ok({ 'payment.bankTransfer': bank({ bankName: '  Ngân hàng A  ' }) });
+    expect(out['payment.bankTransfer']).toMatchObject({ bankName: 'Ngân hàng A' });
+  });
+  it('BIN đúng 6 chữ số, số tài khoản 6-19 chữ số, tên không rỗng/không ký tự điều khiển', () => {
+    for (const [k, v] of [
+      ['bankBin', '12345'],
+      ['bankBin', '1234567'],
+      ['bankBin', 'abcdef'],
+      ['accountNo', '12345'],
+      ['accountNo', '1'.repeat(20)],
+      ['accountNo', '12 34 56'],
+      ['bankName', ''],
+      ['bankName', 'x'.repeat(101)],
+      ['accountName', 'a\nb'],
+      ['accountName', ''],
+    ] as const) {
+      expect(fields({ 'payment.bankTransfer': bank({ [k]: v }) }), `${k}=${v}`).toEqual([
+        `payment.bankTransfer.${k}`,
+      ]);
+    }
+    bad('payment.bankTransfer', 'x');
+    bad('payment.bankTransfer', { bankBin: '999999' });
   });
 });

@@ -4,11 +4,12 @@ import type { AdminSettings, AdminSettingKey, PublicBanner } from "@/types/setti
 /** Mọi lỗi theo đường dẫn field của §14.9, ví dụ "shipping.rates.inner.STANDARD". */
 export type FieldErrors = Record<string, string>;
 
-export type SectionId = "shipping" | "area" | "contact" | "banners";
+export type SectionId = "shipping" | "area" | "contact" | "banners" | "payment";
 
 export const SECTION_KEYS: Record<SectionId, readonly AdminSettingKey[]> = {
   shipping: [
     "shipping.rates",
+    "shipping.eta",
     "shipping.freeShippingThreshold",
     "shipping.weightSurcharge",
     "order.paymentExpiryMinutes",
@@ -16,6 +17,7 @@ export const SECTION_KEYS: Record<SectionId, readonly AdminSettingKey[]> = {
   area: ["shipping.innerCityProvinceCodes", "shipping.innerCityWardCodes"],
   contact: ["store.contact"],
   banners: ["home.banners"],
+  payment: ["payment.bankTransfer"],
 };
 
 export const MAX_BANNERS = 5;
@@ -46,7 +48,23 @@ export interface ShippingDraft {
   stepGram: string;
   feePerStep: string;
   expiry: string;
+  /** D-062: khóa `zone.method.minDays|maxDays` -> chuỗi số ngày. */
+  eta: Record<string, string>;
 }
+
+export const ETA_ZONES = [
+  { zone: "inner", label: "Nội thành" },
+  { zone: "other", label: "Tỉnh/thành khác" },
+] as const;
+export const ETA_METHODS = [
+  { method: "STANDARD", label: "Tiêu chuẩn" },
+  { method: "EXPRESS", label: "Nhanh" },
+] as const;
+export const ETA_MAX_DAYS = 30;
+
+const etaPath = (zone: string, method: string, f: "minDays" | "maxDays") =>
+  `shipping.eta.${zone}.${method}.${f}`;
+const etaKey = (zone: string, method: string, f: "minDays" | "maxDays") => `${zone}.${method}.${f}`;
 
 export function shippingDraft(s: AdminSettings): ShippingDraft {
   const r = s["shipping.rates"];
@@ -61,6 +79,17 @@ export function shippingDraft(s: AdminSettings): ShippingDraft {
     stepGram: num(w.stepGram),
     feePerStep: num(w.feePerStep),
     expiry: num(s["order.paymentExpiryMinutes"]),
+    eta: Object.fromEntries(
+      ETA_ZONES.flatMap(({ zone }) =>
+        ETA_METHODS.flatMap(({ method }) => {
+          const r = s["shipping.eta"][zone][method];
+          return [
+            [etaKey(zone, method, "minDays"), num(r.minDays)],
+            [etaKey(zone, method, "maxDays"), num(r.maxDays)],
+          ];
+        }),
+      ),
+    ),
   };
 }
 
@@ -86,11 +115,30 @@ export function validateShipping(d: ShippingDraft): FieldErrors {
   check("shipping.weightSurcharge.stepGram", d.stepGram, 1, 100_000, "Bước khối lượng");
   check("shipping.weightSurcharge.feePerStep", d.feePerStep, 0, M, "Phụ phí mỗi bước");
   check("order.paymentExpiryMinutes", d.expiry, 5, 120, "Thời hạn thanh toán");
+  for (const { zone, label: zl } of ETA_ZONES) {
+    for (const { method, label: ml } of ETA_METHODS) {
+      const lbl = `${zl} - ${ml}`;
+      const minRaw = d.eta[etaKey(zone, method, "minDays")] ?? "";
+      const maxRaw = d.eta[etaKey(zone, method, "maxDays")] ?? "";
+      const minMsg = intIn(minRaw, 0, ETA_MAX_DAYS, `Số ngày tối thiểu (${lbl})`);
+      const maxMsg = intIn(maxRaw, 0, ETA_MAX_DAYS, `Số ngày tối đa (${lbl})`);
+      if (minMsg) e[etaPath(zone, method, "minDays")] = minMsg;
+      if (maxMsg) e[etaPath(zone, method, "maxDays")] = maxMsg;
+      if (!minMsg && !maxMsg && Number(minRaw) > Number(maxRaw)) {
+        e[etaPath(zone, method, "minDays")] =
+          `Số ngày tối thiểu (${lbl}) không được lớn hơn số ngày tối đa`;
+      }
+    }
+  }
   return e;
 }
 
 export function buildShippingPatch(d: ShippingDraft): Partial<AdminSettings> {
   const n = (v: string) => Number(v.trim());
+  const etaRange = (zone: string, method: string) => ({
+    minDays: n(d.eta[etaKey(zone, method, "minDays")] ?? ""),
+    maxDays: n(d.eta[etaKey(zone, method, "maxDays")] ?? ""),
+  });
   return {
     "shipping.rates": {
       inner: { STANDARD: n(d.innerStandard), EXPRESS: n(d.innerExpress) },
@@ -103,6 +151,16 @@ export function buildShippingPatch(d: ShippingDraft): Partial<AdminSettings> {
       feePerStep: n(d.feePerStep),
     },
     "order.paymentExpiryMinutes": n(d.expiry),
+    "shipping.eta": {
+      inner: {
+        STANDARD: etaRange("inner", "STANDARD"),
+        EXPRESS: etaRange("inner", "EXPRESS"),
+      },
+      other: {
+        STANDARD: etaRange("other", "STANDARD"),
+        EXPRESS: etaRange("other", "EXPRESS"),
+      },
+    },
   };
 }
 
@@ -188,6 +246,63 @@ export function buildContactPatch(d: ContactDraft): Partial<AdminSettings> {
     },
   };
 }
+
+// ---------- Chuyển khoản (D-061) ----------
+
+export interface BankDraft {
+  bankBin: string;
+  bankName: string;
+  accountNo: string;
+  accountName: string;
+}
+
+export const DEMO_BANK_BIN = "999999";
+
+export function bankDraft(s: AdminSettings): BankDraft {
+  return { ...s["payment.bankTransfer"] };
+}
+
+export function validateBank(d: BankDraft): FieldErrors {
+  const e: FieldErrors = {};
+  if (!/^\d{6}$/.test(d.bankBin.trim())) {
+    e["payment.bankTransfer.bankBin"] = "Mã BIN ngân hàng phải gồm đúng 6 chữ số";
+  }
+  const name = d.bankName.trim();
+  if (!name) e["payment.bankTransfer.bankName"] = "Vui lòng nhập tên ngân hàng";
+  else if (name.length > 100) e["payment.bankTransfer.bankName"] = "Tên ngân hàng tối đa 100 ký tự";
+  else if (CONTROL_RE.test(name)) {
+    e["payment.bankTransfer.bankName"] = "Tên ngân hàng chứa ký tự không hợp lệ";
+  }
+  if (!/^\d{6,19}$/.test(d.accountNo.trim())) {
+    e["payment.bankTransfer.accountNo"] = "Số tài khoản phải gồm 6 đến 19 chữ số";
+  }
+  const holder = d.accountName.trim();
+  if (!holder) e["payment.bankTransfer.accountName"] = "Vui lòng nhập tên chủ tài khoản";
+  else if (holder.length > 100) {
+    e["payment.bankTransfer.accountName"] = "Tên chủ tài khoản tối đa 100 ký tự";
+  } else if (CONTROL_RE.test(holder)) {
+    e["payment.bankTransfer.accountName"] = "Tên chủ tài khoản chứa ký tự không hợp lệ";
+  }
+  return e;
+}
+
+export function buildBankPatch(d: BankDraft): Partial<AdminSettings> {
+  return {
+    "payment.bankTransfer": {
+      bankBin: d.bankBin.trim(),
+      bankName: d.bankName.trim(),
+      accountNo: d.accountNo.trim(),
+      accountName: d.accountName.trim(),
+    },
+  };
+}
+
+export const BANK_FIELD_PATHS = [
+  "payment.bankTransfer.bankBin",
+  "payment.bankTransfer.bankName",
+  "payment.bankTransfer.accountNo",
+  "payment.bankTransfer.accountName",
+] as const;
 
 // ---------- Banner ----------
 
@@ -317,6 +432,12 @@ export const SHIPPING_FIELD_PATHS = [
   "shipping.weightSurcharge.stepGram",
   "shipping.weightSurcharge.feePerStep",
   "order.paymentExpiryMinutes",
+  ...ETA_ZONES.flatMap(({ zone }) =>
+    ETA_METHODS.flatMap(({ method }) => [
+      etaPath(zone, method, "minDays"),
+      etaPath(zone, method, "maxDays"),
+    ]),
+  ),
 ] as const;
 
 export const AREA_FIELD_PATHS = [

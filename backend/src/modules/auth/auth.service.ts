@@ -8,6 +8,15 @@ import { hashPassword, verifyDummyPassword, verifyPassword } from '../../lib/pas
 import { prisma } from '../../lib/prisma.js';
 import { generateOpaqueToken, sha256Hex, signAccessToken } from '../../lib/tokens.js';
 import { toUserDto, type UserDto } from '../../lib/userDto.js';
+import { writeAudit } from '../../lib/audit.js';
+import {
+  MAX_CHALLENGE_ATTEMPTS,
+  consumeCode,
+  createChallenge,
+  totpKey,
+  type LoginChallenge,
+} from '../twoFactor/twoFactor.core.js';
+import type { LoginTwoFactorInput } from '../twoFactor/twoFactor.schema.js';
 import { buildResetEmail, buildVerifyEmail } from './auth.emails.js';
 import type {
   ChangePasswordInput,
@@ -139,7 +148,7 @@ export async function register(input: RegisterInput, ctx: ClientContext): Promis
 // ───────────── Login ─────────────
 
 /** Ghi nhận lần sai nguyên tử bằng một câu SQL (an toàn khi nhiều request đồng thời). */
-async function recordFailedLogin(userId: string): Promise<void> {
+export async function recordFailedLogin(userId: string): Promise<void> {
   const now = new Date();
   const windowStart = new Date(now.getTime() - FAIL_WINDOW_MS);
   const lockUntil = new Date(now.getTime() + LOCK_MS);
@@ -162,12 +171,17 @@ async function recordFailedLogin(userId: string): Promise<void> {
     WHERE "id" = ${userId}`;
 }
 
-export async function login(input: LoginInput, ctx: ClientContext): Promise<SessionResult> {
+/** Đăng nhập bước 1: phiên, hoặc (user bật 2FA, mật khẩu đúng) thử thách bước 2 — KHÔNG cấp token/cookie. */
+export async function login(
+  input: LoginInput,
+  ctx: ClientContext,
+): Promise<SessionResult | LoginChallenge> {
   const invalidCredentials = () =>
     new AppError(401, 'INVALID_CREDENTIALS', 'Email hoặc mật khẩu không đúng');
 
   const user = await prisma.user.findUnique({ where: { email: input.email } });
-  if (!user) {
+  // D-065: tài khoản đã tự xóa đối xử như không tồn tại (không lộ khác biệt).
+  if (!user || user.deletedAt) {
     await verifyDummyPassword(input.password);
     throw invalidCredentials();
   }
@@ -187,6 +201,118 @@ export async function login(input: LoginInput, ctx: ClientContext): Promise<Sess
   }
   if (user.status === 'DISABLED') {
     throw new AppError(403, 'ACCOUNT_DISABLED', 'Tài khoản đã bị khóa');
+  }
+
+  if (user.twoFactorEnabledAt) {
+    // D-063: không reset failedLoginCount ở bước 1 (chỉ reset khi hoàn tất bước 2), để sai mã 2FA
+    // lặp lại qua nhiều lần đăng nhập vẫn dồn vào khóa tạm.
+    return createChallenge(user.id);
+  }
+
+  const updated = await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      failedLoginCount: 0,
+      lastFailedLoginAt: null,
+      lockedUntil: null,
+      lastLoginAt: new Date(),
+    },
+  });
+  return issueSession(updated, ctx);
+}
+
+const invalidTwoFactor = () =>
+  new AppError(401, 'TWO_FACTOR_INVALID', 'Mã xác thực không đúng hoặc đã được sử dụng');
+const invalidChallenge = () =>
+  new AppError(
+    401,
+    'TWO_FACTOR_CHALLENGE_INVALID',
+    'Phiên xác thực đã hết hạn hoặc không hợp lệ, vui lòng đăng nhập lại',
+  );
+
+class BadTwoFactorCode extends Error {}
+
+/**
+ * Đăng nhập bước 2 (D-063). Mỗi lần thử "đặt chỗ" nguyên tử một lượt trong thử thách (tối đa
+ * MAX_CHALLENGE_ATTEMPTS, kể cả khi gửi song song); sai mã tính vào failedLoginCount/lockout của user.
+ */
+export async function loginWithTwoFactor(
+  input: LoginTwoFactorInput,
+  ctx: ClientContext,
+): Promise<SessionResult> {
+  totpKey(); // thiếu khóa -> 503, không bỏ qua bước 2
+  const now = new Date();
+  const challenge = await prisma.twoFactorChallenge.findUnique({
+    where: { tokenHash: sha256Hex(input.challengeToken) },
+    include: { user: true },
+  });
+  if (
+    !challenge ||
+    challenge.usedAt ||
+    challenge.expiresAt.getTime() <= now.getTime() ||
+    challenge.attempts >= MAX_CHALLENGE_ATTEMPTS
+  ) {
+    throw invalidChallenge();
+  }
+  const user = challenge.user;
+  if (user.lockedUntil && user.lockedUntil.getTime() > now.getTime()) {
+    throw new AppError(
+      403,
+      'ACCOUNT_LOCKED',
+      'Tài khoản tạm thời bị khóa do nhập sai mật khẩu nhiều lần',
+      { lockedUntil: user.lockedUntil.toISOString() },
+    );
+  }
+  if (user.status === 'DISABLED') {
+    throw new AppError(403, 'ACCOUNT_DISABLED', 'Tài khoản đã bị khóa');
+  }
+  if (!user.twoFactorEnabledAt || !user.twoFactorSecretEnc) throw invalidChallenge();
+
+  const reserved = await prisma.twoFactorChallenge.updateMany({
+    where: {
+      id: challenge.id,
+      usedAt: null,
+      expiresAt: { gt: now },
+      attempts: { lt: MAX_CHALLENGE_ATTEMPTS },
+    },
+    data: { attempts: { increment: 1 } },
+  });
+  if (reserved.count === 0) throw invalidChallenge();
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      const claimed = await tx.twoFactorChallenge.updateMany({
+        where: { id: challenge.id, usedAt: null },
+        data: { usedAt: now },
+      });
+      if (claimed.count === 0) throw new BadTwoFactorCode();
+      const method = await consumeCode(
+        tx,
+        user,
+        { totp: input.code, backup: input.backupCode },
+        now,
+      );
+      if (!method) throw new BadTwoFactorCode(); // rollback: thử thách vẫn dùng được (còn lượt)
+      if (method === 'backup') {
+        const remaining = await tx.twoFactorBackupCode.count({
+          where: { userId: user.id, usedAt: null },
+        });
+        await writeAudit(tx, {
+          actorId: user.id,
+          action: 'user.2fa.backup_used',
+          entity: 'User',
+          entityId: user.id,
+          diff: { backupCodesRemaining: [remaining + 1, remaining] },
+          ip: ctx.ip ?? null,
+        });
+      }
+    });
+  } catch (err) {
+    if (err instanceof BadTwoFactorCode) {
+      await recordFailedLogin(user.id);
+      throw invalidTwoFactor();
+    }
+    throw err;
   }
 
   const updated = await prisma.user.update({

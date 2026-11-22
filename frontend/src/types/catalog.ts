@@ -57,8 +57,8 @@ export interface ProductListItem {
   compareAtPrice: number | null;
   inStock: boolean;
   isFeatured: boolean;
-  /** Chưa có trong contract §4.2; nếu API trả thì sitemap dùng làm lastModified. */
-  updatedAt?: string;
+  /** ISO 8601 UTC (contract 0.23, §4); sitemap dùng làm lastModified. */
+  updatedAt: string;
   ratingAvg: number;
   ratingCount: number;
   coffee: {

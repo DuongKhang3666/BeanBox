@@ -25,3 +25,5 @@ adminOrdersRouter.post(
   validate(refundPaymentSchema),
   controller.refundPayment,
 );
+// D-061: xác nhận đã nhận tiền chuyển khoản, Staff+ (router cha đã requireStaff).
+adminOrdersRouter.post('/:code/bank-transfer/confirm', controller.confirmBankTransfer);

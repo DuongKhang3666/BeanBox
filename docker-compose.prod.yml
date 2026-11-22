@@ -53,6 +53,7 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?Đặt JWT_ACCESS_SECRET (>= 32 ký tự) trong .env.production}
       INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:?Đặt INTERNAL_API_SECRET (>= 32 ký tự) trong .env.production}
+      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:?Đặt TOTP_ENCRYPTION_KEY (32 byte, tạo bằng openssl rand -base64 32) trong .env.production}
       WEB_APP_URL: ${PUBLIC_URL:?Đặt PUBLIC_URL (https://domain) trong .env.production}
       FRONTEND_ORIGINS: ${PUBLIC_URL}
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
@@ -203,6 +204,7 @@ services:
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?Đặt JWT_ACCESS_SECRET trong .env.production}
       SEED_ALLOW_PRODUCTION: 'true'
       INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:?Đặt INTERNAL_API_SECRET trong .env.production}
+      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:?Đặt TOTP_ENCRYPTION_KEY trong .env.production}
       # Không dùng `:?` ở đây vì compose nội suy cả service của profile chưa bật; seed tự từ chối nếu thiếu/yếu
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
       SEED_STAFF_PASSWORD: ${SEED_STAFF_PASSWORD:-}

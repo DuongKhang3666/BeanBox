@@ -8,6 +8,11 @@ import {
   type OrderActor,
 } from '../../../lib/orderStateMachine.js';
 import { prisma } from '../../../lib/prisma.js';
+import {
+  generateTrackingNumber,
+  SIMULATED_CARRIERS,
+  type RandomIntFn,
+} from '../../../lib/shipment.js';
 import { vnDayEnd, vnDayStart } from '../admin.schema.js';
 import { cancelOrderTx, failPendingPaymentsTx } from '../../orders/orders.cancel.js';
 import {
@@ -15,6 +20,8 @@ import {
   type ExpireSessionsOptions,
 } from '../../payments/payments.expire.js';
 import { notifyOrderStatusChange } from '../../orders/orders.statusEmails.js';
+import { applyPaymentResult } from '../../payments/payments.apply.js';
+import { afterPaymentApplied } from '../../payments/payments.service.js';
 import {
   adminOrderInclude,
   toAdminOrderDto,
@@ -82,6 +89,10 @@ export function buildOrdersWhere(
   if (withStatus && q.status) where.status = { in: q.status };
   if (q.paymentStatus) where.paymentStatus = { in: q.paymentStatus };
   if (q.paymentMethod) where.paymentMethod = { in: q.paymentMethod };
+  if (q.transferClaimed) {
+    where.paymentMethod = 'BANK_TRANSFER';
+    where.transferClaimedAt = { not: null };
+  }
   if (q.from || q.to) {
     where.createdAt = {
       ...(q.from ? { gte: vnDayStart(q.from) } : {}),
@@ -128,6 +139,7 @@ export async function listOrders(q: AdminOrdersQuery): Promise<AdminOrderListRes
         shippingAddress: true,
         grandTotal: true,
         createdAt: true,
+        transferClaimedAt: true,
       },
     }),
     prisma.order.groupBy({
@@ -200,6 +212,26 @@ export interface UpdateStatusArgs {
   stripe?: ExpireSessionsOptions;
 }
 
+const MAX_TRACKING_ATTEMPTS = 8;
+
+/** Mã vận đơn giả duy nhất (kiểm trùng trong DB, thử lại tối đa 8 lần). `rand` tiêm được để test. */
+export async function generateUniqueTrackingNumber(
+  tx: Prisma.TransactionClient,
+  method: 'STANDARD' | 'EXPRESS',
+  now: Date,
+  rand?: RandomIntFn,
+): Promise<string> {
+  for (let i = 0; i < MAX_TRACKING_ATTEMPTS; i++) {
+    const code = generateTrackingNumber(method, now, rand);
+    const clash = await tx.order.findFirst({
+      where: { trackingNumber: code },
+      select: { id: true },
+    });
+    if (!clash) return code;
+  }
+  throw new AppError(500, 'INTERNAL_ERROR', 'Không thể tạo mã vận đơn, vui lòng thử lại');
+}
+
 const staleConflict = (currentStatus: OrderStatus) =>
   new AppError(409, 'CONFLICT', 'Đơn hàng vừa được cập nhật, vui lòng tải lại', {
     currentStatus,
@@ -233,10 +265,7 @@ export async function updateOrderStatus(args: UpdateStatusArgs): Promise<AdminOr
       });
     }
 
-    // 3. Trường bắt buộc theo chuyển.
-    if (from === 'PROCESSING' && to === 'SHIPPING' && !input.trackingNumber) {
-      throw fieldError('trackingNumber', 'Vui lòng nhập mã vận đơn');
-    }
+    // 3. Trường bắt buộc theo chuyển. Mã vận đơn/hãng là TÙY CHỌN (D-062): để trống thì server sinh giả lập.
     if (
       (to === 'FAILED_DELIVERY' || (from === 'PROCESSING' && to === 'CANCELLED')) &&
       !input.note
@@ -262,13 +291,17 @@ export async function updateOrderStatus(args: UpdateStatusArgs): Promise<AdminOr
       const data: Prisma.OrderUpdateManyMutationInput = { status: to };
       if (to === 'CONFIRMED') data.confirmedAt = now;
       if (to === 'SHIPPING') {
-        if (input.trackingNumber) data.trackingNumber = input.trackingNumber;
-        if (input.carrier) data.carrier = input.carrier;
-        after = {
-          ...after,
-          trackingNumber: input.trackingNumber ?? order.trackingNumber,
-          carrier: input.carrier ?? order.carrier,
-        };
+        // Staff nhập thì giữ nguyên; để trống: dùng lại mã đã có (lần SHIPPING trước), chưa có thì sinh giả lập
+        // cùng hãng giả lập theo phương thức giao.
+        let trackingNumber = input.trackingNumber ?? order.trackingNumber;
+        let carrier = input.carrier ?? order.carrier;
+        if (!trackingNumber) {
+          trackingNumber = await generateUniqueTrackingNumber(tx, order.shippingMethod, now);
+          carrier = input.carrier ?? SIMULATED_CARRIERS[order.shippingMethod].name;
+        }
+        data.trackingNumber = trackingNumber;
+        if (carrier) data.carrier = carrier;
+        after = { ...after, trackingNumber, carrier: carrier ?? order.carrier };
       }
       if (to === 'DELIVERED') {
         data.deliveredAt = now;
@@ -331,7 +364,7 @@ export async function updateOrderStatus(args: UpdateStatusArgs): Promise<AdminOr
       where: { id: order.id },
       include: adminOrderInclude,
     });
-    return { dto: toAdminOrderDto(full, role), row: full };
+    return { dto: toAdminOrderDto(full, role, args.now ?? new Date()), row: full };
   }, TX_OPTIONS);
 
   // Sau commit (api-contract §13.9): không gửi khi lỗi; lỗi gửi chỉ log.
@@ -413,4 +446,82 @@ export async function refundPayment(args: RefundArgs): Promise<AdminOrderDto> {
     });
     return toAdminOrderDto(full, 'ADMIN');
   }, TX_OPTIONS);
+}
+
+// ---------------------------------------------------------------------------
+// Xác nhận đã nhận tiền chuyển khoản (D-061)
+
+export interface ConfirmTransferArgs {
+  rawCode: string;
+  actorId: string;
+  role: OrderActor;
+  ip: string | null;
+  now?: Date;
+}
+
+/**
+ * Staff+ xác nhận đã nhận tiền chuyển khoản. Tạo (hoặc dùng lại) Payment BANK_TRANSFER rồi áp kết quả
+ * THÀNH CÔNG qua `applyPaymentResult` dùng chung (idempotent; đơn quá hạn/đã hủy -> nhánh trả muộn
+ * như D-015 và hiện cờ cần hoàn tiền). Gọi lại không đổi gì và trả 200.
+ */
+export async function confirmBankTransfer(args: ConfirmTransferArgs): Promise<AdminOrderDto> {
+  const now = args.now ?? new Date();
+  const code = normalizeOrderCode(args.rawCode);
+  if (!ORDER_CODE_REGEX.test(code)) throw notFound();
+
+  const prepared = await prisma.$transaction(async (tx) => {
+    const locked = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT "id" FROM "Order" WHERE "code" = ${code} FOR UPDATE`;
+    if (locked.length === 0) throw notFound();
+    const order = await tx.order.findUniqueOrThrow({
+      where: { id: locked[0]!.id },
+      select: { id: true, paymentMethod: true, grandTotal: true },
+    });
+    if (order.paymentMethod !== 'BANK_TRANSFER') {
+      throw new AppError(409, 'CONFLICT', 'Đơn hàng này không thanh toán bằng chuyển khoản');
+    }
+    const existing = await tx.payment.findFirst({
+      where: { orderId: order.id, provider: 'BANK_TRANSFER', status: { not: 'REFUNDED' } },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      select: { id: true },
+    });
+    if (existing) return { orderId: order.id, paymentId: existing.id };
+    const created = await tx.payment.create({
+      data: {
+        orderId: order.id,
+        provider: 'BANK_TRANSFER',
+        amount: order.grandTotal,
+        status: 'PENDING',
+        providerRef: code,
+      },
+      select: { id: true },
+    });
+    return { orderId: order.id, paymentId: created.id };
+  }, TX_OPTIONS);
+
+  const applied = await applyPaymentResult({
+    provider: 'BANK_TRANSFER',
+    paymentId: prepared.paymentId,
+    outcome: 'SUCCEEDED',
+    rawPayload: { confirmedBy: 'staff', confirmedAt: now.toISOString() },
+    now,
+  });
+  if (applied.kind === 'APPLIED') {
+    await prisma.$transaction(async (tx) => {
+      await writeAudit(tx, {
+        actorId: args.actorId,
+        action: 'payment.bank_transfer_confirm',
+        entity: 'Order',
+        entityId: prepared.orderId,
+        diff: {
+          paymentId: [null, prepared.paymentId],
+          orderPaymentStatus: [null, applied.order?.paymentStatus ?? null],
+          late: [null, applied.late],
+        },
+        ip: args.ip,
+      });
+    });
+    void afterPaymentApplied(applied);
+  }
+  return getOrder(code, args.role);
 }

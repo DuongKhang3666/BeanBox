@@ -34,7 +34,14 @@ export async function listAdminOrders(
 ): Promise<{ data: AdminOrderListItem[]; meta: AdminOrderListMeta }> {
   const { data, meta } = await api.get<AdminOrderListItem[], Partial<AdminOrderListMeta>>(
     "/admin/orders",
-    { query: { ...query, needsRefund: query.needsRefund ? "true" : undefined }, signal },
+    {
+      query: {
+        ...query,
+        needsRefund: query.needsRefund ? "true" : undefined,
+        transferClaimed: query.transferClaimed ? "true" : undefined,
+      },
+      signal,
+    },
   );
   return {
     data,
@@ -72,6 +79,17 @@ export async function refundPayment(code: string, body: RefundPaymentBody): Prom
   const { data } = await api.post<AdminOrder>(
     `/admin/orders/${encodeURIComponent(code)}/refunds`,
     body,
+  );
+  return data;
+}
+
+/**
+ * Xác nhận đã nhận tiền chuyển khoản (D-061, Staff+). Idempotent; trả AdminOrder mới nhất.
+ * Hệ thống KHÔNG đối soát ngân hàng: nhân viên tự kiểm sao kê trước khi bấm.
+ */
+export async function confirmBankTransfer(code: string): Promise<AdminOrder> {
+  const { data } = await api.post<AdminOrder>(
+    `/admin/orders/${encodeURIComponent(code)}/bank-transfer/confirm`,
   );
   return data;
 }

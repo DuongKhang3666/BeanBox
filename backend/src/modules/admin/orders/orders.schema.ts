@@ -14,7 +14,7 @@ export const ORDER_STATUSES = [
   'RETURNED',
 ] as const;
 const PAYMENT_STATUSES = ['UNPAID', 'PAID', 'FAILED', 'REFUNDED'] as const;
-const PAYMENT_METHODS = ['COD', 'VNPAY', 'STRIPE'] as const;
+const PAYMENT_METHODS = ['COD', 'VNPAY', 'STRIPE', 'MOMO', 'BANK_TRANSFER'] as const;
 
 export const adminOrdersQuerySchema = z
   .object({
@@ -26,6 +26,13 @@ export const adminOrdersQuerySchema = z
       .preprocess(
         (v) => (v === '' || v === undefined ? undefined : v),
         z.enum(['true', 'false'], { error: 'needsRefund phải là true hoặc false' }).optional(),
+      )
+      .transform((v) => v === 'true'),
+    // D-061: chỉ nhận `true` (đơn chuyển khoản khách đã báo chuyển, đang chờ nhân viên xác nhận).
+    transferClaimed: z
+      .preprocess(
+        (v) => (v === '' || v === undefined ? undefined : v),
+        z.enum(['true', 'false'], { error: 'transferClaimed phải là true hoặc false' }).optional(),
       )
       .transform((v) => v === 'true'),
     from: dateOnly('from').optional(),

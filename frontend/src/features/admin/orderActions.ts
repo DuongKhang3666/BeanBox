@@ -59,7 +59,8 @@ export function statusAction(from: OrderStatus, to: OrderStatus): StatusActionCo
             to,
             label: "Giao cho vận chuyển",
             showTracking: true,
-            trackingRequired: true,
+            // D-062: để trống thì server tạo mã vận đơn giả lập.
+            trackingRequired: false,
             noteRequired: false,
             danger: false,
           };

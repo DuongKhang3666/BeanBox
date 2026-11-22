@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   areaDraft,
+  bankDraft,
   bannersDraft,
   buildAreaPatch,
+  buildBankPatch,
   buildBannersPatch,
   buildContactPatch,
   buildShippingPatch,
@@ -12,6 +14,7 @@ import {
   mapServerFieldErrors,
   shippingDraft,
   validateArea,
+  validateBank,
   validateBanners,
   validateContact,
   validateShipping,
@@ -30,6 +33,46 @@ describe("validateShipping", () => {
       "shipping.freeShippingThreshold": 500000,
       "shipping.weightSurcharge": { freeGram: 2000, stepGram: 1000, feePerStep: 5000 },
       "order.paymentExpiryMinutes": 15,
+      "shipping.eta": makeAdminSettings()["shipping.eta"],
+    });
+  });
+
+  it("eta (D-062): min > max, ngoài 0..30, không phải số nguyên -> lỗi theo field", () => {
+    const base = shippingDraft(makeAdminSettings());
+    const withEta = (over: Record<string, string>) => ({
+      ...base,
+      eta: { ...base.eta, ...over },
+    });
+    expect(validateShipping(withEta({ "inner.STANDARD.minDays": "3" }))).toEqual({
+      "shipping.eta.inner.STANDARD.minDays": expect.stringContaining("không được lớn hơn"),
+    });
+    const e = validateShipping(
+      withEta({
+        "other.EXPRESS.minDays": "-1",
+        "other.EXPRESS.maxDays": "31",
+        "inner.EXPRESS.maxDays": "1.5",
+        "other.STANDARD.minDays": "",
+      }),
+    );
+    expect(Object.keys(e).sort()).toEqual(
+      [
+        "shipping.eta.other.EXPRESS.minDays",
+        "shipping.eta.other.EXPRESS.maxDays",
+        "shipping.eta.inner.EXPRESS.maxDays",
+        "shipping.eta.other.STANDARD.minDays",
+      ].sort(),
+    );
+    expect(
+      validateShipping(withEta({ "inner.STANDARD.minDays": "30", "inner.STANDARD.maxDays": "30" })),
+    ).toEqual({});
+  });
+
+  it("eta: build ra số nguyên theo vùng x phương thức", () => {
+    const d = shippingDraft(makeAdminSettings());
+    d.eta["other.STANDARD.maxDays"] = " 7 ";
+    expect(buildShippingPatch(d)["shipping.eta"]?.other.STANDARD).toEqual({
+      minDays: 3,
+      maxDays: 7,
     });
   });
 
@@ -205,5 +248,39 @@ describe("mapServerFieldErrors / latestUpdatedAt", () => {
       }),
     ).toBe("2026-11-12T01:00:00.000Z");
     expect(latestUpdatedAt(["store.contact"], { "store.contact": null })).toBeNull();
+  });
+});
+
+describe("chuyển khoản (D-061)", () => {
+  it("mặc định hợp lệ; build cắt khoảng trắng", () => {
+    const d = bankDraft(makeAdminSettings());
+    expect(validateBank(d)).toEqual({});
+    expect(
+      buildBankPatch({ ...d, accountNo: " 0123456789 " })["payment.bankTransfer"],
+    ).toMatchObject({
+      accountNo: "0123456789",
+      bankBin: "999999",
+    });
+  });
+
+  it("từ chối BIN/số tài khoản sai và tên rỗng/quá dài/ký tự điều khiển", () => {
+    const e = validateBank({
+      bankBin: "12a",
+      bankName: " ",
+      accountNo: "123",
+      accountName: "x".repeat(101),
+    });
+    expect(Object.keys(e).sort()).toEqual([
+      "payment.bankTransfer.accountName",
+      "payment.bankTransfer.accountNo",
+      "payment.bankTransfer.bankBin",
+      "payment.bankTransfer.bankName",
+    ]);
+    expect(
+      validateBank({ ...bankDraft(makeAdminSettings()), bankName: "A\u0000B" }),
+    ).toHaveProperty("payment.bankTransfer.bankName");
+    expect(
+      validateBank({ ...bankDraft(makeAdminSettings()), accountNo: "1".repeat(20) }),
+    ).toHaveProperty("payment.bankTransfer.accountNo");
   });
 });

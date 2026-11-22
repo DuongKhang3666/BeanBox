@@ -94,7 +94,7 @@ describe("AdminOrderDetail", () => {
     expect(await screen.findByText(/Không còn thao tác nào khả dụng/)).toBeInTheDocument();
   });
 
-  it("PROCESSING -> SHIPPING bắt buộc mã vận đơn; gửi kèm fromStatus; thành công dùng response", async () => {
+  it("PROCESSING -> SHIPPING mã vận đơn tùy chọn (có gợi ý); gửi kèm fromStatus; thành công dùng response", async () => {
     const processing = makeAdminOrder({
       status: "PROCESSING",
       allowedTransitions: ["SHIPPING", "CANCELLED"],
@@ -115,9 +115,10 @@ describe("AdminOrderDetail", () => {
     const dialog = await openAction("Giao cho vận chuyển");
     const user = userEvent.setup();
 
-    await user.click(within(dialog).getByRole("button", { name: "Giao cho vận chuyển" }));
-    expect(await within(dialog).findByText("Vui lòng nhập mã vận đơn.")).toBeInTheDocument();
-    expect(mock.mock.calls.filter(([, i]) => isPatch(i as RequestInit))).toHaveLength(0);
+    // D-062: mã vận đơn là tùy chọn, có gợi ý để trống -> hệ thống tạo mã giả lập.
+    expect(
+      within(dialog).getByText("Để trống để hệ thống tạo mã vận đơn giả lập."),
+    ).toBeInTheDocument();
 
     await user.type(within(dialog).getByLabelText(/Mã vận đơn/), "GHN 123");
     await user.click(within(dialog).getByRole("button", { name: "Giao cho vận chuyển" }));
@@ -142,6 +143,44 @@ describe("AdminOrderDetail", () => {
     });
     expect(screen.getByText(/Đã cập nhật trạng thái đơn thành "Đang giao"/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Đã giao" })).toBeInTheDocument();
+  });
+
+  it("SHIPPING để trống mã vận đơn: gửi body không có trackingNumber/carrier (server tạo mã giả lập)", async () => {
+    const processing = makeAdminOrder({
+      status: "PROCESSING",
+      allowedTransitions: ["SHIPPING", "CANCELLED"],
+    });
+    const mock = stubFetch((_p, init) =>
+      isPatch(init)
+        ? jsonRes(200, {
+            data: makeAdminOrder({
+              status: "SHIPPING",
+              trackingNumber: "BBL-20261122-K5AVT2",
+              carrier: "BeanBox Logistics (giả lập)",
+              allowedTransitions: ["DELIVERED", "FAILED_DELIVERY"],
+            }),
+          })
+        : jsonRes(200, { data: processing }),
+    );
+    render(<AdminOrderDetail code={CODE} />);
+    const dialog = await openAction("Giao cho vận chuyển");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Giao cho vận chuyển" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    const patchIdx = mock.mock.calls.findIndex(([, i]) => isPatch(i as RequestInit));
+    expect(bodyOf(mock, patchIdx)).toEqual({ toStatus: "SHIPPING", fromStatus: "PROCESSING" });
+    expect(await screen.findByText("BBL-20261122-K5AVT2")).toBeInTheDocument();
+    expect(screen.getByText("BeanBox Logistics (giả lập)")).toBeInTheDocument();
+  });
+
+  it("hiện ngày giao dự kiến trong khối vận đơn", async () => {
+    stubFetch(() =>
+      jsonRes(200, {
+        data: makeAdminOrder({ status: "PROCESSING", etaFrom: "2026-11-23", etaTo: "2026-11-25" }),
+      }),
+    );
+    render(<AdminOrderDetail code={CODE} />);
+    expect(await screen.findByText("Dự kiến giao")).toBeInTheDocument();
+    expect(screen.getByText("23/11 – 25/11")).toBeInTheDocument();
   });
 
   it("hủy từ PROCESSING bắt buộc ghi chú, có cảnh báo hoàn kho", async () => {

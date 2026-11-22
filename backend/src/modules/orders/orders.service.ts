@@ -4,6 +4,7 @@ import { env } from '../../config/env.js';
 import { AppError } from '../../lib/errors.js';
 import { prisma } from '../../lib/prisma.js';
 import { sendMailInBackground } from '../../lib/mailer.js';
+import { computeEtaDates } from '../../lib/eta.js';
 import { generateOrderCode, normalizeOrderCode, ORDER_CODE_REGEX } from '../../lib/orderCode.js';
 import { normalizePhone } from '../../lib/phone.js';
 import { sha256Hex } from '../../lib/tokens.js';
@@ -244,7 +245,12 @@ const couponInvalid = (reason: string, minOrder?: number) =>
  * SĐT khác nhau nhưng cùng email (hoặc ngược lại) giành khóa theo thứ tự đan xen. Khi đó vẫn đúng
  * vì mỗi request giữ cả hai khóa trước khi đếm. Dùng index `contactPhone`/`contactEmail`/`[status, createdAt]`.
  */
-async function assertGuestCodLimit(tx: Db, email: string, phone: string): Promise<void> {
+async function assertGuestCodLimit(
+  tx: Db,
+  email: string,
+  phone: string,
+  method: 'COD' | 'BANK_TRANSFER' = 'COD',
+): Promise<void> {
   const keys = [`guestcod:phone:${phone}`, `guestcod:email:${email.toLowerCase()}`].sort();
   for (const k of keys) {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${k}, 0))`;
@@ -252,8 +258,9 @@ async function assertGuestCodLimit(tx: Db, email: string, phone: string): Promis
   const open = await tx.order.count({
     where: {
       userId: null,
-      paymentMethod: 'COD',
-      status: 'PENDING',
+      paymentMethod: method,
+      // COD chờ nhân viên xác nhận; chuyển khoản (D-061) chờ tiền về: cùng giới hạn chống giữ kho.
+      status: method === 'COD' ? 'PENDING' : 'PENDING_PAYMENT',
       OR: [{ contactPhone: phone }, { contactEmail: email.toLowerCase() }],
     },
   });
@@ -278,8 +285,13 @@ async function createOrderInTx(tx: Db, a: TxArgs): Promise<TxOutcome> {
   if (!cart || !locked) throw cartEmpty();
 
   // a'. Giới hạn đơn COD đang mở của khách vãng lai (D-057), sau nhánh replay.
-  if (!userId && input.paymentMethod === 'COD') {
-    await assertGuestCodLimit(tx, input.contact!.email!, input.contact!.phone!);
+  if (!userId && (input.paymentMethod === 'COD' || input.paymentMethod === 'BANK_TRANSFER')) {
+    await assertGuestCodLimit(
+      tx,
+      input.contact!.email!,
+      input.contact!.phone!,
+      input.paymentMethod,
+    );
   }
 
   // b. Khóa variant theo id tăng dần rồi đọc dữ liệu mới nhất.
@@ -385,12 +397,19 @@ async function createOrderInTx(tx: Db, a: TxArgs): Promise<TxOutcome> {
   // Online: chờ thanh toán tới expiresAt (§13.1); COD: PENDING.
   const online = input.paymentMethod !== 'COD';
   const status = online ? 'PENDING_PAYMENT' : 'PENDING';
-  const expiresAt = online
-    ? new Date(now.getTime() + settings.paymentExpiryMinutes * 60_000)
-    : null;
+  // Chuyển khoản (D-061) giữ kho lâu hơn: BANK_TRANSFER_HOLD_HOURS thay vì paymentExpiryMinutes.
+  const holdMs =
+    input.paymentMethod === 'BANK_TRANSFER'
+      ? (a.paymentConfig.bankTransfer?.holdHours ?? 24) * 3_600_000
+      : settings.paymentExpiryMinutes * 60_000;
+  const expiresAt = online ? new Date(now.getTime() + holdMs) : null;
+  // D-062: snapshot ngày giao dự kiến do server tính từ settings + vùng + phương thức (không nhận từ client).
+  const eta = computeEtaDates(now, option.eta);
   const created = await tx.order.create({
     data: {
       code: generateOrderCode(now),
+      etaFrom: eta.from,
+      etaTo: eta.to,
       userId,
       contactEmail,
       contactPhone,

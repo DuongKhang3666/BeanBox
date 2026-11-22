@@ -1,5 +1,7 @@
 import type { Prisma } from '../../generated/prisma/client.js';
 import { getPaymentConfig, isProviderEnabled, type PaymentConfig } from '../../config/payments.js';
+import { formatDateOnly } from '../../lib/eta.js';
+import { buildShipment, type ShipmentDto } from '../../lib/shipment.js';
 import { isCustomerCancellable } from '../../lib/orderStateMachine.js';
 
 /** Order DTO (api-contract §9). Không lộ idempotencyKey, requestFingerprint, userId, couponId, actorId. */
@@ -59,8 +61,15 @@ export interface OrderDto {
   note: string | null;
   trackingNumber: string | null;
   carrier: string | null;
+  /** D-062: ngày giao dự kiến `YYYY-MM-DD` (ngày VN), null với đơn cũ. */
+  etaFrom: string | null;
+  etaTo: string | null;
+  /** D-062: hành trình mô phỏng; null khi đơn chưa từng chuyển sang SHIPPING. */
+  shipment: ShipmentDto | null;
   cancelReason: string | null;
   expiresAt: string | null;
+  /** D-061: thời điểm khách báo đã chuyển khoản (đơn BANK_TRANSFER), chưa phải đã nhận tiền. */
+  transferClaimedAt: string | null;
   paidAt: string | null;
   deliveredAt: string | null;
   createdAt: string;
@@ -83,6 +92,8 @@ export function computeCanPay(
   const now = opts.now ?? new Date();
   return (
     o.status === 'PENDING_PAYMENT' &&
+    // Chuyển khoản không có phiên thanh toán để mở: không có "thanh toán lại" (D-061).
+    o.paymentMethod !== 'BANK_TRANSFER' &&
     o.expiresAt !== null &&
     o.expiresAt.getTime() > now.getTime() &&
     isProviderEnabled(opts.paymentConfig ?? getPaymentConfig(), o.paymentMethod)
@@ -90,6 +101,24 @@ export function computeCanPay(
 }
 
 const iso = (d: Date | null): string | null => (d ? d.toISOString() : null);
+const dateOnly = (d: Date | null): string | null => (d ? formatDateOnly(d) : null);
+
+type ShipmentSource = Pick<
+  OrderWithRelations,
+  'history' | 'etaTo' | 'deliveredAt' | 'carrier' | 'trackingNumber'
+>;
+
+/** D-062: hành trình mô phỏng của đơn (dùng chung DTO khách, tra cứu guest và admin). */
+export function toShipmentDto(o: ShipmentSource, now: Date = new Date()): ShipmentDto | null {
+  return buildShipment({
+    history: o.history,
+    etaTo: o.etaTo,
+    deliveredAt: o.deliveredAt,
+    carrier: o.carrier,
+    trackingNumber: o.trackingNumber,
+    now,
+  });
+}
 
 export function toShippingAddress(raw: Prisma.JsonValue): ShippingAddressSnapshot {
   const a = (raw ?? {}) as Record<string, unknown>;
@@ -135,8 +164,12 @@ export function toOrderDto(o: OrderWithRelations, opts: DtoOptions = {}): OrderD
     note: o.note,
     trackingNumber: o.trackingNumber,
     carrier: o.carrier,
+    etaFrom: dateOnly(o.etaFrom),
+    etaTo: dateOnly(o.etaTo),
+    shipment: toShipmentDto(o, opts.now),
     cancelReason: o.cancelReason,
     expiresAt: iso(o.expiresAt),
+    transferClaimedAt: iso(o.transferClaimedAt),
     paidAt: iso(o.paidAt),
     deliveredAt: iso(o.deliveredAt),
     createdAt: o.createdAt.toISOString(),
@@ -176,9 +209,13 @@ export interface TrackedOrderDto {
   grandTotal: number;
   trackingNumber: string | null;
   carrier: string | null;
+  etaFrom: string | null;
+  etaTo: string | null;
+  shipment: ShipmentDto | null;
   cancelReason: string | null;
   /** Hạn thanh toán (ISO) hoặc null; không phải dữ liệu cá nhân (0.6.1). */
   expiresAt: string | null;
+  transferClaimedAt: string | null;
   createdAt: string;
   history: Array<{ fromStatus: string | null; toStatus: string; createdAt: string }>;
   canCancel: boolean;
@@ -209,8 +246,12 @@ export function toTrackedOrderDto(o: OrderWithRelations, opts: DtoOptions = {}):
     grandTotal: o.grandTotal,
     trackingNumber: o.trackingNumber,
     carrier: o.carrier,
+    etaFrom: dateOnly(o.etaFrom),
+    etaTo: dateOnly(o.etaTo),
+    shipment: toShipmentDto(o, opts.now),
     cancelReason: o.cancelReason,
     expiresAt: iso(o.expiresAt),
+    transferClaimedAt: iso(o.transferClaimedAt),
     createdAt: o.createdAt.toISOString(),
     history: o.history.map((h) => ({
       fromStatus: h.fromStatus,

@@ -1,4 +1,4 @@
-import type { InputHTMLAttributes, LabelHTMLAttributes } from "react";
+import type { InputHTMLAttributes, LabelHTMLAttributes, Ref } from "react";
 import { cn } from "@/lib/cn";
 
 export function Label({ className, children, ...rest }: LabelHTMLAttributes<HTMLLabelElement>) {
@@ -20,6 +20,8 @@ export function FieldError({ id, children }: { id?: string; children?: React.Rea
 
 export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   invalid?: boolean;
+  /** React 19: ref là prop thường trên function component. */
+  ref?: Ref<HTMLInputElement>;
 }
 
 export function Input({ invalid, className, ...rest }: InputProps) {

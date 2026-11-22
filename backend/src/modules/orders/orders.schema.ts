@@ -42,7 +42,7 @@ export const createOrderSchema = z
     shippingMethod: z.enum(['STANDARD', 'EXPRESS'], {
       error: 'Phương thức vận chuyển không hợp lệ',
     }),
-    paymentMethod: z.enum(['COD', 'VNPAY', 'STRIPE'], {
+    paymentMethod: z.enum(['COD', 'VNPAY', 'STRIPE', 'MOMO', 'BANK_TRANSFER'], {
       error: 'Phương thức thanh toán không hợp lệ',
     }),
     couponCode: z

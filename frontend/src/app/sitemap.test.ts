@@ -22,7 +22,12 @@ beforeEach(() => {
     { slug: "phu-kien", children: [] },
   ]);
   getProducts.mockResolvedValue({
-    items: [{ slug: "sp-1", updatedAt: "2026-11-01T00:00:00.000Z" }, { slug: "sp-2" }],
+    items: [
+      { slug: "sp-1", category: { slug: "robusta" }, updatedAt: "2026-11-01T00:00:00.000Z" },
+      { slug: "sp-3", category: { slug: "phu-kien" }, updatedAt: "2026-10-01T00:00:00.000Z" },
+      { slug: "sp-4", category: { slug: "robusta" }, updatedAt: "2026-11-05T00:00:00.000Z" },
+      { slug: "sp-2", category: { slug: "robusta" } },
+    ],
     meta: { totalPages: 1 },
   });
 });
@@ -43,6 +48,24 @@ describe("sitemap", () => {
     const p2 = list.find((e) => e.url.endsWith("/san-pham/sp-2"));
     expect(p1?.lastModified).toEqual(new Date("2026-11-01T00:00:00.000Z"));
     expect(p2).not.toHaveProperty("lastModified");
+  });
+
+  it("lastmod danh mục = updatedAt mới nhất trong danh mục (cha gồm cả con); không có thì bỏ", async () => {
+    const list = await sitemap();
+    const find = (suffix: string) => list.find((e) => e.url.endsWith(suffix));
+    expect(find("/danh-muc/robusta")?.lastModified).toEqual(new Date("2026-11-05T00:00:00.000Z"));
+    expect(find("/danh-muc/ca-phe-hat")?.lastModified).toEqual(
+      new Date("2026-11-05T00:00:00.000Z"),
+    );
+    expect(find("/danh-muc/phu-kien")?.lastModified).toEqual(new Date("2026-10-01T00:00:00.000Z"));
+    expect(find("/gioi-thieu")).not.toHaveProperty("lastModified");
+  });
+
+  it("không đặt changeFrequency/priority cứng", async () => {
+    for (const e of await sitemap()) {
+      expect(e).not.toHaveProperty("changeFrequency");
+      expect(e).not.toHaveProperty("priority");
+    }
   });
 
   it("không chứa trang riêng tư hay trang tìm kiếm", async () => {

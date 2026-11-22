@@ -169,6 +169,16 @@ export async function findVnpayPayment(txnRef: string) {
   return payment && payment.provider === 'VNPAY' ? payment : null;
 }
 
+/** Payment của MoMo (giả) theo `orderId` của MoMo (= Payment.id). */
+export async function findMomoPayment(orderId: string) {
+  if (!orderId || orderId.length > 64) return null;
+  const payment = await prisma.payment.findUnique({
+    where: { id: orderId },
+    select: { id: true, provider: true, amount: true, status: true },
+  });
+  return payment && payment.provider === 'MOMO' ? payment : null;
+}
+
 // ---------------------------------------------------------------------------
 // PaymentResult (§13.3) – không chứa PII
 

@@ -98,6 +98,81 @@ describe("TrackOrder", () => {
     expect(screen.queryByRole("button", { name: "Hủy đơn" })).not.toBeInTheDocument();
   });
 
+  it("đơn đang giao: hiện dự kiến giao, mã vận đơn giả lập + timeline mô phỏng (D-062)", async () => {
+    stubFetch({
+      "GET /orders/track": () =>
+        jsonRes(200, {
+          data: makeTrackedOrder({
+            status: "SHIPPING",
+            canCancel: false,
+            trackingNumber: "BBL-20261122-K5AVT2",
+            carrier: "BeanBox Logistics (giả lập)",
+            etaFrom: "2026-11-23",
+            etaTo: "2026-11-25",
+            shipment: {
+              carrier: "BeanBox Logistics (giả lập)",
+              trackingNumber: "BBL-20261122-K5AVT2",
+              simulated: true,
+              events: [
+                {
+                  code: "HANDOVER",
+                  label: "Đã bàn giao cho đơn vị vận chuyển",
+                  at: "2026-11-22T03:00:00.000Z",
+                },
+              ],
+            },
+          }),
+        }),
+    });
+    const u = userEvent.setup();
+    render(<TrackOrder />);
+    await search_(u);
+    expect(await screen.findByText("Dự kiến giao")).toBeInTheDocument();
+    expect(screen.getByText("23/11 – 25/11")).toBeInTheDocument();
+    expect(screen.getByText("Đã bàn giao cho đơn vị vận chuyển")).toBeInTheDocument();
+    expect(screen.getByText(/Hành trình mô phỏng \(giả lập\)/)).toBeInTheDocument();
+    // Mã vận đơn chỉ xuất hiện một lần (trong khối hành trình).
+    expect(screen.getAllByText("BBL-20261122-K5AVT2")).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "Sao chép mã vận đơn" })).toBeInTheDocument();
+  });
+
+  it("đơn đã giao: không hiện dự kiến giao; timeline có mốc giao thành công", async () => {
+    stubFetch({
+      "GET /orders/track": () =>
+        jsonRes(200, {
+          data: makeTrackedOrder({
+            status: "DELIVERED",
+            canCancel: false,
+            trackingNumber: "BBL-20261122-K5AVT2",
+            etaFrom: "2026-11-23",
+            etaTo: "2026-11-25",
+            shipment: {
+              carrier: null,
+              trackingNumber: "BBL-20261122-K5AVT2",
+              simulated: true,
+              events: [
+                {
+                  code: "HANDOVER",
+                  label: "Đã bàn giao cho đơn vị vận chuyển",
+                  at: "2026-11-22T03:00:00.000Z",
+                },
+                {
+                  code: "DELIVERED",
+                  label: "Giao hàng thành công",
+                  at: "2026-11-23T09:00:00.000Z",
+                },
+              ],
+            },
+          }),
+        }),
+    });
+    const u = userEvent.setup();
+    render(<TrackOrder />);
+    await search_(u);
+    expect(await screen.findByText("Giao hàng thành công")).toBeInTheDocument();
+    expect(screen.queryByText("Dự kiến giao")).not.toBeInTheDocument();
+  });
+
   it("404 -> thông báo không tìm thấy", async () => {
     stubFetch({ "GET /orders/track": () => errRes(404, "NOT_FOUND") });
     const u = userEvent.setup();

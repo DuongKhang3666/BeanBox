@@ -59,6 +59,8 @@ const PAYMENT_LABEL: Record<string, string> = {
   COD: 'Thanh toán khi nhận hàng (COD)',
   VNPAY: 'VNPay (ATM/QR/thẻ)',
   STRIPE: 'Thẻ quốc tế (Stripe)',
+  MOMO: 'MoMo (giả lập)',
+  BANK_TRANSFER: 'Chuyển khoản / VietQR',
 };
 const SHIPPING_LABEL: Record<string, string> = { STANDARD: 'Tiêu chuẩn', EXPRESS: 'Nhanh' };
 

@@ -20,7 +20,7 @@ import {
   type TurnstileHandle,
 } from "@/features/content/components/TurnstileWidget";
 import { ApiError } from "@/lib/api/errors";
-import { formatVND } from "@/lib/format";
+import { formatDateRange, formatVND } from "@/lib/format";
 import type { Address } from "@/types/account";
 import type { User } from "@/types/auth";
 import type { Cart } from "@/types/cart";
@@ -29,7 +29,7 @@ import type { PaymentMethod, PlaceOrderRequest, Quote, ShippingMethod } from "@/
 import { placeOrder } from "@/features/orders/api";
 import { IdempotencyKeys } from "@/features/orders/idempotency";
 import { PAYMENT_METHOD_LABEL, orderErrorMessage } from "@/features/orders/labels";
-import { createStripeSession, createVnpayPayment } from "@/features/payments/api";
+import { createOnlinePayment } from "@/features/payments/api";
 import { goToPayment } from "@/features/payments/redirect";
 import type { OrderLine } from "@/features/orders/components/OrderItemsList";
 import { useResource } from "@/features/orders/useResource";
@@ -282,8 +282,8 @@ export function CheckoutForm({
   async function openPayment(code: string, method: PaymentMethod): Promise<boolean> {
     try {
       const input = { code, ...(authed ? {} : { phone: normalizePhone(phone) }) };
-      const session =
-        method === "VNPAY" ? await createVnpayPayment(input) : await createStripeSession(input);
+      if (method === "COD" || method === "BANK_TRANSFER") return false;
+      const session = await createOnlinePayment(method, input);
       return goToPayment(session.redirectUrl);
     } catch {
       return false;
@@ -350,7 +350,12 @@ export function CheckoutForm({
       onPlaced();
       reload();
       const successUrl = `/dat-hang-thanh-cong/${encodeURIComponent(order.code)}`;
-      if (order.status === "PENDING_PAYMENT" && order.paymentMethod !== "COD") {
+      // Chuyển khoản (D-061) đi thẳng trang thành công có QR; chỉ cổng online mới chuyển hướng.
+      if (
+        order.status === "PENDING_PAYMENT" &&
+        order.paymentMethod !== "COD" &&
+        order.paymentMethod !== "BANK_TRANSFER"
+      ) {
         const opened = await openPayment(order.code, order.paymentMethod);
         // Không mở được cổng: tới trang đơn hàng, có thông báo và nút "Thanh toán lại".
         if (!opened) router.push(`${successUrl}?pay=failed`);
@@ -632,7 +637,9 @@ export function CheckoutForm({
                       <span>
                         <span className="block font-medium text-coffee-900">{o.label}</span>
                         <span className="block text-sm text-coffee-700">
-                          Dự kiến {o.estimatedDays} ngày
+                          {o.eta
+                            ? `Dự kiến giao ${formatDateRange(o.eta.fromDate, o.eta.toDate)}`
+                            : `Dự kiến ${o.estimatedDays} ngày`}
                         </span>
                       </span>
                       <span className="text-right font-medium text-coffee-900">
@@ -674,8 +681,18 @@ export function CheckoutForm({
                       <span className="rounded-full bg-cream-200 px-2 py-0.5 text-xs text-coffee-800">
                         Chưa khả dụng
                       </span>
+                    ) : p.mock ? (
+                      <span className="rounded-full bg-cream-200 px-2 py-0.5 text-xs text-coffee-800">
+                        Giả lập, không trừ tiền thật
+                      </span>
                     ) : null}
                   </span>
+                  {p.method === "BANK_TRANSFER" && p.enabled ? (
+                    <span className="mt-1 block text-sm text-coffee-700">
+                      Quét mã VietQR ở bước sau khi đặt hàng. Đơn được giữ chỗ trong thời gian chờ
+                      chuyển khoản.
+                    </span>
+                  ) : null}
                 </RadioCard>
               ))}
             </fieldset>

@@ -133,8 +133,12 @@ interface LockedRow {
  * trả trạng thái đích SAU khi khóa và số ADMIN ACTIVE khác đích.
  */
 async function lockAndCheck(tx: Prisma.TransactionClient, targetId: string, actor: Actor) {
-  const exists = await tx.user.findUnique({ where: { id: targetId }, select: { id: true } });
+  const exists = await tx.user.findUnique({
+    where: { id: targetId },
+    select: { id: true, deletedAt: true },
+  });
   if (!exists) throw notFound();
+  if (exists.deletedAt) throw accountDeleted();
   if (targetId === actor.userId) {
     throw new AppError(
       409,
@@ -158,6 +162,10 @@ async function lockAndCheck(tx: Prisma.TransactionClient, targetId: string, acto
   ).length;
   return { target, otherActiveAdmins };
 }
+
+/** D-065: tài khoản đã tự xóa (ẩn danh) là bất biến với admin: không đổi vai trò/trạng thái/2FA. */
+const accountDeleted = () =>
+  new AppError(409, 'ACCOUNT_DELETED', 'Tài khoản này đã được chủ sở hữu xóa, không thể thay đổi');
 
 const lastAdmin = () =>
   new AppError(409, 'LAST_ADMIN', 'Hệ thống phải còn ít nhất một quản trị viên đang hoạt động');
@@ -252,6 +260,58 @@ export async function updateUserRole(
       entity: 'User',
       entityId: id,
       diff: { role: [target.role, role] },
+      ip: actor.ip ?? null,
+    });
+    return loadDetail(tx, id);
+  });
+}
+
+/**
+ * Admin đặt lại 2FA của người dùng khác (D-063): tắt 2FA, xóa secret/mã dự phòng/thử thách,
+ * thu hồi MỌI phiên của họ. Không áp cho chính mình (dùng luồng tự tắt ở /me/2fa/disable).
+ */
+export async function resetUserTwoFactor(id: string, actor: Actor): Promise<AdminUserDetail> {
+  if (!ID_REGEX.test(id)) throw notFound();
+  return prisma.$transaction(async (tx) => {
+    const exists = await tx.user.findUnique({
+      where: { id },
+      select: { id: true, deletedAt: true },
+    });
+    if (!exists) throw notFound();
+    if (exists.deletedAt) throw accountDeleted();
+    if (id === actor.userId) {
+      throw new AppError(
+        409,
+        'CANNOT_MODIFY_SELF',
+        'Bạn không thể đặt lại 2FA của chính mình; hãy dùng chức năng tắt xác thực 2 lớp ở trang tài khoản',
+      );
+    }
+    // Nguyên tử: chỉ một request thắng và chỉ khi 2FA đang bật.
+    const claimed = await tx.user.updateMany({
+      where: { id, twoFactorEnabledAt: { not: null } },
+      data: {
+        twoFactorEnabledAt: null,
+        twoFactorSecretEnc: null,
+        twoFactorPendingSecretEnc: null,
+        twoFactorPendingAt: null,
+        twoFactorLastStep: null,
+      },
+    });
+    if (claimed.count === 0) {
+      throw new AppError(409, 'TWO_FACTOR_NOT_ENABLED', 'Người dùng chưa bật xác thực 2 lớp');
+    }
+    await tx.twoFactorBackupCode.deleteMany({ where: { userId: id } });
+    await tx.twoFactorChallenge.deleteMany({ where: { userId: id } });
+    await tx.refreshToken.updateMany({
+      where: { userId: id, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    await writeAudit(tx, {
+      actorId: actor.userId,
+      action: 'user.2fa.reset',
+      entity: 'User',
+      entityId: id,
+      diff: { twoFactorEnabled: [true, false] },
       ip: actor.ip ?? null,
     });
     return loadDetail(tx, id);

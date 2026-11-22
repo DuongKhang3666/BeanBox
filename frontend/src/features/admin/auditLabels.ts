@@ -36,6 +36,11 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   "review.reply": "Trả lời đánh giá",
   "review.reply_delete": "Xóa trả lời đánh giá",
   "analytics.export": "Xuất CSV phân tích",
+  "user.2fa.enable": "Bật xác thực 2 lớp",
+  "user.2fa.disable": "Tắt xác thực 2 lớp",
+  "user.2fa.backup_regenerate": "Tạo lại mã dự phòng 2FA",
+  "user.2fa.backup_used": "Dùng mã dự phòng 2FA",
+  "user.2fa.reset": "Đặt lại xác thực 2 lớp",
 };
 
 export const auditActionLabel = (action: string) => AUDIT_ACTION_LABEL[action] ?? action;

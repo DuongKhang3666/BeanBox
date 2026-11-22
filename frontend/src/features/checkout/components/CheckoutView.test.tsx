@@ -583,6 +583,64 @@ describe("CheckoutView - thanh toán online", () => {
     });
   });
 
+  it("quote có MoMo/chuyển khoản/giả lập: hiện chip 'Giả lập' và gợi ý VietQR; không có thì không hiện", async () => {
+    stubFetch({
+      "POST /checkout/quote": () =>
+        jsonRes(200, {
+          data: makeQuote({
+            paymentMethods: [
+              { method: "COD", enabled: true },
+              { method: "VNPAY", enabled: true, mock: true },
+              { method: "MOMO", enabled: true, mock: true },
+              { method: "BANK_TRANSFER", enabled: true },
+            ],
+          }),
+        }),
+    });
+    const u = userEvent.setup();
+    render(<CheckoutView />);
+    await fillGuest(u);
+    const momo = await screen.findByRole("radio", { name: /MoMo \(giả lập\)/ });
+    await waitFor(() => expect(momo).toBeEnabled());
+    expect(screen.getByRole("radio", { name: /Chuyển khoản \/ VietQR/ })).toBeEnabled();
+    expect(screen.getAllByText("Giả lập, không trừ tiền thật")).toHaveLength(2);
+    expect(screen.getByText(/Quét mã VietQR ở bước sau/)).toBeInTheDocument();
+  });
+
+  it("đặt đơn chuyển khoản: không gọi create, không redirect, tới trang thành công", async () => {
+    const order = makeOrder({
+      status: "PENDING_PAYMENT",
+      paymentMethod: "BANK_TRANSFER",
+      canPay: false,
+      expiresAt: new Date(Date.now() + 900_000).toISOString(),
+    });
+    const mock = stubFetch({
+      "POST /checkout/quote": () =>
+        jsonRes(200, {
+          data: makeQuote({
+            paymentMethods: [
+              { method: "COD", enabled: true },
+              { method: "BANK_TRANSFER", enabled: true },
+            ],
+          }),
+        }),
+      "POST /orders": () => jsonRes(201, { data: order }),
+    });
+    const u = userEvent.setup();
+    render(<CheckoutView />);
+    await fillGuest(u);
+    const bank = await screen.findByRole("radio", { name: /Chuyển khoản \/ VietQR/ });
+    await waitFor(() => expect(bank).toBeEnabled());
+    await u.click(bank);
+    await u.click(screen.getByRole("checkbox", { name: /điều khoản/ }));
+    await waitFor(() => expect(submitBtn()).toHaveTextContent("350.000₫"));
+    await u.click(submitBtn());
+    await waitFor(() => expect(push).toHaveBeenCalledWith(`/dat-hang-thanh-cong/${order.code}`));
+    expect(bodyOfCall(callsOf(mock, "POST /orders")[0]!).paymentMethod).toBe("BANK_TRANSFER");
+    expect(mock.mock.calls.some(([u2]) => String(u2).includes("/payments/"))).toBe(false);
+    expect(assign).not.toHaveBeenCalled();
+  });
+
   it("redirectUrl http bị chặn: không assign, chuyển trang đơn hàng với thông báo", async () => {
     stubFetch({
       "POST /checkout/quote": () => jsonRes(200, { data: onlineQuote() }),
@@ -784,5 +842,44 @@ describe("CheckoutView – captcha Turnstile và giới hạn đơn chờ (D-057
       "Bạn đang có quá nhiều đơn hàng chờ xác nhận. Vui lòng chờ cửa hàng xác nhận các đơn trước hoặc liên hệ cửa hàng",
     );
     expect(push).not.toHaveBeenCalled();
+  });
+});
+
+describe("CheckoutView – thời gian giao dự kiến (D-062)", () => {
+  it("mỗi phương thức hiển thị khoảng ngày dự kiến giao theo eta của quote", async () => {
+    stubFetch({ "POST /checkout/quote": () => jsonRes(200, { data: makeQuote() }) });
+    const u = userEvent.setup();
+    render(<CheckoutView />);
+    await fillGuest(u);
+    const standard = await screen.findByRole("radio", { name: /Tiêu chuẩn/ });
+    expect(standard).toBeChecked();
+    expect(screen.getByText("Dự kiến giao 25/11 – 27/11")).toBeInTheDocument();
+    expect(screen.getByText("Dự kiến giao 23/11 – 24/11")).toBeInTheDocument();
+  });
+
+  it("quote cũ không có eta -> dùng lại estimatedDays", async () => {
+    const legacy = makeQuote({
+      shippingOptions: [makeShippingOption({ eta: undefined, estimatedDays: "3-5" })],
+    });
+    stubFetch({ "POST /checkout/quote": () => jsonRes(200, { data: legacy }) });
+    const u = userEvent.setup();
+    render(<CheckoutView />);
+    await fillGuest(u);
+    expect(await screen.findByText("Dự kiến 3-5 ngày")).toBeInTheDocument();
+  });
+
+  it("eta một ngày (min = max) hiển thị một ngày", async () => {
+    const one = makeQuote({
+      shippingOptions: [
+        makeShippingOption({
+          eta: { minDays: 2, maxDays: 2, fromDate: "2026-12-01", toDate: "2026-12-01" },
+        }),
+      ],
+    });
+    stubFetch({ "POST /checkout/quote": () => jsonRes(200, { data: one }) });
+    const u = userEvent.setup();
+    render(<CheckoutView />);
+    await fillGuest(u);
+    expect(await screen.findByText("Dự kiến giao 01/12")).toBeInTheDocument();
   });
 });

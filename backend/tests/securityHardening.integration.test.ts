@@ -298,8 +298,12 @@ describe('cookie refresh bb_rt', () => {
       JWT_ACCESS_SECRET: 'x'.repeat(40),
     } as unknown as NodeJS.ProcessEnv;
     expect(
-      parseEnv({ ...base, NODE_ENV: 'production', INTERNAL_API_SECRET: 'x'.repeat(40) })
-        .COOKIE_SECURE,
+      parseEnv({
+        ...base,
+        NODE_ENV: 'production',
+        INTERNAL_API_SECRET: 'x'.repeat(40),
+        TOTP_ENCRYPTION_KEY: 'a1'.repeat(32),
+      }).COOKIE_SECURE,
     ).toBe(true);
     expect(parseEnv({ ...base, NODE_ENV: 'development' }).COOKIE_SECURE).toBe(false);
   });

@@ -6,7 +6,9 @@ import { FormNotice } from "@/features/auth/components/FormError";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { ChangePasswordForm } from "./ChangePasswordForm";
 import { EmailCard } from "./EmailCard";
+import { PersonalDataSection } from "./PersonalDataSection";
 import { ProfileForm } from "./ProfileForm";
+import { TwoFactorSection } from "./TwoFactorSection";
 
 export function ProfileView() {
   const { user } = useAuth();
@@ -33,6 +35,8 @@ export function ProfileView() {
       <EmailCard />
       <ProfileForm />
       <ChangePasswordForm />
+      <TwoFactorSection />
+      <PersonalDataSection />
     </div>
   );
 }

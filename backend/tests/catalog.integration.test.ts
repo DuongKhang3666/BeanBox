@@ -423,6 +423,7 @@ describe('GET /products – bộ lọc', () => {
       compareAtPrice: 200000,
       inStock: true,
       isFeatured: true,
+      updatedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/),
       ratingAvg: 4.6,
       ratingCount: 18,
       coffee: { originCountry: 'Ethiopia', roastLevel: 'LIGHT', process: 'WASHED' },

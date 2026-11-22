@@ -77,11 +77,15 @@ enum PaymentMethod {
   COD
   VNPAY
   STRIPE
+  MOMO // D-060: MoMo GIẢ (chỉ khi PAYMENT_MOCKS_ENABLED)
+  BANK_TRANSFER // D-061: chuyển khoản/VietQR, nhân viên xác nhận
 }
 
 enum PaymentProvider {
   VNPAY
   STRIPE
+  MOMO
+  BANK_TRANSFER
 }
 
 enum PaymentTxnStatus {
@@ -119,27 +123,36 @@ enum ReviewStatus {
 // ───────────── Người dùng & phiên ─────────────
 
 model User {
-  id                String     @id @default(cuid())
-  email             String     @unique
-  passwordHash      String
-  fullName          String
-  phone             String?
-  birthDate         DateTime?  @db.Date
-  avatarUrl         String?
-  role              Role       @default(CUSTOMER)
-  status            UserStatus @default(ACTIVE)
-  emailVerifiedAt   DateTime?
-  failedLoginCount  Int        @default(0)
-  lastFailedLoginAt DateTime?
-  lockedUntil       DateTime?
-  lastLoginAt       DateTime?
-  createdAt         DateTime   @default(now())
-  updatedAt         DateTime   @updatedAt
+  id                        String     @id @default(cuid())
+  email                     String     @unique
+  passwordHash              String
+  fullName                  String
+  phone                     String?
+  birthDate                 DateTime?  @db.Date
+  avatarUrl                 String?
+  role                      Role       @default(CUSTOMER)
+  status                    UserStatus @default(ACTIVE)
+  emailVerifiedAt           DateTime?
+  failedLoginCount          Int        @default(0)
+  lastFailedLoginAt         DateTime?
+  lockedUntil               DateTime?
+  lastLoginAt               DateTime?
+  // D-063: xác thực 2 lớp (TOTP). Secret luôn ở dạng mã hóa AES-256-GCM (`v1:<iv>:<tag>:<ct>`).
+  twoFactorEnabledAt        DateTime?
+  twoFactorSecretEnc        String?
+  twoFactorPendingSecretEnc String?
+  twoFactorPendingAt        DateTime?
+  twoFactorLastStep         Int? // bước TOTP (30 giây) đã dùng gần nhất, chống dùng lại
+  deletedAt                 DateTime? // D-065: khách tự xóa tài khoản (đã ẩn danh hóa); khác DISABLED do admin khóa
+  createdAt                 DateTime   @default(now())
+  updatedAt                 DateTime   @updatedAt
 
   addresses               Address[]
   refreshTokens           RefreshToken[]
   passwordResetTokens     PasswordResetToken[]
   emailVerificationTokens EmailVerificationToken[]
+  twoFactorBackupCodes    TwoFactorBackupCode[]
+  twoFactorChallenges     TwoFactorChallenge[]
   cart                    Cart?
   wishlist                Wishlist[]
   orders                  Order[]
@@ -191,6 +204,36 @@ model RefreshToken {
 
   @@index([userId])
   @@index([familyId])
+  @@index([expiresAt])
+}
+
+/// D-063: mã dự phòng 2FA, lưu SHA-256 của mã đã chuẩn hóa; `usedAt` đặt nguyên tử khi dùng.
+model TwoFactorBackupCode {
+  id        String    @id @default(cuid())
+  userId    String
+  codeHash  String
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, codeHash])
+  @@index([userId])
+}
+
+/// D-063: thử thách bước 2 của đăng nhập; DB chỉ giữ SHA-256 của token (ngẫu nhiên 32 byte).
+model TwoFactorChallenge {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  attempts  Int       @default(0)
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
   @@index([expiresAt])
 }
 
@@ -451,6 +494,9 @@ model Order {
   trackingNumber     String?
   carrier            String?
   cancelReason       String?
+  etaFrom            DateTime?      @db.Date // D-062: ngày giao dự kiến sớm nhất (ngày lịch VN), snapshot lúc đặt
+  etaTo              DateTime?      @db.Date // D-062: ngày giao dự kiến muộn nhất; null = đơn cũ
+  transferClaimedAt  DateTime? // D-061: khách bấm "Tôi đã chuyển khoản" (không đổi trạng thái đơn)
   expiresAt          DateTime? // hạn thanh toán của PENDING_PAYMENT
   paidAt             DateTime?
   confirmedAt        DateTime?

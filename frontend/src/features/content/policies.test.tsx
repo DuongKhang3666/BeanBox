@@ -34,7 +34,7 @@ describe("policies", () => {
       "href",
       "/chinh-sach/dieu-khoan",
     );
-    expect(screen.getByText(/20\.000₫ \(3–5 ngày\)/)).toBeInTheDocument();
+    expect(screen.getByText(/20\.000₫ \(1–2 ngày\)/)).toBeInTheDocument();
   });
 });
 
@@ -42,9 +42,9 @@ describe("buildPolicies", () => {
   it("mặc định: phí, ngưỡng, phụ phí và tên tỉnh nội thành đúng số liệu", () => {
     const t = text(buildPolicies(DEFAULT_PUBLIC_SETTINGS)["van-chuyen"]);
     expect(t).toContain("Nội thành gồm Thành phố Hà Nội và Thành phố Hồ Chí Minh");
-    expect(t).toContain("Nội thành: Tiêu chuẩn 20.000₫ (3–5 ngày), Nhanh 35.000₫ (1–2 ngày).");
+    expect(t).toContain("Nội thành: Tiêu chuẩn 20.000₫ (1–2 ngày), Nhanh 35.000₫ (0–1 ngày).");
     expect(t).toContain(
-      "Tỉnh/thành khác: Tiêu chuẩn 35.000₫ (3–5 ngày), Nhanh 55.000₫ (1–2 ngày).",
+      "Tỉnh/thành khác: Tiêu chuẩn 35.000₫ (3–5 ngày), Nhanh 55.000₫ (1–3 ngày).",
     );
     expect(t).toContain("Đơn từ 500.000₫");
     expect(t).toContain(

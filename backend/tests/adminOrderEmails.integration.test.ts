@@ -157,11 +157,11 @@ describe('email đổi trạng thái qua PATCH /admin/orders/:code/status', () =
     res = await patchStatus(code, { fromStatus: 'CONFIRMED', toStatus: 'CANCELLED' });
     expect(res.status).toBe(409);
     expect(errOf(res).code).toBe('CONFLICT');
-    // Thiếu mã vận đơn.
+    // Thiếu lý do hủy khi đơn đang PROCESSING (mã vận đơn nay là tùy chọn, D-062).
     await patchStatus(code, { fromStatus: 'PENDING', toStatus: 'CONFIRMED' });
     await patchStatus(code, { fromStatus: 'CONFIRMED', toStatus: 'PROCESSING' });
     clearTestOutbox();
-    res = await patchStatus(code, { fromStatus: 'PROCESSING', toStatus: 'SHIPPING' });
+    res = await patchStatus(code, { fromStatus: 'PROCESSING', toStatus: 'CANCELLED' });
     expect(res.status).toBe(400);
     // Đơn không tồn tại.
     res = await patchStatus('BB-261110-ZZZZ', { fromStatus: 'PENDING', toStatus: 'CONFIRMED' });

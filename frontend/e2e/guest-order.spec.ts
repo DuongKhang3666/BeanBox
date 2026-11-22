@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { findStockedProduct, testContact } from "./helpers";
+import { addToCartWhenReady, findStockedProduct, testContact } from "./helpers";
 
 test("khách vãng lai: mua COD, tra cứu và hủy đơn", async ({ page, request }) => {
   const product = await findStockedProduct(request);
@@ -21,7 +21,8 @@ test("khách vãng lai: mua COD, tra cứu và hủy đơn", async ({ page, requ
   await expect(page.getByRole("heading", { level: 1 })).toContainText(product.name);
 
   // Thêm vào giỏ -> mini-cart mở, ảnh không tràn ngang
-  await page.getByRole("button", { name: "Thêm vào giỏ" }).click();
+  // Chờ nút hydrate xong + phản hồi POST /cart/items (xem helpers.addToCartWhenReady).
+  await addToCartWhenReady(page);
   const mini = page.getByRole("dialog", { name: "Giỏ hàng của bạn" });
   await expect(mini).toBeVisible();
   await expect(mini.getByText(product.name)).toBeVisible();
@@ -56,6 +57,8 @@ test("khách vãng lai: mua COD, tra cứu và hủy đơn", async ({ page, requ
 
   // Phí ship được tính -> chọn COD
   await expect(page.getByRole("radio", { name: /tiêu chuẩn/i }).first()).toBeChecked();
+  // D-062: mỗi phương thức hiện khoảng ngày giao dự kiến (dd/MM – dd/MM)
+  await expect(page.getByText(/Dự kiến giao \d{2}\/\d{2}/).first()).toBeVisible();
   await page.getByRole("radio", { name: /thanh toán khi nhận hàng|COD/i }).check();
 
   await page.getByLabel(/Tôi đã đọc và đồng ý/).check();
@@ -65,6 +68,7 @@ test("khách vãng lai: mua COD, tra cứu và hủy đơn", async ({ page, requ
   await expect(page).toHaveURL(/\/dat-hang-thanh-cong\/BB-/);
   const code = /\/dat-hang-thanh-cong\/([^/?#]+)/.exec(page.url())![1]!;
   await expect(page.getByText(code).first()).toBeVisible();
+  await expect(page.getByText("Dự kiến giao", { exact: true })).toBeVisible();
 
   // Tra cứu với mã + SĐT
   await page.goto("/tra-cuu-don-hang");

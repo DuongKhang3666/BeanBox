@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
-import { login, seedPassword } from "./helpers";
+import { API, createGuestCodOrder, findStockedProduct, login, seedPassword } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
@@ -160,6 +160,7 @@ test("admin xử lý tin nhắn, xem cài đặt và người dùng", async ({ p
     "Phí vận chuyển",
     "Khu vực nội thành",
     "Thông tin liên hệ",
+    "Tài khoản nhận chuyển khoản",
     "Banner trang chủ",
   ]) {
     await expect(page.getByRole("heading", { name: title, exact: true })).toBeVisible();
@@ -197,4 +198,34 @@ test("chính sách vận chuyển hiển thị phí; CSP storefront thực thi, 
   expect(adminCsp).toContain("'nonce-");
   expect(adminCsp).toContain("'strict-dynamic'");
   expect(admin.headers()["content-security-policy-report-only"]).toBeUndefined();
+});
+
+test("admin xác nhận đã nhận tiền cho đơn chuyển khoản khách đã báo (D-061)", async ({
+  page,
+  request,
+}) => {
+  const product = await findStockedProduct(request);
+  const { code, phone } = await createGuestCodOrder(request, product.variantId, "BANK_TRANSFER");
+  const claim = await request.post(
+    `${API}/orders/${encodeURIComponent(code)}/bank-transfer/claim`,
+    {
+      data: { phone },
+    },
+  );
+  expect(claim.status(), "claim").toBe(200);
+
+  await login(page, "admin@beanbox.local", seedPassword("ADMIN"));
+  // Bộ lọc "Khách báo đã chuyển khoản" tìm thấy đơn
+  await page.goto(`/admin/don-hang?transferClaimed=true&q=${encodeURIComponent(code)}`);
+  const row = page.getByRole("row", { name: new RegExp(code) });
+  await expect(row).toBeVisible();
+  await expect(row.getByText("Khách báo đã chuyển khoản")).toBeVisible();
+  await row.getByRole("link").first().click();
+  await expect(page).toHaveURL(new RegExp(`/admin/don-hang/${code}`));
+
+  // Xác nhận hai bước; sau đó đơn đã thanh toán và hộp xác nhận biến mất
+  await page.getByRole("button", { name: "Xác nhận đã nhận tiền" }).click();
+  await page.getByRole("button", { name: "Đồng ý" }).click();
+  await expect(page.getByRole("button", { name: "Xác nhận đã nhận tiền" })).toHaveCount(0);
+  await expect(page.getByText("Đã thanh toán").first()).toBeVisible();
 });

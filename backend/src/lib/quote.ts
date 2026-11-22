@@ -97,6 +97,7 @@ export function computeTotals(input: ComputeTotalsInput): Totals {
       totalWeightGram,
       zone: z,
       settings,
+      now,
       freeshipCoupon: fc,
     });
 

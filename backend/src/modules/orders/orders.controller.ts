@@ -11,6 +11,8 @@ import type {
   TrackOrderQuery,
 } from './orders.schema.js';
 import * as service from './orders.service.js';
+import * as bankTransfer from '../payments/bankTransfer.js';
+import type { BankTransferOwnerInput } from '../payments/bankTransfer.schema.js';
 
 const paymentConfigOf = (req: Request): PaymentConfig =>
   req.app.locals.paymentConfig as PaymentConfig;
@@ -82,4 +84,22 @@ export const listMyOrders = asyncHandler(async (req, res) => {
     req.query as unknown as MyOrdersQuery,
   );
   res.json(result);
+});
+
+export const getBankTransfer = asyncHandler(async (req, res) => {
+  const q = req.query as BankTransferOwnerInput;
+  const data = await bankTransfer.getBankTransferInstructions(
+    { code: String(req.params.code ?? ''), phone: q.phone, userId: req.auth?.userId ?? null },
+    paymentConfigOf(req),
+  );
+  res.json({ data });
+});
+
+export const claimBankTransfer = asyncHandler(async (req, res) => {
+  const body = req.body as BankTransferOwnerInput;
+  const data = await bankTransfer.claimBankTransfer(
+    { code: String(req.params.code ?? ''), phone: body.phone, userId: req.auth?.userId ?? null },
+    paymentConfigOf(req),
+  );
+  res.json({ data });
 });

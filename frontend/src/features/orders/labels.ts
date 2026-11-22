@@ -1,5 +1,6 @@
 import { couponReasonMessage } from "@/features/cart/messages";
 import { ApiError } from "@/lib/api/errors";
+import { formatDateRange } from "@/lib/format";
 import type { OrderStatus, PaymentMethod, PaymentStatus, ShippingMethod } from "@/types/order";
 
 export const ORDER_STATUS_LABEL: Record<OrderStatus, string> = {
@@ -26,12 +27,26 @@ export const PAYMENT_METHOD_LABEL: Record<PaymentMethod, string> = {
   COD: "Thanh toán khi nhận hàng (COD)",
   VNPAY: "VNPay (ATM/QR/thẻ)",
   STRIPE: "Thẻ quốc tế (Stripe)",
+  MOMO: "MoMo (giả lập)",
+  BANK_TRANSFER: "Chuyển khoản / VietQR",
 };
 
 export const SHIPPING_METHOD_LABEL: Record<ShippingMethod, string> = {
   STANDARD: "Tiêu chuẩn",
   EXPRESS: "Nhanh",
 };
+
+const ETA_HIDDEN: readonly string[] = ["DELIVERED", "CANCELLED", "RETURNED"];
+
+/** "22/11 – 24/11" khi đơn còn đang trên đường tới khách; null khi không có ngày dự kiến hoặc đơn đã kết thúc (D-062). */
+export function deliveryEtaText(o: {
+  status: string;
+  etaFrom?: string | null;
+  etaTo?: string | null;
+}): string | null {
+  if (!o.etaFrom || !o.etaTo || ETA_HIDDEN.includes(o.status)) return null;
+  return formatDateRange(o.etaFrom, o.etaTo);
+}
 
 export function orderStatusLabel(s: string): string {
   return ORDER_STATUS_LABEL[s as OrderStatus] ?? s;
