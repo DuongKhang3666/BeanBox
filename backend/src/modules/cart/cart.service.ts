@@ -2,6 +2,7 @@ import type { Cart, Prisma } from '../../generated/prisma/client.js';
 import { AppError } from '../../lib/errors.js';
 import { prisma } from '../../lib/prisma.js';
 import { MAX_LINE_QUANTITY, priceCartLine, type PricedCartLine } from '../../lib/cartLine.js';
+import { isRoastExpired, ROAST_MAX_DAYS } from '../../lib/freshness.js';
 import { evaluateCoupon, normalizeCouponCode } from '../../lib/coupon.js';
 import { computeTotals, type CouponInput, type QuoteLine, type Totals } from '../../lib/quote.js';
 import { effectivePrice } from '../../lib/pricing.js';
@@ -49,6 +50,9 @@ export interface CartItemDto {
   maxQuantity: number;
   stockStatus: StockStatus;
   warnings: PricedCartLine['warnings'];
+  /** D-082: tuổi hạt (ngày) và mức độ tươi; null khi biến thể không có ngày rang. */
+  roastAgeDays: number | null;
+  roastStatus: PricedCartLine['roastStatus'];
 }
 
 export interface CartDto {
@@ -124,6 +128,8 @@ export function toCartDto(args: {
       maxQuantity: l.priced.maxQuantity,
       stockStatus: l.priced.stockStatus,
       warnings: l.priced.warnings,
+      roastAgeDays: l.priced.roastAgeDays,
+      roastStatus: l.priced.roastStatus,
     })),
     itemCount: totals.itemCount,
     subtotal: totals.subtotal,
@@ -316,6 +322,14 @@ const quantityLimit = () =>
 const itemNotFound = () => new AppError(404, 'NOT_FOUND', 'Không tìm thấy sản phẩm trong giỏ hàng');
 const unavailable = () =>
   new AppError(409, 'ITEM_UNAVAILABLE', 'Sản phẩm này hiện không còn được bán');
+/** D-082: lô rang quá hạn, dùng cùng mã `ITEM_UNAVAILABLE` (không thêm mã lỗi mới). */
+export const roastExpired = (variantId: string) =>
+  new AppError(
+    409,
+    'ITEM_UNAVAILABLE',
+    `Ngừng bán do quá hạn rang (quá ${ROAST_MAX_DAYS} ngày kể từ ngày rang)`,
+    { reason: 'ROAST_EXPIRED', items: [{ variantId, reason: 'ROAST_EXPIRED' }] },
+  );
 const outOfStock = (variantId: string, requested: number, available: number) =>
   new AppError(409, 'OUT_OF_STOCK', 'Số lượng trong kho không đủ', {
     items: [{ variantId, requested, available }],
@@ -374,8 +388,22 @@ async function loadVariantForCart(tx: Db, variantId: string) {
   });
 }
 
-function isVariantSellable(v: NonNullable<Awaited<ReturnType<typeof loadVariantForCart>>>) {
-  return v.isActive && v.deletedAt == null && v.product.status === 'ACTIVE' && !v.product.deletedAt;
+type CartVariant = NonNullable<Awaited<ReturnType<typeof loadVariantForCart>>>;
+
+/** D-082: thêm lô rang quá 90 ngày (giờ VN) vào giá trị không bán được. */
+function isVariantSellable(v: CartVariant, now: Date) {
+  return (
+    v.isActive &&
+    v.deletedAt == null &&
+    v.product.status === 'ACTIVE' &&
+    !v.product.deletedAt &&
+    !isRoastExpired(v.roastDate, now)
+  );
+}
+
+/** Lỗi 409 ITEM_UNAVAILABLE; lô quá hạn rang có thông báo riêng và `details.reason`. */
+function unavailableFor(v: CartVariant, now: Date) {
+  return isRoastExpired(v.roastDate, now) ? roastExpired(v.id) : unavailable();
 }
 
 export async function getCart(identity: CartIdentity, now = new Date()): Promise<CartDto> {
@@ -399,7 +427,7 @@ export async function addItem(
 
       const variant = await loadVariantForCart(tx, input.variantId);
       if (!variant) throw new AppError(404, 'NOT_FOUND', 'Không tìm thấy sản phẩm');
-      if (!isVariantSellable(variant)) throw unavailable();
+      if (!isVariantSellable(variant, now)) throw unavailableFor(variant, now);
 
       const existing = await tx.cartItem.findUnique({
         where: { cartId_variantId: { cartId: cart.id, variantId: variant.id } },
@@ -482,7 +510,7 @@ export async function reorderLines(
           variantName: line.variantName,
         };
         const variant = await loadVariantForCart(tx, line.variantId);
-        if (!variant || !isVariantSellable(variant)) {
+        if (!variant || !isVariantSellable(variant, now)) {
           result.skipped.push({ ...ref, quantity: line.quantity, reason: 'DISCONTINUED' });
           continue;
         }
@@ -537,7 +565,8 @@ export async function updateItem(
       if (!item) throw itemNotFound();
 
       const variant = await loadVariantForCart(tx, item.variantId);
-      if (!variant || !isVariantSellable(variant)) throw unavailable();
+      if (!variant) throw unavailable();
+      if (!isVariantSellable(variant, now)) throw unavailableFor(variant, now);
       const stock = Math.max(0, variant.stock);
       if (input.quantity > stock) throw outOfStock(variant.id, input.quantity, stock);
 
@@ -678,7 +707,7 @@ export async function mergeGuestCart(
       const adjustments: MergeAdjustment[] = [];
       for (const gi of guestItems) {
         const v = variantById.get(gi.variantId);
-        if (!v || !isVariantSellable(v)) {
+        if (!v || !isVariantSellable(v, now)) {
           adjustments.push({
             variantId: gi.variantId,
             requested: gi.quantity,

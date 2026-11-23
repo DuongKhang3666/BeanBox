@@ -36,6 +36,8 @@ services:
     build:
       context: ./backend
     restart: unless-stopped
+    # D-079: SHUTDOWN_TIMEOUT_MS (mặc định 25s) < stop_grace_period; mặc định Docker chỉ 10s sẽ SIGKILL giữa chừng.
+    stop_grace_period: 30s
     depends_on:
       db:
         condition: service_healthy

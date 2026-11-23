@@ -52,9 +52,19 @@ const CUSTOM_WEB_PORT = WEB_PORT !== 3000;
 const FRONTEND_URL = EXTERNAL_BASE_URL ?? `http://localhost:${WEB_PORT}`;
 const BACKEND_HEALTH = `http://127.0.0.1:${API_PORT}/api/v1/health`;
 
+const PURCHASE_SPEC = /purchase-mobile\.spec\.ts$/;
+const channelUse = process.env.E2E_BROWSER_CHANNEL
+  ? { channel: process.env.E2E_BROWSER_CHANNEL }
+  : {};
+const SKIP_WEBKIT =
+  process.env.E2E_SKIP_WEBKIT === "1" ||
+  (process.env.E2E_SKIP_WEBKIT !== "0" && !!process.env.E2E_BROWSER_CHANNEL);
+
 export default defineConfig({
   forbidOnly: IS_CI,
   testDir: "./e2e",
+  // Khởi động nguội: làm nóng route/rewrite của Next dev trước khi chạy test (D-083).
+  globalSetup: "./e2e/global-setup.ts",
   workers: 1, // rate limit đăng nhập 5/phút/IP
   fullyParallel: false,
   retries: IS_CI ? 1 : 0,
@@ -70,14 +80,36 @@ export default defineConfig({
   },
   // Mặc định dùng Chromium của Playwright. Máy bị chặn chạy file tải về (Application Control)
   // thì đặt E2E_BROWSER_CHANNEL=msedge (hoặc chrome) để dùng trình duyệt Chromium đã cài sẵn.
+  // D-083: chromium = desktop, toàn bộ spec trừ spec luồng mua mobile; mobile-390 và webkit-smoke
+  // chỉ chạy spec luồng mua (purchase-mobile.spec.ts).
   projects: [
     {
       name: "chromium",
+      testIgnore: PURCHASE_SPEC,
+      use: { ...devices["Desktop Chrome"], ...channelUse },
+    },
+    {
+      name: "mobile-390",
+      testMatch: PURCHASE_SPEC,
       use: {
-        ...devices["Desktop Chrome"],
-        ...(process.env.E2E_BROWSER_CHANNEL ? { channel: process.env.E2E_BROWSER_CHANNEL } : {}),
+        ...devices["Pixel 7"],
+        viewport: { width: 390, height: 844 },
+        isMobile: true,
+        hasTouch: true,
+        ...channelUse,
       },
     },
+    // WebKit chỉ khi có trình duyệt: bỏ qua mặc định khi dùng kênh Edge/Chrome có sẵn (máy
+    // chặn file tải về), hoặc khi E2E_SKIP_WEBKIT=1; ép bật bằng E2E_SKIP_WEBKIT=0.
+    ...(SKIP_WEBKIT
+      ? []
+      : [
+          {
+            name: "webkit-smoke",
+            testMatch: PURCHASE_SPEC,
+            use: { ...devices["iPhone 13"] },
+          },
+        ]),
   ],
   webServer: EXTERNAL_BASE_URL
     ? undefined
@@ -91,6 +123,10 @@ export default defineConfig({
           env: {
             JOBS_ENABLED: "false",
             GENERAL_RATE_LIMIT_PER_MIN: "1000",
+            // Nhiều project cùng đặt đơn từ một IP: nới limiter đặt đơn/mã/quote như CI (ưu tiên env).
+            ORDER_RATE_LIMIT_PER_MIN: process.env.ORDER_RATE_LIMIT_PER_MIN ?? "200",
+            COUPON_RATE_LIMIT_PER_MIN: process.env.COUPON_RATE_LIMIT_PER_MIN ?? "200",
+            QUOTE_RATE_LIMIT_PER_MIN: process.env.QUOTE_RATE_LIMIT_PER_MIN ?? "200",
             // Limiter nhóm auth (login/register/...) mặc định 5/phút; E2E có ~5 lượt đăng nhập.
             AUTH_RATE_LIMIT_PER_MIN: "30",
             // D-063: khóa AES-256 giả cho secret 2FA (32 byte ASCII; chỉ dev/E2E, production từ chối).
@@ -113,7 +149,8 @@ export default defineConfig({
         {
           command: CUSTOM_WEB_PORT ? `npx next dev -p ${WEB_PORT}` : "npm run dev",
           cwd: __dirname,
-          url: FRONTEND_URL,
+          // Chờ qua rewrite của Next (không chỉ trang chủ) nên chứng minh proxy tới backend hoạt động.
+          url: `${FRONTEND_URL}/api/v1/health`,
           reuseExistingServer: !IS_CI,
           timeout: 180_000,
           // next.config.ts (rewrites) và lib/api/server (SSR) đọc API_INTERNAL_URL.

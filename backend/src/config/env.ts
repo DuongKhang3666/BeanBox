@@ -207,6 +207,24 @@ const schema = z
       .min(1000, 'ANALYTICS_STATEMENT_TIMEOUT_MS phải là số nguyên từ 1000 đến 120000')
       .max(120000, 'ANALYTICS_STATEMENT_TIMEOUT_MS phải là số nguyên từ 1000 đến 120000')
       .default(15000),
+    // D-079: thời gian tối đa cho tắt êm (chờ request/job đang chạy) trước khi buộc thoát với exit 1.
+    // Phải nhỏ hơn stop_grace_period của compose (30s) để Docker không SIGKILL trước.
+    SHUTDOWN_TIMEOUT_MS: z.coerce
+      .number()
+      .int('SHUTDOWN_TIMEOUT_MS phải là số nguyên từ 1000 đến 120000')
+      .min(1000, 'SHUTDOWN_TIMEOUT_MS phải là số nguyên từ 1000 đến 120000')
+      .max(120000, 'SHUTDOWN_TIMEOUT_MS phải là số nguyên từ 1000 đến 120000')
+      .default(25000),
+    // D-081: host (phân tách dấu phẩy) được phép làm avatarUrl https; rỗng = chỉ /uploads/.
+    AVATAR_URL_HOSTS: z
+      .string()
+      .default('')
+      .transform((s) =>
+        s
+          .split(',')
+          .map((h) => h.trim().toLowerCase())
+          .filter((h) => h.length > 0),
+      ),
     // D-063: khóa AES-256-GCM mã hóa secret 2FA (TOTP). Thiếu -> bật 2FA trả 503; production bắt buộc.
     TOTP_ENCRYPTION_KEY: z
       .string()

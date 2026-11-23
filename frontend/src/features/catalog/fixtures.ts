@@ -36,6 +36,8 @@ export function makeVariant(over: Partial<Variant> = {}): Variant {
     maxQuantity: 20,
     weightGram: 250,
     roastDate: null,
+    roastAgeDays: null,
+    roastStatus: null,
     ...over,
   };
 }

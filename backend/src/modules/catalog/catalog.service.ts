@@ -1,5 +1,6 @@
 import { Prisma } from '../../generated/prisma/client.js';
 import { AppError } from '../../lib/errors.js';
+import { roastAgeDays, roastStatusOfAge } from '../../lib/freshness.js';
 import { effectivePrice, isOnSale, summarizePrices } from '../../lib/pricing.js';
 import { prisma } from '../../lib/prisma.js';
 import { rankRelated, type RelatedProfile } from '../../lib/related.js';
@@ -345,6 +346,9 @@ export function stockStatusOf(stock: number, lowStockThreshold: number): StockSt
 
 export function toVariant(v: VariantRow, now: Date) {
   const onSale = isOnSale(v, now);
+  const roastAge = roastAgeDays(v.roastDate, now);
+  const roastStatus = roastStatusOfAge(roastAge);
+  const expired = roastStatus === 'EXPIRED';
   return {
     id: v.id,
     sku: v.sku,
@@ -357,9 +361,12 @@ export function toVariant(v: VariantRow, now: Date) {
     isOnSale: onSale,
     saleEndsAt: onSale && v.saleEnd ? v.saleEnd.toISOString() : null,
     stockStatus: stockStatusOf(v.stock, v.lowStockThreshold),
-    maxQuantity: Math.max(0, Math.min(v.stock, MAX_VARIANT_QUANTITY)),
+    // D-082: lô rang quá 90 ngày không mua được (maxQuantity 0, roastStatus EXPIRED).
+    maxQuantity: expired ? 0 : Math.max(0, Math.min(v.stock, MAX_VARIANT_QUANTITY)),
     weightGram: v.weightGram,
     roastDate: v.roastDate ? v.roastDate.toISOString().slice(0, 10) : null,
+    roastAgeDays: roastAge,
+    roastStatus,
   };
 }
 

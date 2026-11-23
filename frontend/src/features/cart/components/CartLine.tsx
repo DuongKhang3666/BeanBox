@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { ProductImage } from "@/features/catalog/components/ProductImage";
 import { cn } from "@/lib/cn";
+import { roastAgeLabel, roastWarning } from "@/features/catalog/freshness";
 import { formatVND } from "@/lib/format";
 import type { CartItem } from "@/types/cart";
 import { useCart } from "../CartProvider";
@@ -67,6 +68,12 @@ export function CartLine({ item }: { item: CartItem }) {
             <span className="font-medium">{formatVND(item.unitPrice)}</span>
           </p>
         </div>
+
+        {item.roastStatus === "PAST_RECOMMENDED" ? (
+          <p role="status" className="rounded-md bg-amber-50 px-2 py-1 text-sm text-amber-800">
+            {roastAgeLabel(item.roastAgeDays)}. {roastWarning(item.roastStatus)}
+          </p>
+        ) : null}
 
         {item.warnings.length > 0 ? (
           <ul className="space-y-1">

@@ -40,6 +40,8 @@ describe('priceCartLine', () => {
       warnings: [],
       countable: true,
       weightGram: 1000,
+      roastAgeDays: null,
+      roastStatus: null,
     });
   });
 

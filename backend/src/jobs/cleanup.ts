@@ -6,6 +6,7 @@ import { cancelOrderTx, failPendingPaymentsTx } from '../modules/orders/orders.c
 import { notifyOrderStatusChange } from '../modules/orders/orders.statusEmails.js';
 import { expireStripeSessionsBestEffort } from '../modules/payments/payments.expire.js';
 import type { StripeHttp } from '../modules/payments/stripe.js';
+import { runSaleRefreshOnce } from './saleRefresh.js';
 
 /**
  * Job nền (architecture §7). Chạy trong tiến trình API:
@@ -24,6 +25,7 @@ const GUEST_CART_TTL_DAYS = 30;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const INTERVAL_MS = 60 * 60 * 1000;
 const FIRST_RUN_DELAY_MS = 30_000;
+const SALE_REFRESH_INTERVAL_MS = 10 * 60 * 1000;
 
 export type CleanupResult =
   | { skipped: true }
@@ -360,18 +362,52 @@ async function safeRun(): Promise<void> {
   }
 }
 
-/** Dọn dẹp: 1 lần sau ~30 giây, rồi mỗi 60 phút; hết hạn thanh toán: mỗi 60 giây. Trả hàm dừng. Không giữ process sống (unref). */
-export function startBackgroundJobs(): () => void {
-  const first = setTimeout(() => void safeRun(), FIRST_RUN_DELAY_MS);
-  first.unref();
-  const timer = setInterval(() => void safeRun(), INTERVAL_MS);
-  timer.unref();
-  const expireTimer = setInterval(() => void safeRunExpire(), EXPIRE_INTERVAL_MS);
-  expireTimer.unref();
+async function safeRunSaleRefresh(): Promise<void> {
+  try {
+    await runSaleRefreshOnce();
+  } catch (err) {
+    logger.error({ err }, 'Job làm mới giá theo mốc sale thất bại');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Lịch chạy và tắt êm (D-079)
+
+/** Lượt đang chạy: `stopBackgroundJobs` chờ chúng kết thúc trước khi đóng DB. */
+const running = new Set<Promise<void>>();
+let timers: Array<ReturnType<typeof setTimeout> | ReturnType<typeof setInterval>> = [];
+let stopped = false;
+
+function track(fn: () => Promise<void>): void {
+  if (stopped) return;
+  const p: Promise<void> = fn().finally(() => running.delete(p));
+  running.add(p);
+}
+
+/**
+ * Dọn dẹp: 1 lần sau ~30 giây, rồi mỗi 60 phút; hết hạn thanh toán: mỗi 60 giây;
+ * làm mới giá theo mốc sale (D-080): 1 lần lúc khởi động rồi mỗi 10 phút.
+ * Không giữ process sống (unref). Dừng bằng `stopBackgroundJobs()`.
+ */
+export function startBackgroundJobs(): void {
+  stopped = false;
+  const first = setTimeout(() => track(safeRun), FIRST_RUN_DELAY_MS);
+  const cleanup = setInterval(() => track(safeRun), INTERVAL_MS);
+  const expire = setInterval(() => track(safeRunExpire), EXPIRE_INTERVAL_MS);
+  const saleFirst = setTimeout(() => track(safeRunSaleRefresh), 0);
+  const sale = setInterval(() => track(safeRunSaleRefresh), SALE_REFRESH_INTERVAL_MS);
+  timers = [first, cleanup, expire, saleFirst, sale];
+  for (const t of timers) t.unref();
   logger.info(`Đã bật job nền (JOBS_ENABLED=${String(env.JOBS_ENABLED)})`);
-  return () => {
-    clearTimeout(first);
-    clearInterval(timer);
-    clearInterval(expireTimer);
-  };
+}
+
+/** Ngừng lên lịch, rồi CHỜ các lượt đang chạy kết thúc (không bao giờ ném lỗi). Gọi nhiều lần an toàn. */
+export async function stopBackgroundJobs(): Promise<void> {
+  stopped = true;
+  for (const t of timers) {
+    clearTimeout(t);
+    clearInterval(t);
+  }
+  timers = [];
+  await Promise.allSettled([...running]);
 }

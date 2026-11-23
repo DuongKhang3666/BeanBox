@@ -8,13 +8,17 @@ import { cartErrorMessage } from "@/features/cart/messages";
 import { cn } from "@/lib/cn";
 import type { Variant } from "@/types/catalog";
 import { formatPlainDate, formatSaleDate } from "../dates";
+import { ROAST_EXPIRED_LABEL, roastAgeLabel, roastWarning } from "../freshness";
 import { STOCK_LABELS } from "../labels";
 import { PriceTag } from "./PriceTag";
 import { VariantSelector } from "./VariantSelector";
 
-/** Mặc định: biến thể đầu tiên còn hàng; nếu không có thì biến thể đầu. */
+/** Mặc định: biến thể đầu tiên còn hàng và chưa quá hạn rang; nếu không có thì biến thể đầu. */
 export function pickDefaultVariant(variants: Variant[]): Variant | undefined {
-  return variants.find((v) => v.stockStatus !== "OUT_OF_STOCK") ?? variants[0];
+  return (
+    variants.find((v) => v.stockStatus !== "OUT_OF_STOCK" && v.roastStatus !== "EXPIRED") ??
+    variants[0]
+  );
 }
 
 const STOCK_STYLE = {
@@ -43,7 +47,10 @@ export function AddToCartPanel({ variants }: { variants: Variant[] }) {
     return <p className="text-coffee-700">Sản phẩm hiện chưa có lựa chọn để mua.</p>;
   }
 
+  const roastExpired = variant.roastStatus === "EXPIRED";
   const outOfStock = variant.stockStatus === "OUT_OF_STOCK";
+  const unsellable = outOfStock || roastExpired;
+  const warning = roastWarning(variant.roastStatus);
   const max = Math.max(1, variant.maxQuantity);
   const clamp = (n: number) => Math.min(max, Math.max(1, Number.isFinite(n) ? Math.trunc(n) : 1));
   const qty = clamp(quantity);
@@ -89,10 +96,21 @@ export function AddToCartPanel({ variants }: { variants: Variant[] }) {
         {STOCK_LABELS[variant.stockStatus]}
       </p>
       {variant.roastDate ? (
-        <p className="text-sm text-coffee-700">Ngày rang: {formatPlainDate(variant.roastDate)}</p>
+        <p className="text-sm text-coffee-700">
+          Ngày rang: {formatPlainDate(variant.roastDate)}
+          {variant.roastAgeDays != null ? ` (${roastAgeLabel(variant.roastAgeDays)})` : ""}
+        </p>
+      ) : null}
+      {warning ? (
+        <p
+          role="status"
+          className={cn("text-sm font-medium", roastExpired ? "text-danger-600" : "text-amber-700")}
+        >
+          {warning}
+        </p>
       ) : null}
 
-      {!outOfStock ? (
+      {!unsellable ? (
         <div>
           <Label htmlFor={qtyId}>Số lượng</Label>
           <div className="inline-flex items-center rounded-lg border border-coffee-400 bg-white">
@@ -132,11 +150,17 @@ export function AddToCartPanel({ variants }: { variants: Variant[] }) {
       <Button
         size="lg"
         className="w-full sm:w-auto sm:min-w-56"
-        disabled={outOfStock || pending.adding || !hydrated}
+        disabled={unsellable || pending.adding || !hydrated}
         data-ready={hydrated ? "true" : "false"}
         onClick={onAdd}
       >
-        {outOfStock ? "Hết hàng" : pending.adding ? "Đang thêm..." : "Thêm vào giỏ"}
+        {roastExpired
+          ? ROAST_EXPIRED_LABEL
+          : outOfStock
+            ? "Hết hàng"
+            : pending.adding
+              ? "Đang thêm..."
+              : "Thêm vào giỏ"}
       </Button>
       {error ? (
         <p role="alert" className="text-sm font-medium text-danger-600">

@@ -1,6 +1,7 @@
 # BeanBox – API Contract
 
-> Phiên bản 0.28 · 2026-11-23 · **Nguồn sự thật cho FE và BE.** Đổi contract phải sửa file này trước và nêu trong báo cáo.
+> Phiên bản 0.29 · 2026-11-23 · **Nguồn sự thật cho FE và BE.** Đổi contract phải sửa file này trước và nêu trong báo cáo.
+> Thay đổi 0.29 (D-079..D-082; Đợt 5 task 1): (1) §4.4 `Variant` (cũng là Variant của mọi endpoint dùng chung) thêm `roastAgeDays` (`number | null`, ngày nguyên theo giờ Việt Nam kể từ `roastDate`, >= 0) và `roastStatus` (`"FRESH"` <= 30 ngày | `"PAST_RECOMMENDED"` 31-90 ngày | `"EXPIRED"` > 90 ngày | `null` khi `roastDate` null); biến thể `EXPIRED` có `maxQuantity = 0`. (2) §8 mỗi dòng giỏ thêm `roastAgeDays` và `roastStatus` (cùng nghĩa); dòng `EXPIRED` mang cảnh báo `UNAVAILABLE` nên không tính tiền. (3) Lô rang quá 90 ngày KHÔNG bán được: `POST /cart/items`, `PATCH /cart/items/:itemId` -> 409 `ITEM_UNAVAILABLE` với `details.reason = "ROAST_EXPIRED"` (và `details.items[0].reason`); `POST /checkout/quote` trả `issues[]` kiểu `UNAVAILABLE` kèm `reason: "ROAST_EXPIRED"`; `POST /orders` -> 409 `ITEM_UNAVAILABLE`, `details.items[] {variantId, reason?}` (`reason = "ROAST_EXPIRED"` cho dòng quá hạn rang); `POST /me/orders/:code/reorder` bỏ qua dòng đó với `reason = DISCONTINUED`; merge giỏ khách bỏ dòng đó (`UNAVAILABLE`). Không thêm mã lỗi mới. (4) §6.2 `PATCH /me`: `avatarUrl` chỉ nhận `/uploads/...` hợp lệ hoặc URL `https:` có host trong env `AVATAR_URL_HOSTS` (mặc định rỗng = chỉ `/uploads`); sai -> 400 `VALIDATION_ERROR`, `details[0].field = "avatarUrl"` (trước đây nhận mọi `http:`/`https:`). (5) Không route mới, không migration. (1)(2) CỘNG THÊM; (3)(4) là thay đổi hành vi (siết).
 > Thay đổi 0.28 (D-078; Đợt 4 nhóm 4, R-23 giá vốn bình quân gia quyền di động và lợi nhuận gộp): (1) §12.2 `POST /admin/inventory/adjust` nhận `unitCost` (đơn giá nhập, VND, số nguyên 0..100.000.000): Admin BẮT BUỘC khi `reason = RESTOCK` (thiếu -> 400 field `unitCost`), chỉ dùng với `RESTOCK` (lý do khác -> 400), Staff gửi `unitCost` -> 403 `FORBIDDEN` (Staff vẫn nhập hàng được, không đơn giá, giá vốn giữ nguyên). Mục "Giá vốn bình quân" mới ở §12.2 mô tả công thức. (2) CHỈ ADMIN nhận thêm: `InventoryItem.avgCost`, `InventoryMovementDto.unitCost`, `AdminVariant.avgCost` (`number|null`); với Staff các khóa này KHÔNG xuất hiện. `POST /admin/products/:id/variants` và `PATCH /admin/variants/:id` nhận `avgCost` (Admin; Staff gửi -> 403) + audit `variant.cost_set`. (3) §12.4b CSV sản phẩm thêm cột cuối `avg_cost` (xuất luôn có; nhập: cột có thể vắng, vắng = không đụng giá vốn). (4) §16.1 `kpis` thêm `grossProfit` (Compared), `grossMargin` và `costCoverage` (ComparedRate); §16.2.2 top-products thêm `cogs`, `grossProfit`, `margin`, `costCoverage`; §16.3 inventory `summary` thêm `stockCostValue`, `variantsWithoutCost`, mỗi item thêm `avgCost`, `stockCostValue`; §16.4 CSV `overview`, `top-products`, `inventory` thêm dòng/cột tương ứng (cột mới nằm CUỐI). (5) Không route mới; không đổi DTO đơn hàng (khách, Staff, Admin không thấy `unitCost` ở bất kỳ API đơn nào, chỉ analytics Admin dùng). Migration `d078_avg_cost` (3 cột nullable, không backfill). Thay đổi CỘNG THÊM.
 > Thay đổi 0.27 (D-075, D-076, D-077; Đợt 4 nhóm 3, R-09/R-05/"Mua lại"): (1) §1 Cache: catalog công khai (`GET/HEAD` `/products`, `/products/:slug`, `/products/compare`, `/products/:slug/bought-together`, `/categories`, `/categories/:slug`, `/brands`, `/search/suggest`) trả `Cache-Control: public, max-age=30, s-maxage=60, stale-while-revalidate=120` CHỈ khi thành công; mọi lỗi 4xx/5xx (kể cả 404, 400) là `no-store`; `/uploads` tên file ngẫu nhiên do server sinh -> `public, max-age=31536000, immutable`, tên khác (ảnh seed) -> `public, max-age=86400`. (2) §2 mã lỗi mới `429 ORDER_LOOKUP_LOCKED` + §9.4 (mục "Khóa tạm theo mã đơn"): khóa tạm theo mã đơn cho thao tác khách vãng lai (5 lần sai trong 15 phút -> khóa 15 phút), có `details.retryAfterSec` và header `Retry-After`. (3) §6.7 mới `POST /me/orders/:code/reorder` ("Mua lại", Auth). Thay đổi CỘNG THÊM: không đổi trường hiện có; hành vi cache của catalog thành công đổi từ "không đặt header" sang header công khai ở trên. Không cần migration.
 > Thay đổi 0.26 (D-071, D-072, D-073; Đợt 4 nhóm 1, R-21 công cụ vận hành): (1) §12.1b mới: ghi chú nội bộ trên đơn `GET/POST /admin/orders/:code/notes`, `DELETE /admin/orders/:code/notes/:noteId` (chỉ Admin), và `GET /admin/orders/print?codes=` (dữ liệu in hàng loạt, tối đa 50 mã). `AdminOrderListItem` thêm `noteCount: number`. (2) §12.4b mới: `GET /admin/products/export` và nhập CSV 2 bước `POST /admin/products/import/preview` / `commit` (chỉ Admin). (3) §2 mã lỗi mới: `INVALID_CSV` (400), `FINGERPRINT_MISMATCH` (409), `IMPORT_HAS_ERRORS` (422). Thay đổi CỘNG THÊM, không đổi trường/endpoint hiện có.
@@ -158,7 +159,7 @@ Phân trang: query `page` (>= 1, mặc định 1), `pageSize` (1–100, mặc đ
 | 409  | `EMAIL_TAKEN`                | Email đã được sử dụng                                                                                                                                                                        |
 | 409  | `OUT_OF_STOCK`               | Không đủ tồn kho; `details.items[]` `{variantId, requested, available}`                                                                                                                      |
 | 409  | `QUANTITY_LIMIT_EXCEEDED`    | Quá 20 sản phẩm/dòng                                                                                                                                                                         |
-| 409  | `ITEM_UNAVAILABLE`           | Biến thể/sản phẩm ngừng bán hoặc không tồn tại                                                                                                                                               |
+| 409  | `ITEM_UNAVAILABLE`           | Biến thể/sản phẩm ngừng bán hoặc không tồn tại, hoặc lô rang quá 90 ngày (`details.reason = ROAST_EXPIRED`, D-082)                                                                                                                                               |
 | 409  | `CART_EMPTY`                 | Giỏ trống khi checkout                                                                                                                                                                       |
 | 409  | `COUPON_INVALID`             | Mã không hợp lệ; `details.reason` (xem §8.7)                                                                                                                                                 |
 | 409  | `PRICE_CHANGED`              | Giá tổng khác `expectedTotal` client gửi; `details.expectedTotal/grandTotal/quote` (§9.2)                                                                                                    |
@@ -259,6 +260,8 @@ Tất cả **Public**; chỉ trả sản phẩm `status=ACTIVE` và `deletedAt I
   "maxQuantity": 20, // min(stock, 20)
   "weightGram": 250,
   "roastDate": "2026-11-01",
+  "roastAgeDays": 13, // số ngày kể từ roastDate (giờ VN) hoặc null; D-082
+  "roastStatus": "FRESH", // FRESH (<= 30 ngày) | PAST_RECOMMENDED (31-90) | EXPIRED (> 90, ngừng bán; maxQuantity = 0) | null
 }
 ```
 
@@ -639,7 +642,7 @@ Quy tắc:
 
 ### 6.2 `PATCH /me` – Auth
 
-Body (ít nhất 1 trường hợp lệ, nếu không -> 400): `fullName` string 2–100; `phone` string \| null (chuẩn hóa theo §1 / D-007; `null` để xóa); `birthDate` `YYYY-MM-DD` \| null (không ở tương lai, năm >= 1900); `avatarUrl` string URL http(s) <= 500 \| null. Không đổi được `email`, `role`. 200 `{ "data": User }`. Lỗi: 400, 401.
+Body (ít nhất 1 trường hợp lệ, nếu không -> 400): `fullName` string 2–100; `phone` string \| null (chuẩn hóa theo §1 / D-007; `null` để xóa); `birthDate` `YYYY-MM-DD` \| null (không ở tương lai, năm >= 1900); `avatarUrl` string <= 500 \| null: chỉ nhận đường dẫn tương đối `/uploads/...` (mỗi đoạn bắt đầu bằng chữ/số; không `..`, không `//`, không query/hash) hoặc URL `https:` (không user:pass, không cổng, không hash) có host nằm trong env `AVATAR_URL_HOSTS` (D-081; mặc định rỗng = chỉ `/uploads`); sai -> 400 `VALIDATION_ERROR` field `avatarUrl`, `null` để xóa. Giá trị cũ không còn hợp lệ không bị xóa khỏi DB (FE không hiển thị). Không đổi được `email`, `role`. 200 `{ "data": User }`. Lỗi: 400, 401.
 
 ### 6.3 Địa chỉ
 
@@ -784,7 +787,7 @@ Mã dự phòng: 10 mã/lần, dạng `XXXXX-XXXXX` (bảng chữ cái 31 ký t�
 ```
 
 - Mỗi dòng: biến thể phải tồn tại, `isActive`, chưa xóa, sản phẩm `ACTIVE` chưa xóa, còn tồn. Số thêm = `min(số lượng cũ, min(20, tồn kho) - số đã có trong giỏ)`. Thêm đủ -> `added`; thêm được một phần (0 < thêm < cũ) -> `adjusted` (`requested` = số cũ, `added` = số thực thêm); không thêm được -> `skipped`.
-- `reason`: `DISCONTINUED` (biến thể/sản phẩm đã ngừng bán hoặc bị xóa), `OUT_OF_STOCK` (tồn 0), `UNAVAILABLE` (còn hàng nhưng giỏ đã đạt giới hạn mua của biến thể: 20 hoặc toàn bộ tồn kho).
+- `reason`: `DISCONTINUED` (biến thể/sản phẩm đã ngừng bán hoặc bị xóa, hoặc lô rang quá 90 ngày), `OUT_OF_STOCK` (tồn 0), `UNAVAILABLE` (còn hàng nhưng giỏ đã đạt giới hạn mua của biến thể: 20 hoặc toàn bộ tồn kho).
 - Gọi lặp cộng dồn nhưng không bao giờ vượt `min(20, tồn kho)` mỗi biến thể; gọi đồng thời được tuần tự hóa bằng khóa giỏ. `cart` là giỏ sau khi thêm (`cartToken` = null); mã giảm giá của giỏ giữ nguyên. Không có limiter riêng (chỉ limiter chung 100 req/phút/IP).
 
 ## 7. Locations
@@ -879,7 +882,7 @@ Lỗi: `:code` sai định dạng (không phải 2 chữ số) hoặc không t�
 ```
 
 - `cartToken`: **chỉ có giá trị khi vừa cấp mới** (guest tạo giỏ); các lần sau là `null`. Đồng thời gửi header `X-Cart-Token`. Giỏ user luôn `null`.
-- `warnings` (mảng, có thể rỗng): `PRICE_CHANGED` (`unitPrice != unitPriceAtAdd`), `INSUFFICIENT_STOCK` (quantity > tồn), `OUT_OF_STOCK`, `UNAVAILABLE` (variant/sản phẩm ngừng bán). `maxQuantity = min(stock, 20)`.
+- `warnings` (mảng, có thể rỗng): `PRICE_CHANGED` (`unitPrice != unitPriceAtAdd`), `INSUFFICIENT_STOCK` (quantity > tồn), `OUT_OF_STOCK`, `UNAVAILABLE` (variant/sản phẩm ngừng bán, hoặc lô rang quá 90 ngày: `roastStatus = "EXPIRED"`, D-082). `maxQuantity = min(stock, 20)`. Mỗi dòng có `roastAgeDays`, `roastStatus` (như `Variant` §4.4).
 - `subtotal` chỉ cộng các dòng không có `OUT_OF_STOCK`/`UNAVAILABLE`. `itemCount` = tổng `quantity` các dòng đó.
 - `coupon` = `null` nếu chưa áp. Nếu mã đã áp nhưng không còn hợp lệ (hết hạn, không đủ điều kiện sau khi giỏ đổi): `valid:false`, `invalidReason` có giá trị, `discount: 0`. Phần giảm FREESHIP không nằm trong `discountTotal` (tính ở quote).
 - `coupon.minOrder` (int) chỉ xuất hiện khi `invalidReason = MIN_ORDER` (ngoại lệ của quy ước null), là giá trị đơn tối thiểu để FE hiển thị. Cũng áp cho `coupon` trong quote (§9.1).
@@ -896,7 +899,7 @@ Lỗi: `:code` sai định dạng (không phải 2 chữ số) hoặc không t�
 ### 8.2 `POST /cart/items` – Optional
 
 Body: `{ "variantId": "ckv1", "quantity": 2 }` (`quantity` int 1–20). Variant đã có trong giỏ -> cộng dồn. 201 Cart.
-Lỗi: 400; 404 `NOT_FOUND` (variant không tồn tại); 409 `ITEM_UNAVAILABLE`; 409 `OUT_OF_STOCK` (tổng sau khi cộng > tồn; `details.items[0] = {variantId, requested, available}`); 409 `QUANTITY_LIMIT_EXCEEDED` (tổng > 20).
+Lỗi: 400; 404 `NOT_FOUND` (variant không tồn tại); 409 `ITEM_UNAVAILABLE` (kể cả lô rang quá 90 ngày, `details.reason = "ROAST_EXPIRED"`); 409 `OUT_OF_STOCK` (tổng sau khi cộng > tồn; `details.items[0] = {variantId, requested, available}`); 409 `QUANTITY_LIMIT_EXCEEDED` (tổng > 20).
 
 ### 8.3 `PATCH /cart/items/:itemId` – Optional
 
@@ -1076,7 +1079,7 @@ Tính giá từ giỏ hiện tại (không tạo đơn, không giữ kho). Body:
 
 `paymentMethods[]` (0.20): `MOMO` và `BANK_TRANSFER` CHỈ xuất hiện khi đã bật (`PAYMENT_MOCKS_ENABLED`, `BANK_TRANSFER_ENABLED`); mặc định danh sách vẫn là COD, VNPAY, STRIPE. Phần tử có thể có `mock: true` (VNPAY/MOMO khi đang dùng cổng giả) để FE hiện nhãn "Giả lập, không trừ tiền thật".
 
-`eta` (0.21, D-062): `minDays`/`maxDays` lấy từ setting `shipping.eta` theo vùng (`shippingZone`) x phương thức; `fromDate = ngày đặt + minDays`, `toDate = ngày đặt + maxDays` theo NGÀY LỊCH Việt Nam (UTC+7; đặt lúc 23:30 vẫn tính từ ngày đó; không loại chủ nhật hay ngày lễ, chỉ là ước tính). `POST /orders` dùng cùng hàm nên ngày lưu trên đơn khớp ngày quote cho cùng thời điểm. `fee` = `baseFee + weightSurcharge` (trước giảm); `shippingDiscount` gồm freeship ngưỡng hoặc mã FREESHIP; `payableFee = fee - shippingDiscount`; `grandTotal = subtotal - discountTotal + payableFee`. `issues.type`: `OUT_OF_STOCK` | `INSUFFICIENT_STOCK` | `UNAVAILABLE`; quote vẫn trả 200 để UI hiển thị, nhưng `POST /orders` sẽ từ chối. Mã không hợp lệ không làm quote lỗi: `coupon.valid=false` và `discount=0`; khi `invalidReason = MIN_ORDER` thì `coupon.minOrder` (int) có mặt như ở §8.
+`eta` (0.21, D-062): `minDays`/`maxDays` lấy từ setting `shipping.eta` theo vùng (`shippingZone`) x phương thức; `fromDate = ngày đặt + minDays`, `toDate = ngày đặt + maxDays` theo NGÀY LỊCH Việt Nam (UTC+7; đặt lúc 23:30 vẫn tính từ ngày đó; không loại chủ nhật hay ngày lễ, chỉ là ước tính). `POST /orders` dùng cùng hàm nên ngày lưu trên đơn khớp ngày quote cho cùng thời điểm. `fee` = `baseFee + weightSurcharge` (trước giảm); `shippingDiscount` gồm freeship ngưỡng hoặc mã FREESHIP; `payableFee = fee - shippingDiscount`; `grandTotal = subtotal - discountTotal + payableFee`. `issues.type`: `OUT_OF_STOCK` | `INSUFFICIENT_STOCK` | `UNAVAILABLE` (kèm `reason: "ROAST_EXPIRED"` khi do lô rang quá 90 ngày, D-082); quote vẫn trả 200 để UI hiển thị, nhưng `POST /orders` sẽ từ chối. Mã không hợp lệ không làm quote lỗi: `coupon.valid=false` và `discount=0`; khi `invalidReason = MIN_ORDER` thì `coupon.minOrder` (int) có mặt như ở §8.
 Lỗi: 400 (thiếu `provinceCode`/`addressId`, mã tỉnh sai); 404 (`addressId` không thuộc user); 409 `CART_EMPTY`; 429 `RATE_LIMITED` (30/phút/IP, D-011).
 
 ### 9.2 `POST /orders` – Optional
@@ -1135,7 +1138,7 @@ Ví dụ:
 - Kiểm tra replay xảy ra TRƯỚC kiểm giỏ trống: gọi lại sau khi giỏ đã bị xóa vẫn 200.
   **Chi tiết lỗi nghiệp vụ (0.4):**
 - `PRICE_CHANGED`: `details: { "expectedTotal": int, "grandTotal": int, "quote": <object giống data của POST /checkout/quote cho cùng địa chỉ/mã> }`.
-- `OUT_OF_STOCK`: liệt kê MỌI dòng thiếu, `details.items[] {variantId, requested, available}`. `ITEM_UNAVAILABLE`: `details.items[] {variantId}`. Dòng giỏ có issue bất kỳ (`OUT_OF_STOCK`/`INSUFFICIENT_STOCK`/`UNAVAILABLE`) -> từ chối cả đơn.
+- `OUT_OF_STOCK`: liệt kê MỌI dòng thiếu, `details.items[] {variantId, requested, available}`. `ITEM_UNAVAILABLE`: `details.items[] {variantId, reason?}` (`reason = "ROAST_EXPIRED"` khi lô rang quá 90 ngày, D-082). Dòng giỏ có issue bất kỳ (`OUT_OF_STOCK`/`INSUFFICIENT_STOCK`/`UNAVAILABLE`) -> từ chối cả đơn.
 - Mã giảm giá không hợp lệ vì BẤT KỲ lý do nào ở `POST /orders` -> 409 `COUPON_INVALID` (`details.reason`), không âm thầm bỏ mã.
   **Email xác nhận (0.4):** sau commit, gửi nền email xác nhận đơn tới `contactEmail`; lỗi mail không ảnh hưởng đơn. Link: user -> `${WEB_APP_URL}/tai-khoan/don-hang/<code>`; guest -> `${WEB_APP_URL}/tra-cuu-don-hang?code=<code>` (KHÔNG đưa SĐT vào URL).
   Lỗi: 400 `VALIDATION_ERROR` (gồm thiếu header key, `acceptTerms` false); 401 (guest dùng `addressId`); 404 (`addressId` lạ); 409 `CART_EMPTY`, `OUT_OF_STOCK` (rollback; `details.items[]`), `ITEM_UNAVAILABLE`, `COUPON_INVALID` (kể cả `reason` `USAGE_LIMIT`/`PER_USER_LIMIT` phát sinh ở bước giữ lượt, rollback cả trừ kho), `PRICE_CHANGED`, `IDEMPOTENCY_CONFLICT`, `PAYMENT_METHOD_UNAVAILABLE`, `TOO_MANY_PENDING_ORDERS` (0.19); 400 `CAPTCHA_FAILED` và 503 `SERVICE_UNAVAILABLE` (captcha, 0.19); 429.

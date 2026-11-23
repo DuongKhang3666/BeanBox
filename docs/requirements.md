@@ -286,6 +286,7 @@ FAILED_DELIVERY ──(chỉ staff)───────────────
 ### 5.6 Cà phê
 - Hiển thị ngày rang của lô hiện tại; khuyến nghị dùng trong 30 ngày sau rang.
 - Không bán lô hạt đã rang quá 90 ngày (admin đánh dấu ngừng bán biến thể/lô).
+- Hiện thực (D-082): server tính tuổi hạt theo ngày VN từ `roastDate`; > 30 ngày hiện cảnh báo, > 90 ngày tự động không bán được (giỏ, báo giá, đặt đơn từ chối `ITEM_UNAVAILABLE`/`ROAST_EXPIRED`) mà admin không cần đánh dấu tay; `roastDate` trống thì không áp.
 
 ---
 

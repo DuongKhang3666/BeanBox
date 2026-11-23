@@ -82,6 +82,11 @@
 - [D-076 Khóa tạm theo mã đơn cho khách vãng lai](#d-076-khóa-tạm-theo-mã-đơn-cho-khách-vãng-lai)
 - [D-077 Mua lại](#d-077-mua-lại)
 - [D-078 Giá vốn bình quân gia quyền di động và lợi nhuận gộp](#d-078-giá-vốn-bình-quân-gia-quyền-di-động-và-lợi-nhuận-gộp)
+- [D-079 Tắt êm và lỗi tiến trình](#d-079-tắt-êm-và-lỗi-tiến-trình)
+- [D-080 Làm mới minPrice theo mốc sale](#d-080-làm-mới-minprice-theo-mốc-sale)
+- [D-081 Allowlist ảnh đại diện](#d-081-allowlist-ảnh-đại-diện)
+- [D-082 Độ tươi hạt cà phê](#d-082-độ-tươi-hạt-cà-phê)
+- [D-083 E2E mobile 390 px, smoke WebKit, warm-up khởi động nguội, đo tải đặt hàng đồng thời](#d-083-e2e-mobile-390-px-smoke-webkit-warm-up-khởi-động-nguội-đo-tải-đặt-hàng-đồng-thời)
 
 ---
 
@@ -1319,3 +1324,76 @@
 - **Hệ quả/rủi ro:** bình quân di động khiến giá vốn "trôi" theo từng lần nhập; hàng nhập trước ngày bật tính năng chưa có giá vốn cho tới khi Admin nhập tay (CSV là cách nhanh nhất). Tồn âm không xảy ra (CHECK `stock >= 0`), nhưng công thức vẫn xử lý `max(tồn, 0)`. Đánh đổi đã chốt (Tech Lead): Staff nhập hàng (RESTOCK) không kèm đơn giá -> `avgCost` giữ nguyên, có thể làm giá bình quân kém chính xác (tồn tăng nhưng giá vốn không phản ánh lô mới); Admin bắt buộc nhập đơn giá. Giữ như vậy. Giá vốn chụp lúc đặt nên đơn đặt trước khi sửa tay giá vốn giữ giá cũ (đúng ý đồ "báo cáo không đổi ngược"). Hủy đơn không hoàn nhập giá vốn nên đơn hủy không có trong báo cáo (đã loại theo D-019).
 - **Migration:** `d078_avg_cost`: 3 cột nullable (`ProductVariant.avgCost`, `InventoryMovement.unitCost`, `OrderItem.unitCost`), không enum mới, không đổi dữ liệu cũ.
 - **Docs bị ảnh hưởng:** `api-contract.md` 0.28 (§12.2, §12.4, §12.4b, §16.1-16.4), `db-schema.md` 0.16, `testing.md`, `README.md`, `overview.md`, `roadmap-next.md` (R-23), `wave4-plan.md`.
+
+## D-079 Tắt êm và lỗi tiến trình
+
+- **Ngày:** 2026-11-23 · **Người chốt:** Tech Lead (Đợt 5, R-16)
+- **Trạng thái:** Áp dụng. Bổ sung D-030 (health), D-058 (hai client Prisma), D-015 (job nền).
+- **Bối cảnh:** `server.ts` chỉ có handler `SIGTERM`/`SIGINT` đóng server rồi thoát sau tối đa 10 giây; không chờ job đang chạy (job có thể đang hủy đơn giữa transaction khi DB bị đóng), không bắt `uncaughtException`/`unhandledRejection` (tiến trình chết không log có cấu trúc), và mặc định Docker `stop_grace_period` chỉ 10 giây.
+- **Quyết định:**
+  1. **Hàm thuần `createShutdown(deps)`** (`lib/shutdown.ts`) nhận phụ thuộc tiêm được (đóng server, đóng socket nhàn rỗi, dừng job, ngắt DB, `exit`, log, timer) để test bằng đối tượng giả; `server.ts` chỉ ghép phụ thuộc thật. Chạy MỘT lần: lần gọi sau (SIGTERM đến 2 lần, lỗi xảy ra lúc đang tắt) chỉ log và trả cùng promise.
+  2. **Thứ tự:** `server.close` (ngừng nhận kết nối mới; request đang xử lý được chờ xong) -> `closeIdleConnections` (socket keep-alive 65 giây không giữ việc tắt) -> `stopBackgroundJobs()` (xóa lịch, rồi CHỜ mọi lượt job đang chạy, không bao giờ ném lỗi) -> chờ server đóng xong -> `disconnectPrisma()` (cả client chính và analytics) -> `exit(code)`. Bước lỗi chỉ log và đổi mã thoát thành 1, không chặn bước sau.
+  3. **Mã thoát:** `SIGTERM`/`SIGINT` -> 0; `uncaughtException`/`unhandledRejection` -> log `fatal` (pino, kèm `err`; không log env/secret, header nhạy cảm đã bị redact) rồi tắt êm với 1 (không để tiến trình sống tiếp ở trạng thái không xác định).
+  4. **Timeout tổng:** `SHUTDOWN_TIMEOUT_MS` (mặc định 25000, 1000..120000); quá thì log lỗi và `exit(1)`. Compose `backend` (dev profile app, demo, prod) đặt `stop_grace_period: 30s` để Docker không SIGKILL trước khi timeout nội bộ kịp chạy (mặc định 10 giây của Docker nhỏ hơn).
+  5. **Job nền:** `startBackgroundJobs()` trả `void`; mỗi lượt được theo dõi trong một `Set` promise; `stopBackgroundJobs(): Promise<void>` chờ `Promise.allSettled`. Sau khi dừng, timer đã xóa và lượt mới không được lên lịch.
+- **Kiểm thật (image runtime tạm, DB tạm):** `docker stop` khi có 1 kết nối keep-alive nhàn rỗi: log "Tắt êm: SIGTERM" rồi "Đã tắt êm (exit 0)", mã thoát 0, 0,49 giây. Ép `unhandledRejection` sau khởi động: log `fatal` (level 60) kèm stack, tắt êm, mã thoát 1.
+- **Không làm:** hạn chế request mới bằng 503 trong lúc tắt (server đã ngừng nhận kết nối mới; `/health` không phân biệt "đang tắt"); retry lượt job bị cắt giữa chừng khi hết timeout (job idempotent, lượt sau tự nhặt, D-015).
+- **Docs bị ảnh hưởng:** `backend/.env.example`, `.env.production.example`, compose, `testing.md`, `roadmap-next.md` (R-16), `wave5-plan.md`.
+
+## D-080 Làm mới minPrice theo mốc sale
+
+- **Ngày:** 2026-11-23 · **Người chốt:** Tech Lead (Đợt 5, R-17)
+- **Trạng thái:** Áp dụng. Bổ sung `db-schema.md` §5 (denormalize), D-015 (job nền).
+- **Bối cảnh:** `Product.minPrice` chỉ được tính lại khi có thao tác ghi. Khi `saleStart`/`saleEnd` của một biến thể qua mốc mà không ai sửa sản phẩm, lọc theo khoảng giá và `sort=price_*` vẫn dùng giá cũ (hiển thị giá ở trang chi tiết/giỏ vẫn đúng vì tính theo `now` ở server).
+- **Quyết định:**
+  1. **Đối soát không trạng thái, không bảng/cột mới:** `jobs/saleRefresh.ts`. Một truy vấn SQL tập hợp (`LEFT JOIN LATERAL` trên biến thể `isActive` chưa xóa) tính giá hiệu lực nhỏ nhất theo ĐÚNG quy tắc `effectivePrice` (`salePrice` khi có và `saleStart <= now <= saleEnd`, biên tính cả hai đầu, bound null = mở, ngược lại `price`; không biến thể = 0) rồi lấy sản phẩm chưa xóa có `minPrice` khác. Mỗi sản phẩm lệch được làm mới bằng chính `refreshProductDenorm` (một nguồn logic; `searchText`/`inStock` cũng được tính lại cùng lúc), mỗi sản phẩm một transaction để lỗi một sản phẩm không chặn sản phẩm khác.
+  2. **Lịch và khóa:** advisory lock riêng `6_661_000_003` (giữ suốt lượt như job hết hạn thanh toán); chạy 1 lần lúc khởi động rồi mỗi 10 phút; tối đa 500 sản phẩm mỗi lượt (phần còn lại để lượt sau); log số đã làm mới và số lỗi khi > 0. Tôn trọng `JOBS_ENABLED`; chạy trong cùng cơ chế theo dõi lượt của `cleanup.ts` nên tắt êm chờ được (D-079).
+  3. **Idempotent:** sản phẩm không lệch không bị ghi (không đổi `updatedAt`); chạy lại ngay cho kết quả 0.
+  4. **Cột denorm khác:** `compareAtPrice` và cờ đang sale không lưu mà tính lúc đọc (`summarizePrices`), nên chỉ `minPrice` cần đối soát. `inStock` không phụ thuộc thời gian.
+  5. **Độ trễ:** tối đa ~10 phút kể từ mốc (cộng cache HTTP ngắn của catalog, D-075).
+  6. **Hệ quả nhỏ:** `Product.updatedAt` đổi khi sản phẩm được làm mới theo mốc sale, nên `lastmod` của sitemap (D-064) nhích theo; chấp nhận được vì giá thật sự đã đổi.
+- **Docs bị ảnh hưởng:** `db-schema.md` §5, `architecture.md` §7, `testing.md`, `roadmap-next.md` (R-17).
+
+## D-081 Allowlist ảnh đại diện
+
+- **Ngày:** 2026-11-23 · **Người chốt:** Tech Lead (Đợt 5, R-18 rút gọn)
+- **Trạng thái:** Áp dụng. Siết D-013 (upload) cho trường `User.avatarUrl`.
+- **Bối cảnh:** `avatarUrl` nhận mọi URL `http:`/`https:`: người dùng có thể trỏ tới máy chủ bất kỳ (theo dõi người xem trang, nội dung hỗn hợp http). FE chỉ có ô nhập, chưa hiển thị ảnh.
+- **Quyết định:**
+  1. **Chấp nhận (chỉ hai dạng):** (a) đường dẫn tương đối `/uploads/...`: mỗi đoạn bắt đầu bằng chữ/số rồi `[A-Za-z0-9._-]` (loại `.`, `..`, `//`, query, hash, khoảng trắng, `\`, `%`), tối đa 500 ký tự, không chứa `..`; (b) URL `https:` đúng dạng `https://host...`, không `user:pass@`, không cổng, không `#`, có `hostname` (không phân biệt hoa thường, khớp CHÍNH XÁC, không khớp host con) nằm trong env `AVATAR_URL_HOSTS` (phân tách dấu phẩy; mặc định rỗng = chỉ `/uploads`). `null` để xóa. Không `http:`, `data:`, `javascript:`... Sai -> 400 `VALIDATION_ERROR`, field `avatarUrl`, thông báo tiếng Việt.
+  2. **Mọi chỗ ghi:** đã grep: chỉ `PATCH /me` (zod `updateProfileSchema`) ghi `avatarUrl` từ đầu vào; xóa tài khoản ghi `null`.
+  3. **Phòng thủ 2 lớp ở FE:** `features/account/avatar.ts` (cùng quy tắc; host từ `NEXT_PUBLIC_AVATAR_URL_HOSTS` nhúng lúc build, phải trùng `AVATAR_URL_HOSTS` của backend) và component `Avatar`: chỉ render `<img>` khi qua bộ kiểm, ngược lại chữ cái đầu của họ tên. Form hồ sơ hiển thị ảnh hiện tại bằng `Avatar` và kiểm cú pháp trước khi gửi (host do server quyết định).
+  4. **Dữ liệu cũ:** KHÔNG có migration xóa/sửa; giá trị cũ không hợp lệ vẫn nằm trong DB và `GET /me` vẫn trả nguyên, nhưng FE không hiển thị. Người dùng sửa hồ sơ mà không đổi `avatarUrl` thì không bị chặn (PATCH chỉ kiểm trường được gửi; FE chỉ gửi trường đã đổi).
+  5. **CSP:** `img-src` của storefront có thể chặn host https ngoài; nếu bật `AVATAR_URL_HOSTS` thật thì phải thêm host đó vào `img-src` (không cần cho `/uploads`).
+- **Không làm:** re-encode ảnh bằng `sharp` (loại metadata, giới hạn điểm ảnh), job dọn file mồ côi (phần còn lại của R-18; thêm dependency native vào image, rủi ro hơn lợi ích cho localhost).
+- **Docs bị ảnh hưởng:** `api-contract.md` §6.2 (0.29), `backend/.env.example`, `.env.production.example`, `frontend/.env.example`, `testing.md`, `roadmap-next.md` (R-18).
+
+## D-082 Độ tươi hạt cà phê
+
+- **Ngày:** 2026-11-23 · **Người chốt:** Tech Lead (Đợt 5, R-24a)
+- **Trạng thái:** Áp dụng. Hiện thực `requirements.md` §5.6.
+- **Quy tắc thật (§5.6):** "Hiển thị ngày rang của lô hiện tại; khuyến nghị dùng trong 30 ngày sau rang." và "Không bán lô hạt đã rang quá 90 ngày (admin đánh dấu ngừng bán biến thể/lô)."
+- **Xác minh hiện trạng (trước khi làm):** `grep roastDate` cho thấy `roastDate` chỉ được đọc/ghi ở admin (schema, DTO, `variants.service`), catalog (`toVariant`) và hiển thị "Ngày rang" ở `AddToCartPanel`. Giỏ (`priceCartLine`, `addItem`, `updateItem`, merge, mua lại), báo giá (`collectIssues`) và đặt đơn (`placeOrder`) KHÔNG đọc `roastDate`: quy tắc 90 ngày hoàn toàn dựa vào việc admin tự ngừng bán biến thể, ngưỡng 30 ngày chưa có nhãn/cảnh báo nào. Seed dùng `roastDaysAgo` 3..28 (ngày tương đối từ lúc seed) nên không biến thể demo nào vướng ngưỡng; không đổi seed.
+- **Quyết định:**
+  1. **Tuổi hạt** = (ngày hôm nay theo giờ Việt Nam UTC+7) - `roastDate` (cột `DATE`), số ngày nguyên, tối thiểu 0 (ngày rang ở tương lai = 0); `roastDate` null -> không áp quy tắc. Hàm thuần `lib/freshness.ts`, đồng hồ tiêm. **Ngưỡng:** `FRESH` <= 30 ngày; `PAST_RECOMMENDED` 31-90 ngày (chỉ cảnh báo, vẫn bán); `EXPIRED` > 90 ngày (ngừng bán). Ví dụ rang 01/01: ngày 01/04 (90 ngày) còn bán đến hết ngày VN, sang 02/04 thì ngừng bán.
+  2. **Server là nguồn sự thật, một điểm quyết định:** `priceCartLine` coi `EXPIRED` là `UNAVAILABLE` nên giỏ (không tính tiền, `countable=false`), báo giá (`issues`) và đặt đơn (409 `ITEM_UNAVAILABLE`, trước khi trừ kho/giá) đều chặn; `addItem`/`updateItem` từ chối 409 `ITEM_UNAVAILABLE`; mua lại bỏ qua dòng (`DISCONTINUED`); merge giỏ khách bỏ dòng (`UNAVAILABLE`). KHÔNG thêm mã lỗi mới: `ITEM_UNAVAILABLE` có `details.reason = "ROAST_EXPIRED"` (và `reason` ở từng dòng của `details.items` / `issues`) để FE hiện đúng câu. Không tin client; không đổi giá, idempotency hay công thức tính tiền.
+  3. **API:** `Variant` (catalog) và dòng giỏ thêm `roastAgeDays` và `roastStatus`; biến thể `EXPIRED` có `maxQuantity = 0`. `stockStatus` và `Product.inStock` giữ nghĩa theo tồn kho (không đổi): sản phẩm mà mọi biến thể đều quá hạn rang vẫn có `inStock = true` ở danh sách nhưng không mua được ở trang chi tiết (đánh đổi: `inStock` là cột denorm theo tồn, không theo thời gian; không thêm nó vào job D-080).
+  4. **FE:** trang sản phẩm hiện "Ngày rang: dd/mm/yyyy (Rang X ngày trước)", cảnh báo "Nên dùng trong 30 ngày sau rang..." khi > 30 ngày, và với lô quá hạn: nút disabled "Ngừng bán do quá hạn rang", ẩn ô số lượng, biến thể mặc định bỏ qua lô quá hạn; dòng giỏ hiện nhãn tuổi hạt + gợi ý (> 30 ngày) hoặc "Ngừng bán do quá hạn rang" (> 90 ngày, dòng bị chặn như UNAVAILABLE); thông báo lỗi giỏ/đặt đơn theo `reason`.
+  5. **Hiệu lực với giỏ cũ:** dòng đã nằm trong giỏ khi lô vượt 90 ngày tự trở thành `UNAVAILABLE` ở lần đọc giỏ kế tiếp; khách xóa dòng hoặc đặt đơn bị chặn tới khi xóa.
+- **Không làm:** cho cấu hình ngưỡng 30/90 qua cài đặt (hằng số trong `lib/freshness.ts`; sửa mã nếu cần), tự ngừng bán (`isActive=false`) ghi vào DB (tính theo thời gian đọc nên không cần job và không lệch), email cảnh báo cho admin về lô sắp hết hạn.
+- **Docs bị ảnh hưởng:** `api-contract.md` §2, §4.4, §8, §9 (0.29), `requirements.md` §5.6 (ghi nơi hiện thực), `testing.md`, `roadmap-next.md` (R-24a).
+
+## D-083 E2E mobile 390 px, smoke WebKit, warm-up khởi động nguội, đo tải đặt hàng đồng thời
+
+- **Ngày:** 2026-11-23 · **Người chốt:** Tech Lead (Đợt 5, R-14 rút gọn; gộp phần Safari của R-12/R-13)
+- **Trạng thái:** Áp dụng. Không đổi mã nguồn sản phẩm, chỉ harness test, CI, script đo và tài liệu.
+- **Bối cảnh:** E2E chỉ có desktop Chromium, nên bố cục 390 px của luồng mua và trình duyệt WebKit (Safari) chưa được kiểm; chưa có số đo cho tranh chấp tồn kho khi nhiều đơn cùng SKU; lượt E2E đầu sau khi `next dev` khởi động nguội thỉnh thoảng đỏ (`POST /cart/items` qua rewrite 404), đã ghi ở nhiều đợt.
+- **Quyết định:**
+  1. **Warm-up khởi động nguội:** `e2e/global-setup.ts` chạy sau webServer, trước test: gọi QUA frontend các đường test sẽ đi (GET `/api/v1/health` và `/api/v1/products` qua rewrite, POST `/api/v1/cart/items` thân rỗng phải ra 400 JSON của backend, rồi trang `/`, danh mục, chi tiết sản phẩm, giỏ, thanh toán, tra cứu, đăng nhập, `/admin`), mỗi bước phải đúng mã 2 lần liên tiếp, timeout 120 giây/bước, log từng bước, không sleep cố định (chỉ khoảng thăm dò 0,5 giây giữa các lần thử lại). `webServer.url` của frontend cũng đổi sang `/api/v1/health` (đi qua rewrite). Nguyên nhân: webServer chỉ chờ trang chủ, `next dev` biên dịch từng route ở lần gọi đầu (đo: trang danh mục lần đầu 7,3 giây so với 0,2-0,6 giây các lần sau), nên test đầu vừa chờ biên dịch vừa gọi POST qua rewrite khi server dev còn bận. Không tái hiện được 404 ở mức HTTP thuần (probe POST đồng thời với biên dịch trang mới, 0/56 lỗi), nên đây là biện pháp loại bỏ điều kiện biên dịch lúc test chạy chứ chưa chứng minh được cơ chế 404 chính xác của Next (xem `testing.md`).
+  2. **Project Playwright:** `chromium` (desktop, mọi spec trừ `purchase-mobile.spec.ts`), `mobile-390` (Pixel 7 chỉnh viewport 390x844, `isMobile`, `hasTouch`, cùng kênh trình duyệt với `chromium`), `webkit-smoke` (`devices["iPhone 13"]`, WebKit). Hai project mobile chỉ chạy `purchase-mobile.spec.ts`: menu "Danh mục" của header mobile, thêm giỏ, thanh toán COD, trang thành công, kiểm `scrollWidth <= clientWidth` ở 5 trang; không đăng nhập (không tốn lượt limiter auth), hủy đơn qua API ở cuối để hoàn kho.
+  3. **WebKit có điều kiện:** bỏ project `webkit-smoke` khi `E2E_SKIP_WEBKIT=1` hoặc khi đặt `E2E_BROWSER_CHANNEL` (dùng Edge/Chrome có sẵn vì máy chặn file tải về) mà không ép `E2E_SKIP_WEBKIT=0`. CI cài `chromium webkit` (có cache `~/.cache/ms-playwright` theo phiên bản `@playwright/test`).
+  4. **Nới limiter đặt đơn cho webServer cục bộ** (`ORDER/COUPON/QUOTE_RATE_LIMIT_PER_MIN` mặc định 200, ưu tiên env) vì thêm project đặt thêm đơn từ cùng IP; CI đã đặt 200 từ trước.
+  5. **Đo tải:** `backend/scripts/load-order-concurrency.ts` (chỉ `fetch`, không phụ thuộc mới), chỉ chạy với `LOAD_API_URL` trỏ backend tạm và `LOAD_DATABASE_URL` trỏ DB tạm; từ chối cổng API 4000/4100 và DB localhost:5432 trừ khi có `LOAD_ALLOW_PROTECTED=1`. Không thêm test integration mới vì `orders.integration.test.ts` đã có "race tồn kho: stock 3, 5 giỏ guest -> đúng 3 đơn, 2 x OUT_OF_STOCK, stock = 0" cùng các ca song song khác; phần thuần của script có test (`loadOrderConcurrency.test.ts`).
+- **Kết quả đo (bảng và cấu hình ở `testing.md`):** 100 đơn song song vào 1 SKU tồn 20, C = 25/50/100, 3 lần mỗi mức: 9/9 lượt đúng 20 đơn 201 và 80 đơn 409 `OUT_OF_STOCK`, 0 lỗi 5xx, tồn cuối 0, 20 `ORDER_RESERVE`, 0 deadlock (`pg_stat_database.deadlocks` không đổi, log Postgres không có `deadlock`). Độ trễ tăng gần tuyến tính theo C do pool `pg` mặc định 10 kết nối và khóa dòng biến thể; throughput quanh 40 đơn/giây không phụ thuộc C.
+- **Không làm:** Firefox (WebKit smoke đã thêm một engine khác Chromium; engine thứ ba tốn thêm thời gian CI mà dự án localhost không cần), chạy cả bộ spec trên WebKit, k6/autocannon (thêm công cụ ngoài; script `fetch` đủ), test CheckoutForm riêng và cô lập DB test mỗi worker (phần còn lại của R-14, chốt dự án không làm).
+- **Docs bị ảnh hưởng:** `testing.md` (E2E, warm-up, project mobile/WebKit, chạy WebKit qua Docker, bảng đo tải, kết quả), `roadmap-next.md` (R-12, R-13, R-14), `wave5-plan.md`.

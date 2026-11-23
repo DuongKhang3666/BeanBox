@@ -893,7 +893,7 @@ Service phải cập nhật các cột này **trong cùng transaction** với th
 | `Product.ratingAvg/ratingCount` | Review tạo/sửa `rating`/ẩn/hiện (khóa dòng Product trong transaction) | Trung bình (làm tròn 1 chữ số khi trả API; lưu đủ độ chính xác theo kiểu cột) và số lượng review CHỈ `PUBLISHED`; `HIDDEN` không tính. Dữ liệu seed có giá trị giả cho dev; khi có review thật đầu tiên của sản phẩm, tính lại từ review thật (api-contract §14.1) |
 | `Coupon.usedCount` | Tạo đơn có mã (+1, rồi tạo `CouponRedemption`); đơn `CANCELLED` (-1 nếu `UPDATE "CouponRedemption" SET "releasedAt" = now() WHERE "orderId" = $id AND "releasedAt" IS NULL` cập nhật được 1 dòng; idempotent) – D-004 | `UPDATE "Coupon" SET "usedCount" = "usedCount" + 1 WHERE "id" = $id AND "isActive" AND ("usageLimit" IS NULL OR "usedCount" < "usageLimit")`; 0 dòng -> rollback `COUPON_INVALID`. Sau đó đếm `CouponRedemption` chưa `releasedAt` theo `userId`/`email` để kiểm `perUserLimit` |
 
-Hạn chế: `minPrice` không phản ánh realtime flash sale theo khung giờ (xem `architecture.md` §6).
+Hạn chế: `minPrice` không phản ánh realtime flash sale theo khung giờ (xem `architecture.md` §6). Từ D-080 job nền `jobs/saleRefresh.ts` đối soát và làm mới sản phẩm có `minPrice` lệch giá hiệu lực mỗi 10 phút (và 1 lần lúc khởi động), nên độ lệch tối đa ~10 phút sau mốc `saleStart`/`saleEnd`. Không đổi schema.
 
 Mã đơn: `BB-` + `YYMMDD` (giờ Việt Nam, UTC+7) + `-` + 4 ký tự ngẫu nhiên từ `23456789ABCDEFGHJKMNPQRSTUVWXYZ` (bỏ `0 O 1 I L`; 31 ký tự). Dựa vào unique constraint `Order.code`, bắt lỗi trùng (Prisma `P2002` trên `code`) và thử lại tối đa 5 lần.
 

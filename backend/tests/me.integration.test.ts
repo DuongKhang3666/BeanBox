@@ -2,6 +2,7 @@ import type { Express } from 'express';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.js';
+import { env } from '../src/config/env.js';
 import { prisma } from '../src/lib/prisma.js';
 import { API, bearer, registerUser } from './authHelpers.js';
 
@@ -69,14 +70,14 @@ describe('GET/PATCH /me', () => {
       fullName: '  Trần Thị Bình ',
       phone: '+84 901 234 567',
       birthDate: '1990-12-31',
-      avatarUrl: 'https://example.com/a.png',
+      avatarUrl: '/uploads/avatars/a1.png',
     });
     expect(r.status).toBe(200);
     expect(r.body.data).toMatchObject({
       fullName: 'Trần Thị Bình',
       phone: '0901234567',
       birthDate: '1990-12-31',
-      avatarUrl: 'https://example.com/a.png',
+      avatarUrl: '/uploads/avatars/a1.png',
     });
     expect(JSON.stringify(r.body)).not.toContain('passwordHash');
 
@@ -116,11 +117,55 @@ describe('GET/PATCH /me', () => {
     }
   });
 
-  it('avatarUrl không phải http(s) -> 400', async () => {
+  it('avatarUrl ngoài allowlist -> 400 field avatarUrl; giá trị cũ không đổi (D-081)', async () => {
     const u = await mkUser('av');
-    for (const avatarUrl of ['javascript:alert(1)', 'ftp://example.com/a.png', 'abc']) {
+    for (const avatarUrl of [
+      'javascript:alert(1)',
+      'ftp://example.com/a.png',
+      'abc',
+      'http://example.com/a.png',
+      'https://example.com/a.png', // host chưa nằm trong AVATAR_URL_HOSTS
+      'data:image/png;base64,AAAA',
+      '/uploads/../etc/passwd',
+      '//evil.test/a.png',
+      '/uploads/a.png?x=1',
+    ]) {
       const r = await request(app).patch(`${API}/me`).set(u.auth).send({ avatarUrl });
       expect(r.status, avatarUrl).toBe(400);
+      expect(r.body.error.details[0].field).toBe('avatarUrl');
+      expect(r.body.error.details[0].message).toContain('Ảnh đại diện');
+    }
+    const ok = await request(app)
+      .patch(`${API}/me`)
+      .set(u.auth)
+      .send({ avatarUrl: '/uploads/avatars/ok.png' });
+    expect(ok.status).toBe(200);
+    const bad = await request(app)
+      .patch(`${API}/me`)
+      .set(u.auth)
+      .send({ avatarUrl: 'http://x.test/a.png' });
+    expect(bad.status).toBe(400);
+    const g = await request(app).get(`${API}/me`).set(u.auth);
+    expect(g.body.data.avatarUrl).toBe('/uploads/avatars/ok.png');
+  });
+
+  it('avatarUrl https chỉ nhận khi host nằm trong AVATAR_URL_HOSTS', async () => {
+    const u = await mkUser('avh');
+    const prev = env.AVATAR_URL_HOSTS;
+    env.AVATAR_URL_HOSTS = ['cdn.example.test'];
+    try {
+      const ok = await request(app)
+        .patch(`${API}/me`)
+        .set(u.auth)
+        .send({ avatarUrl: 'https://cdn.example.test/a.png' });
+      expect(ok.status).toBe(200);
+      const other = await request(app)
+        .patch(`${API}/me`)
+        .set(u.auth)
+        .send({ avatarUrl: 'https://other.example.test/a.png' });
+      expect(other.status).toBe(400);
+    } finally {
+      env.AVATAR_URL_HOSTS = prev;
     }
   });
 

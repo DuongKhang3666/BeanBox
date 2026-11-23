@@ -42,6 +42,8 @@ services:
       target: runtime
     restart: unless-stopped
     init: true
+    # D-079: SHUTDOWN_TIMEOUT_MS (mặc định 25s) < stop_grace_period; mặc định Docker chỉ 10s sẽ SIGKILL giữa chừng.
+    stop_grace_period: 30s
     depends_on:
       db:
         condition: service_healthy
@@ -89,6 +91,9 @@ services:
       DATABASE_POOL_MAX: ${DATABASE_POOL_MAX:-}
       ANALYTICS_POOL_MAX: ${ANALYTICS_POOL_MAX:-}
       ANALYTICS_STATEMENT_TIMEOUT_MS: ${ANALYTICS_STATEMENT_TIMEOUT_MS:-}
+      # D-079 (tắt êm, ms; để trống = 25000, phải < stop_grace_period 30s) và D-081 (host https cho ảnh đại diện)
+      SHUTDOWN_TIMEOUT_MS: ${SHUTDOWN_TIMEOUT_MS:-}
+      AVATAR_URL_HOSTS: ${AVATAR_URL_HOSTS:-}
     volumes:
       - uploads:/app/uploads
     mem_limit: 448m # ước lượng, chưa đo trên VPS thật
@@ -102,6 +107,8 @@ services:
         # Cố định lúc build: đổi domain thì phải build lại image frontend
         API_INTERNAL_URL: http://backend:4000
         NEXT_PUBLIC_SITE_URL: ${PUBLIC_URL:?Đặt PUBLIC_URL (https://domain) trong .env.production}
+        # D-081: phải trùng AVATAR_URL_HOSTS của backend (FE chỉ render ảnh đại diện https của host này)
+        NEXT_PUBLIC_AVATAR_URL_HOSTS: ${AVATAR_URL_HOSTS:-}
     restart: unless-stopped
     init: true
     depends_on:

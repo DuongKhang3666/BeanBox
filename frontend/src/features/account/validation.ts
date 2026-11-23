@@ -1,5 +1,7 @@
 /** Validate client cho hồ sơ & địa chỉ (mirror docs/api-contract.md §6; server vẫn quyết định). */
 
+import { AVATAR_URL_MAX_LENGTH, isAvatarUrlShapeValid } from "./avatar";
+
 export const MAX_ADDRESSES = 10;
 
 /** YYYY-MM-DD theo giờ máy người dùng. */
@@ -17,18 +19,15 @@ export function validateBirthDate(value: string, today: string = todayISO()): st
   return null;
 }
 
+/** D-081: chỉ /uploads/... hoặc https://...; host có được phép hay không do server quyết định (400 field avatarUrl). */
 export function validateAvatarUrl(value: string): string | null {
   const v = value.trim();
   if (!v) return null;
-  if (v.length > 500) return "Đường dẫn ảnh tối đa 500 ký tự";
-  try {
-    const u = new URL(v);
-    return u.protocol === "http:" || u.protocol === "https:"
-      ? null
-      : "Đường dẫn ảnh phải bắt đầu bằng http:// hoặc https://";
-  } catch {
-    return "Đường dẫn ảnh không hợp lệ";
-  }
+  if (v.length > AVATAR_URL_MAX_LENGTH)
+    return `Đường dẫn ảnh tối đa ${AVATAR_URL_MAX_LENGTH} ký tự`;
+  return isAvatarUrlShapeValid(v)
+    ? null
+    : "Ảnh đại diện phải là đường dẫn /uploads/... hoặc URL https:// của máy chủ ảnh được phép";
 }
 
 export function validateLine1(value: string): string | null {

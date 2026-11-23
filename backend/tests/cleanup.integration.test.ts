@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { runCleanupOnce, startBackgroundJobs } from '../src/jobs/cleanup.js';
+import { runCleanupOnce, startBackgroundJobs, stopBackgroundJobs } from '../src/jobs/cleanup.js';
 import { prisma } from '../src/lib/prisma.js';
 import { sha256Hex } from '../src/lib/tokens.js';
 
@@ -186,9 +186,9 @@ describe('runCleanupOnce: tin liên hệ cũ (D-029)', () => {
 });
 
 describe('startBackgroundJobs', () => {
-  it('trả hàm dừng và không giữ process sống', () => {
-    const stop = startBackgroundJobs();
-    expect(typeof stop).toBe('function');
-    stop();
+  it('dừng được, chờ lượt đang chạy và gọi lại an toàn', async () => {
+    startBackgroundJobs();
+    await expect(stopBackgroundJobs()).resolves.toBeUndefined();
+    await expect(stopBackgroundJobs()).resolves.toBeUndefined();
   });
 });

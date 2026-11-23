@@ -6,6 +6,8 @@ BeanBox là web thương mại điện tử bán hạt cà phê, dụng cụ pha
 
 Mọi thanh toán và vận chuyển trong bản demo đều là giả lập (cổng VNPay/MoMo giả, chuyển khoản VietQR demo, mã vận đơn và hành trình mô phỏng), không có tiền thật và không gọi dịch vụ ngoài. Phần lõi (giá, tồn kho, thanh toán, phiên đăng nhập) vẫn đi qua đúng logic như khi dùng nhà cung cấp thật; xem [tổng quan quyết định kỹ thuật](docs/overview.md).
 
+**Trạng thái:** dự án đã hoàn thiện và chỉ bảo trì: chỉ nhận cập nhật phụ thuộc từ Dependabot ([roadmap đã đóng](docs/roadmap-next.md), 2026-11-23). Số liệu kiểm thử và đo tải ở [Kiểm thử và CI](#kiểm-thử-và-ci).
+
 ## Mục lục
 
 - [Chạy demo bằng một lệnh](#chạy-demo-bằng-một-lệnh)
@@ -39,7 +41,7 @@ docker compose -f docker-compose.demo.yml up --build     # PowerShell và Git Ba
 
 - Dừng và xóa sạch dữ liệu demo: `docker compose -f docker-compose.demo.yml down -v` (thêm `--rmi local` nếu muốn xóa cả image đã build). Chỉ `Ctrl+C` hoặc `down` (không `-v`) thì dữ liệu giữ lại và lần `up` sau không sinh thêm đơn.
 - Cổng host dùng: 3300 và 8026 (bind 127.0.0.1); không đụng môi trường dev (3000/4000/5432/8025).
-- Thời gian và RAM (đo trên máy dev): lần đầu khoảng 5 phút (build không cache khoảng 4 phút 40 giây, chưa tính tải image nền), các lần sau khoảng 20 giây nhờ cache build. Cần khoảng 2 GB RAM trống khi build; lúc chạy 4 container dùng khoảng 320 MB.
+- Thời gian và RAM (đo lại 2026-11-23, máy dev, Docker Desktop): `up --build -d` tới khi `http://localhost:3300` trả 200 mất khoảng 150 giây khi đã có cache lớp build (lần đầu không cache khoảng 5 phút, chưa tính tải image nền). Cần khoảng 2 GB RAM trống khi build; lúc chạy 4 container dùng khoảng 230 MB ngay sau khi khởi động và khoảng 380 MB sau khi chạy kịch bản.
 
 ## Kịch bản demo 5 phút
 
@@ -50,10 +52,11 @@ Mở <http://localhost:3300> sau khi chạy demo. Mỗi bước ghi tài khoản
 3. **Chuyển khoản có QR (khách).** Đặt đơn khác, chọn "Chuyển khoản". Trang đặt hàng thành công hiện mã QR VietQR kèm cảnh báo "KHÔNG chuyển tiền thật"; bấm "Tôi đã chuyển khoản". Đơn vẫn "Chờ thanh toán" vì chỉ nhân viên mới xác nhận được. Ghi lại mã đơn và SĐT đã nhập.
 4. **Nhân viên xử lý (staff).** Đăng nhập `staff@beanbox.local`, vào `/admin/don-hang`, chọn bộ lọc "Khách báo đã chuyển khoản", mở đơn và bấm "Xác nhận đã nhận tiền" (xác nhận lần hai). Sau đó bấm "Bắt đầu đóng gói", rồi "Giao cho vận chuyển" và để trống ô mã vận đơn: hệ thống tự sinh mã giả dạng `BBL-YYYYMMDD-XXXXXX`.
 5. **Tra cứu đơn (khách).** Mở `/tra-cuu-don-hang`, nhập mã đơn và SĐT ở bước 3. Trang hiện dự kiến giao và khối "Hành trình vận chuyển (mô phỏng)": mốc "Đã bàn giao cho đơn vị vận chuyển" có ngay, các mốc sau xuất hiện theo giờ thật (lấy hàng sau 2 giờ, v.v.).
-6. **Phân tích và xuất CSV (admin).** Đăng nhập `admin@beanbox.local`, vào `/admin/phan-tich`: KPI so với kỳ trước, biểu đồ doanh thu, cơ cấu theo danh mục/thanh toán/tỉnh; bấm "Xuất CSV" ở một khối để tải file (ghi vào nhật ký tại `/admin/nhat-ky`).
+6. **Phân tích và xuất CSV (admin).** Đăng nhập `admin@beanbox.local`, vào `/admin/phan-tich`: KPI so với kỳ trước, biểu đồ doanh thu, cơ cấu theo danh mục/thanh toán/tỉnh; kéo xuống hàng KPI có "Lợi nhuận gộp", "Biên lợi nhuận gộp" và "Độ phủ giá vốn" (D-078; chỉ Admin thấy giá vốn); bấm "Xuất CSV" ở một khối để tải file (ghi vào nhật ký tại `/admin/nhat-ky`).
 7. **Xác thực 2 lớp (staff).** Đăng nhập staff, vào `/tai-khoan`, mục "Xác thực 2 lớp": "Bật xác thực 2 lớp", nhập mật khẩu, quét QR bằng ứng dụng xác thực (Google/Microsoft Authenticator...) hoặc nhập khóa bằng tay, nhập mã 6 số, lưu 10 mã dự phòng. Đăng xuất rồi đăng nhập lại: sau mật khẩu sẽ có bước "Xác thực 2 lớp". Muốn trở lại như cũ: tắt trong cùng mục, hoặc admin đặt lại ở `/admin/nguoi-dung`.
 8. **Dữ liệu cá nhân (khách).** Đăng ký một tài khoản mới (để không xóa tài khoản demo), vào `/tai-khoan`, mục "Dữ liệu cá nhân": "Tải dữ liệu của tôi (JSON)" và "Xóa tài khoản" (nhập mật khẩu và cụm `XOA TAI KHOAN`; bị chặn khi còn đơn đang xử lý). Tài khoản bị ẩn danh hóa, đơn cũ vẫn được giữ để đối soát.
-9. **Email (Mailpit).** Mở <http://localhost:8026> để xem email xác nhận đơn và email đổi trạng thái của các bước trên.
+9. **Độ tươi hạt và Mua lại (khách hàng).** Đăng nhập `customer@beanbox.local`, mở một sản phẩm cà phê hạt: dưới biến thể có dòng "Ngày rang: ... (Rang X ngày trước)" (cảnh báo khi quá 30 ngày; quá 90 ngày thì ngừng bán, D-082). Tài khoản demo chưa có đơn nên hãy đặt một đơn COD khi đang đăng nhập (dùng địa chỉ đã lưu), rồi vào `/tai-khoan/don-hang`, mở đơn đó và bấm "Mua lại" để đưa lại các dòng còn bán được vào giỏ (D-077).
+10. **Email (Mailpit).** Mở <http://localhost:8026> để xem email xác nhận đơn và email đổi trạng thái của các bước trên.
 
 ## Tour tính năng
 
@@ -62,6 +65,7 @@ Mở <http://localhost:3300> sau khi chạy demo. Mỗi bước ghi tài khoản
 - Danh mục, chi tiết sản phẩm (biến thể, giá khuyến mãi, tồn kho), lọc, sắp xếp, tìm kiếm không phân biệt dấu tiếng Việt kèm gợi ý khi gõ.
 - Gợi ý "Sản phẩm liên quan" (chấm điểm theo danh mục, thương hiệu, tag, thông số, giá) và "Thường được mua cùng" (từ đơn thật, chỉ hiện khi có ít nhất 2 khách khác nhau mua cùng; demo một lệnh sinh sẵn 1.500 đơn nên mục này có dữ liệu ở trang sản phẩm, còn môi trường dev chỉ seed sạch thì trống cho tới khi có đơn).
 - So sánh 2-4 sản phẩm (lưu ở trình duyệt, chia sẻ bằng `?sp=`), giỏ hàng lưu ở server cho cả khách vãng lai, mã giảm giá, phí ship theo khu vực và khối lượng.
+- Độ tươi hạt (D-082): trang sản phẩm hiện "Ngày rang" và "Rang X ngày trước"; quá 30 ngày có cảnh báo, quá 90 ngày thì ngừng bán và server từ chối ở giỏ, báo giá và đặt đơn. "Mua lại" ở chi tiết đơn đưa các dòng còn bán được vào giỏ (D-077).
 - Đánh giá (chỉ người đã nhận hàng), trang chính sách, giới thiệu, liên hệ (captcha Turnstile tùy chọn). SEO: sitemap có `lastmod`, canonical/noindex, ảnh Open Graph tự sinh, JSON-LD, trang chủ ISR 60 giây.
 
 | Danh mục có bộ lọc                                                               | So sánh sản phẩm                                          |
@@ -79,7 +83,7 @@ Mở <http://localhost:3300> sau khi chạy demo. Mỗi bước ghi tài khoản
 - Checkout: COD, VNPay sandbox hoặc Stripe test mode khi có khóa; bật `PAYMENT_MOCKS_ENABLED` và `BANK_TRANSFER_ENABLED` (đã bật sẵn trong demo một lệnh, xem [docs/payments-setup.md](docs/payments-setup.md)) để có VNPay/MoMo giả và chuyển khoản VietQR.
 - Cổng giả đi qua đúng hàm xử lý IPN có chữ ký như cổng thật; chuyển khoản chỉ thành "đã thanh toán" khi nhân viên xác nhận.
 - Giao hàng giả lập: ngày giao dự kiến theo vùng và phương thức, mã vận đơn giả, hành trình mô phỏng tính từ lịch sử đơn (nhãn "giả lập" luôn hiện).
-- Khách vãng lai tra cứu và hủy đơn bằng mã đơn + SĐT.
+- Khách vãng lai tra cứu và hủy đơn bằng mã đơn + SĐT; nhập sai 5 lần trong 15 phút thì khóa tạm mã đơn đó 15 phút (D-076).
 
 | Cổng VNPay giả lập                                                                                     | Chuyển khoản VietQR demo                                                                                  |
 | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
@@ -96,6 +100,7 @@ Mở <http://localhost:3300> sau khi chạy demo. Mỗi bước ghi tài khoản
 - Đăng ký, xác thực email, quên/đặt lại mật khẩu, sổ địa chỉ (dữ liệu hành chính 2 cấp), lịch sử đơn, yêu thích.
 - Xác thực 2 lớp (TOTP) tùy chọn cho Staff/Admin: QR, 10 mã dự phòng, đăng nhập 2 bước; Admin đặt lại 2FA của người khác; cờ `REQUIRE_ADMIN_2FA` (mặc định tắt) để bắt buộc với Admin.
 - Dữ liệu cá nhân: khách tải bản sao dữ liệu (JSON) và tự xóa tài khoản (ẩn danh hóa, giữ đơn để đối soát).
+- Ảnh đại diện chỉ nhận đường dẫn `/uploads/...` hoặc https có host trong danh sách cho phép (`AVATAR_URL_HOSTS`, D-081); giá trị khác bị từ chối ở server và không được hiển thị ở frontend.
 
 | Đăng nhập bước 2 (mã 2 lớp)                                                  | Bảo mật tài khoản và dữ liệu cá nhân                                                       |
 | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
@@ -108,9 +113,8 @@ Mở <http://localhost:3300> sau khi chạy demo. Mỗi bước ghi tài khoản
 ### Quản trị và phân tích
 
 - Dashboard, quản lý đơn theo máy trạng thái (xác nhận, giao, hủy, ghi nhận hoàn tiền thủ công, xác nhận chuyển khoản), sản phẩm/biến thể/ảnh, danh mục, thương hiệu, tồn kho kèm lịch sử, mã giảm giá, đánh giá, liên hệ, nhật ký thao tác, cài đặt cửa hàng, quản lý người dùng.
-- Công cụ vận hành (D-071..D-073): ghi chú nội bộ trên đơn (khách không thấy), chọn nhiều đơn để in phiếu giao hàng loạt, xuất/nhập CSV sản phẩm (xem trước từng dòng, áp dụng trong một transaction, không bao giờ đổi slug/SKU).
-- Nhóm 3 Đợt 4 (D-075..D-077): cache HTTP ngắn cho catalog và ảnh bất biến, khóa tạm theo mã đơn khi khách vãng lai nhập sai SĐT 5 lần, nút "Mua lại" ở chi tiết đơn.
-- Giá vốn và lợi nhuận gộp (D-078): nhập hàng kèm đơn giá tính giá vốn bình quân gia quyền di động theo biến thể, chụp vào dòng đơn lúc đặt, `/admin/phan-tich` có lợi nhuận gộp, biên và độ phủ giá vốn (chỉ Admin; đơn cũ chưa có giá vốn).
+- Công cụ vận hành (D-071..D-073): ghi chú nội bộ trên đơn (khách không thấy), chọn nhiều đơn để in phiếu giao hàng loạt (tối đa 50 đơn), xuất/nhập CSV sản phẩm (xem trước từng dòng, áp dụng trong một transaction, không bao giờ đổi slug/SKU).
+- Giá vốn và lợi nhuận gộp (D-078): nhập hàng kèm đơn giá tính giá vốn bình quân gia quyền di động theo biến thể, chụp vào dòng đơn lúc đặt; `/admin/phan-tich` có lợi nhuận gộp, biên và độ phủ giá vốn (chỉ Admin; đơn cũ chưa có giá vốn, không đoán).
 - Phân tích kinh doanh (chỉ Admin, `/admin/phan-tich`; kế hoạch ở [docs/admin-dashboard-plan.md](docs/admin-dashboard-plan.md), API ở [api-contract §16](docs/api-contract.md)): KPI so với kỳ trước, doanh thu theo ngày/tuần/tháng (có bảng thay thế cho trình đọc màn hình), cơ cấu theo danh mục, thương hiệu, thanh toán, giao hàng, tỉnh; top sản phẩm, top khách, khách mới/quay lại; vận hành, tồn kho, hiệu quả mã giảm giá; xuất CSV (chống CSV injection, có audit và rate limit) và bản in.
 
 | Phân tích kinh doanh                                                                                              | Cơ cấu doanh thu                                                                  |
@@ -130,7 +134,8 @@ Mở <http://localhost:3300> sau khi chạy demo. Mỗi bước ghi tài khoản
 ### Vận hành
 
 - Docker Compose cho demo (một lệnh), dev và production (Caddy với HTTPS tự động, rate limit ở edge), backup hằng ngày (off-site tùy chọn, mã hóa age), giám sát uptime bằng script.
-- Job nền hủy đơn quá hạn thanh toán và dọn dữ liệu hết hạn; gửi email bền vững (thử lại, không chặn đặt hàng).
+- Job nền hủy đơn quá hạn thanh toán, dọn dữ liệu hết hạn và làm mới giá theo mốc sale (D-080); gửi email bền vững (thử lại, không chặn đặt hàng); tắt êm khi nhận SIGTERM hoặc lỗi tiến trình (D-079).
+- Cache HTTP ngắn cho catalog và ảnh bất biến (D-075).
 - CI GitHub Actions 7 job (xem [Kiểm thử và CI](#kiểm-thử-và-ci)); không có deploy tự động.
 
 ## Điểm kỹ thuật nổi bật
@@ -145,11 +150,13 @@ Bảng tổng hợp quyết định theo chủ đề nằm ở [docs/overview.md
 - **Cổng thanh toán giả đi qua đúng đường thật:** `POST /mock-gateway/*/complete` kiểm chữ ký rồi gọi trực tiếp handler IPN có chữ ký, đối chiếu số tiền và `applyPaymentResult` idempotent, không có đường tắt vào DB ([D-060](docs/decisions.md#d-060-thanh-toán-giả-lập-cho-demo-vnpay-giả-momo-giả)).
 - **TOTP tự cài theo RFC 6238:** kiểm bằng vector chuẩn, secret mã hóa AES-256-GCM (AAD là userId), chống dùng lại bằng cập nhật nguyên tử `lastStep`, tối đa 5 lượt thử mỗi challenge và khóa tạm ([D-063](docs/decisions.md#d-063-xác-thực-2-lớp-totp-cho-staff-và-admin), cờ bắt buộc cho Admin: [D-070](docs/decisions.md#d-070-bắt-buộc-2fa-cho-admin-bằng-cờ-require_admin_2fa)).
 - **Ẩn danh hóa tài khoản mà giữ analytics:** xóa dữ liệu cá nhân nhưng giữ đơn và số tiền, nên doanh thu và cơ cấu tỉnh không đổi (có test so trước và sau) ([D-065](docs/decisions.md#d-065-quyền-dữ-liệu-cá-nhân-khách-tự-xóa-ẩn-danh-hóa-tài-khoản-và-xuất-dữ-liệu)).
-- **Xuất CSV an toàn:** chống CSV injection theo kiểu ô, ghi audit trước khi gửi dữ liệu, có rate limit ([D-053](docs/decisions.md#d-053-hiệu-quả-mã-giảm-giá-và-xuất-csv-bước-4)).
-- **Hiệu năng đo thật:** phân tích chạy trên 100.000 đơn sinh bằng script (Postgres 17), kèm pool riêng và `statement_timeout` cho truy vấn analytics để không làm nghẽn đặt hàng ([D-054](docs/decisions.md#d-054-hiệu-năng-a11y-và-bản-in-khu-phân-tích-bước-5-phần-a), [D-058](docs/decisions.md#d-058-bảo-vệ-db-khỏi-truy-vấn-analytics-nặng-và-giới-hạn-tài-nguyên-container)).
+- **Phân tích đo thật, xuất CSV an toàn:** phân tích chạy trên 100.000 đơn sinh bằng script (Postgres 17): `overview` 30 ngày khoảng 40 ms, 365 ngày khoảng 54 ms, mọi endpoint dưới 1 giây ở quy mô dưới khoảng 100.000 đơn/năm; kèm pool riêng và `statement_timeout` để không làm nghẽn đặt hàng; CSV chống CSV injection, ghi audit trước khi gửi dữ liệu, có rate limit ([D-053](docs/decisions.md#d-053-hiệu-quả-mã-giảm-giá-và-xuất-csv-bước-4), [D-054](docs/decisions.md#d-054-hiệu-năng-a11y-và-bản-in-khu-phân-tích-bước-5-phần-a), [D-058](docs/decisions.md#d-058-bảo-vệ-db-khỏi-truy-vấn-analytics-nặng-và-giới-hạn-tài-nguyên-container)).
 - **Chuyển khoản không tự tin khách:** "Tôi đã chuyển khoản" chỉ ghi nhận, nhân viên xác nhận qua cùng hàm thanh toán, có audit; QR dùng BIN không tồn tại nên không thể chuyển tiền thật ([D-061](docs/decisions.md#d-061-chuyển-khoản--vietqr-demo)).
-- **CI 7 job:** coverage có ngưỡng, kiểm định dạng, gitleaks, Trivy chỉ báo cáo, ghim SHA cho Actions, kiểm drift migration ([D-055](docs/decisions.md#d-055-ci-coverage-kiểm-định-dạng-và-dependabot), [D-067](docs/decisions.md#d-067-ci-supply-chain-ghim-sha-actions-và-trivy-chỉ-báo-cáo)).
-- **Backup có kiểm chứng:** `pg_dump` và uploads hằng ngày, off-site mã hóa age, có selftest chạy trong CI ([D-034](docs/decisions.md#d-034-backup-và-khôi-phục), [D-038](docs/decisions.md#d-038-backup-off-site), [D-043](docs/decisions.md#d-043-selftest-backup-trong-ci)).
+- **CI 7 job và backup có kiểm chứng:** coverage có ngưỡng, kiểm định dạng, gitleaks, Trivy chỉ báo cáo, ghim SHA cho Actions, kiểm drift migration; `pg_dump` và uploads hằng ngày, off-site mã hóa age, selftest chạy trong CI ([D-055](docs/decisions.md#d-055-ci-coverage-kiểm-định-dạng-và-dependabot), [D-067](docs/decisions.md#d-067-ci-supply-chain-ghim-sha-actions-và-trivy-chỉ-báo-cáo), [D-034](docs/decisions.md#d-034-backup-và-khôi-phục), [D-043](docs/decisions.md#d-043-selftest-backup-trong-ci)).
+- **Tắt êm:** `SIGTERM`/`SIGINT` và lỗi không bắt được đi qua một hàm duy nhất: ngừng nhận kết nối, đóng socket nhàn rỗi, chờ job và request đang chạy, đóng DB, mã thoát đúng; có timeout tổng và test thứ tự ([D-079](docs/decisions.md#d-079-tắt-êm-và-lỗi-tiến-trình)).
+- **Đối soát giá theo mốc sale:** `minPrice` (dùng để lọc/sắp xếp theo giá) chỉ được ghi khi có thay đổi dữ liệu, nên job đối soát bằng một câu SQL tập hợp rồi gọi lại đúng hàm tính denorm; test dùng đồng hồ tiêm quanh các biên `saleStart`/`saleEnd` ([D-080](docs/decisions.md#d-080-làm-mới-minprice-theo-mốc-sale)).
+- **Độ tươi hạt do server quyết định:** tuổi hạt tính theo ngày giờ Việt Nam; hạt quá 90 ngày kể từ ngày rang bị chặn ở giỏ, báo giá và đặt đơn chứ không chỉ ẩn nút ở giao diện ([D-082](docs/decisions.md#d-082-độ-tươi-hạt-cà-phê)).
+- **Kiểm thử đa trình duyệt và đo tải:** E2E luồng mua ở 390 px và smoke WebKit, warm-up chống lỗi khởi động nguội, script đo đặt hàng đồng thời cùng SKU (không oversell, không deadlock; số đo ở [Kiểm thử và CI](#kiểm-thử-và-ci)) ([D-083](docs/decisions.md#d-083-e2e-mobile-390-px-smoke-webkit-warm-up-khởi-động-nguội-đo-tải-đặt-hàng-đồng-thời)).
 
 ## Kiến trúc
 
@@ -235,35 +242,53 @@ Reset DB dev (xóa sạch dữ liệu, migrate lại và seed lại): `npm run d
 ```bash
 # Backend (cần Postgres đang chạy; test dùng DB riêng beanbox_test, tự áp migration)
 cd backend
-npm run lint && npm run typecheck && npm test && npm run build
+npm run lint && npm run typecheck && npm run test:coverage && npm run build
 
 # Frontend
 cd frontend
-npm run lint && npm run typecheck && npm test && npm run build
+npm run lint && npm run typecheck && npm run test:coverage && npm run build
 
-# E2E (Playwright, chromium)
+# E2E (Playwright): cần Postgres đã migrate + seed
 cd frontend
-npx playwright install chromium    # một lần
+npx playwright install chromium webkit    # một lần
 npm run test:e2e
 ```
 
-- Test backend gồm unit (tính giá, phí ship, máy trạng thái, TOTP theo vector RFC...) và integration bằng supertest trên Postgres thật, trong đó có ma trận phân quyền tự động cho các route (`backend/tests/securityAuthz.integration.test.ts`).
+Số liệu lần kiểm cuối (2026-11-23, Windows, Postgres 17 tạm, chi tiết ở [docs/testing.md](docs/testing.md#kết-quả-kiểm-tổng-đợt-5-chốt-dự-án)):
+
+| Phần               | Kết quả                                                                                                                                                                        |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Backend            | 113 file, 2.173 test đạt (unit + integration trên Postgres thật); coverage statements 96,28 %, branches 89,13 %, functions 97,8 %, lines 97,8 % (ngưỡng CI: 94 / 87 / 95 / 95) |
+| Frontend           | 122 file, 1.072 test đạt (Vitest + Testing Library); coverage statements 86,47 %, branches 80,95 %, functions 86,05 %, lines 88,97 %                                           |
+| E2E                | 40 test: 38 `chromium` (desktop) + 1 `mobile-390` (Pixel 7 chỉnh 390 px) + 1 `webkit-smoke` (iPhone 13); luồng mua mobile chạy ở cả 3 project, 0 lỗi hai lượt liên tiếp        |
+| Đặt hàng đồng thời | cùng một SKU, 100 đơn tranh 20 tồn, 3 mức đồng thời x 3 lượt: luôn đúng 20 đơn 201 và 80 đơn 409, 0 lỗi 5xx, 0 deadlock, tồn cuối 0                                            |
+
+Đo đặt hàng đồng thời (D-083; đo lại ở C = 50 ngày 2026-11-23: 3/3 lượt đạt, p50 714 ms, p95 1324 ms, 51,1 đơn/giây, máy ít tải hơn lần đo bảng dưới; script `backend/scripts/load-order-concurrency.ts`, trung vị 3 lượt, máy dev cá nhân: client và server cùng một máy nên chỉ có ý nghĩa so sánh):
+
+| Đồng thời | 201 | 409 `OUT_OF_STOCK` | 5xx | Deadlock | p50 (ms) | p95 (ms) | Thông lượng (đơn/giây) |
+| --------- | --- | ------------------ | --- | -------- | -------- | -------- | ---------------------- |
+| 25        | 20  | 80                 | 0   | 0        | 481      | 1388     | 36,5                   |
+| 50        | 20  | 80                 | 0   | 0        | 975      | 1673     | 39,4                   |
+| 100       | 20  | 80                 | 0   | 0        | 1748     | 2330     | 41,6                   |
+
+- Test backend gồm unit (tính giá, phí ship, máy trạng thái, TOTP theo vector RFC, độ tươi hạt...) và integration bằng supertest trên Postgres thật, trong đó có ma trận phân quyền tự động cho các route (`backend/tests/securityAuthz.integration.test.ts`).
 - Nếu volume Postgres có từ trước nên chưa có DB `beanbox_test`: `docker compose exec db psql -U beanbox -c "CREATE DATABASE beanbox_test"`.
-- E2E cần Postgres đã migrate và seed, và `backend/.env` có các biến `SEED_*` (config tự đọc mật khẩu từ đó). Playwright tự khởi động backend và frontend. Lưu ý giới hạn đăng nhập 5 lần/phút/IP khi chạy lặp liên tiếp. Chi tiết: [docs/testing.md](docs/testing.md).
+- E2E cần `backend/.env` có các biến `SEED_*` (config tự đọc mật khẩu từ đó). Playwright tự khởi động backend và frontend, có bước warm-up cho lần khởi động nguội. Nếu cổng 3000/4000 đang bận, đặt `E2E_API_PORT` và `E2E_WEB_PORT`.
+- Máy chặn chạy file tải về (Windows Application Control) thì dùng Edge có sẵn: `E2E_BROWSER_CHANNEL=msedge`. Khi đó project `webkit-smoke` tự bị bỏ qua (không có WebKit); muốn kiểm WebKit thì chạy Playwright trong Docker theo hướng dẫn ở [docs/testing.md](docs/testing.md#warm-up-khởi-động-nguội-project-mobile-và-webkit-d-083).
 
 Workflow `.github/workflows/ci.yml` chạy khi push lên `main` và trên pull request:
 
-| Job           | Nội dung                                                                                                                                                    |
-| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `backend`     | Postgres service, `prisma migrate deploy` trên DB trống, kiểm drift migration, lint, `format:check`, typecheck, test kèm coverage (có ngưỡng), build        |
-| `frontend`    | lint, `format:check`, typecheck, test kèm coverage (có ngưỡng), build                                                                                       |
-| `e2e`         | Playwright (chromium) với Postgres + Mailpit, bật cổng thanh toán giả và chuyển khoản demo, seed bằng mật khẩu giả của CI; chạy sau `backend` và `frontend` |
-| `secret-scan` | gitleaks (Docker, ghim phiên bản) quét toàn bộ lịch sử git                                                                                                  |
-| `audit`       | `npm audit` cả hai phía, chỉ báo cáo, không làm fail                                                                                                        |
-| `docker`      | Build image backend, frontend, Caddy; build image backup và chạy selftest backup off-site (không push); Trivy quét image, chỉ báo cáo (D-067)               |
-| `ops-lint`    | `shellcheck` cho script trong `deploy/`, `docker compose config` cho các file compose (production và demo)                                                  |
+| Job           | Nội dung                                                                                                                                                                                                                                                       |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `backend`     | Postgres service, `prisma migrate deploy` trên DB trống, kiểm drift migration, lint, `format:check`, typecheck, test kèm coverage (có ngưỡng), build                                                                                                           |
+| `frontend`    | lint, `format:check`, typecheck, test kèm coverage (có ngưỡng), build                                                                                                                                                                                          |
+| `e2e`         | Playwright với Postgres + Mailpit: project `chromium`, `mobile-390` và `webkit-smoke` (cài Chromium + WebKit, cache trình duyệt theo phiên bản); bật cổng thanh toán giả và chuyển khoản demo, seed bằng mật khẩu giả của CI; chạy sau `backend` và `frontend` |
+| `secret-scan` | gitleaks (Docker, ghim phiên bản) quét toàn bộ lịch sử git                                                                                                                                                                                                     |
+| `audit`       | `npm audit` cả hai phía, chỉ báo cáo, không làm fail                                                                                                                                                                                                           |
+| `docker`      | Build image backend, frontend, Caddy; build image backup và chạy selftest backup off-site (không push); Trivy quét image, chỉ báo cáo (D-067)                                                                                                                  |
+| `ops-lint`    | `shellcheck` cho script trong `deploy/`, `docker compose config` cho các file compose (production và demo)                                                                                                                                                     |
 
-Mọi `uses:` trong workflow được ghim vào full commit SHA kèm comment phiên bản ([D-067](docs/decisions.md#d-067-ci-supply-chain-ghim-sha-actions-và-trivy-chỉ-báo-cáo)). Báo cáo coverage html được lưu ở artifact của job (7 ngày). Dependabot (`.github/dependabot.yml`) mở PR cập nhật hằng tuần cho npm, Docker và GitHub Actions, gộp minor/patch ([D-055](docs/decisions.md#d-055-ci-coverage-kiểm-định-dạng-và-dependabot)). Không có deploy tự động.
+Mọi `uses:` trong workflow được ghim vào full commit SHA kèm comment phiên bản ([D-067](docs/decisions.md#d-067-ci-supply-chain-ghim-sha-actions-và-trivy-chỉ-báo-cáo)). Báo cáo coverage html được lưu ở artifact của job (7 ngày). Dependabot (`.github/dependabot.yml`) mở PR cập nhật hằng tuần cho npm, Docker và GitHub Actions, gộp minor/patch ([D-055](docs/decisions.md#d-055-ci-coverage-kiểm-định-dạng-và-dependabot)). Không có deploy tự động. Job `e2e` (cài WebKit, cache trình duyệt) và Trivy chưa được chạy trên runner GitHub thật ở thời điểm đóng dự án.
 
 ## Cấu trúc thư mục
 
@@ -273,7 +298,7 @@ BeanBox/
 │  ├─ src/                  config, lib, middlewares, modules/<module>, jobs
 │  ├─ prisma/               schema.prisma, migrations, seed
 │  ├─ prisma.config.ts      cấu hình Prisma CLI (Prisma 7)
-│  ├─ scripts/              generate-demo-orders.ts (đơn demo), demo-init.sh (khởi tạo demo một lệnh)
+│  ├─ scripts/              generate-demo-orders.ts (đơn demo), demo-init.sh (khởi tạo demo một lệnh), load-order-concurrency.ts (đo tải đặt hàng đồng thời)
 │  └─ tests/                unit + integration
 ├─ frontend/                Next.js (App Router)
 │  ├─ src/app/              route (/san-pham, /gio-hang, /admin ...)
@@ -311,4 +336,4 @@ Dự án này là portfolio chạy localhost, không có bản demo công khai. 
 - [Triển khai](docs/deployment.md)
 - [Cấu hình thanh toán sandbox](docs/payments-setup.md)
 - [Hướng dẫn chụp lại ảnh màn hình](docs/screenshots/README.md)
-- Kế hoạch theo đợt: [Đợt 2](docs/wave2-plan.md), [Đợt 3](docs/wave3-plan.md); [lộ trình tiếp theo](docs/roadmap-next.md)
+- Kế hoạch theo đợt: [Đợt 2](docs/wave2-plan.md), [Đợt 3](docs/wave3-plan.md), [Đợt 4](docs/wave4-plan.md), [Đợt 5](docs/wave5-plan.md); [roadmap đã đóng](docs/roadmap-next.md)

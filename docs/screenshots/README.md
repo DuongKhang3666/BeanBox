@@ -68,6 +68,8 @@ docker rm -fv bb-tmp-shots
 
 Generator (`backend/scripts/generate-demo-orders.ts`, xem `docs/testing.md`) có rào an toàn riêng: chỉ đọc `DEMO_DATABASE_URL`, từ chối DB dev (cổng 5432) và production. Quy mô `--orders 1500 --days 90` cho khoảng 15-20 đơn mỗi ngày: biểu đồ 30 ngày có nhiều cột, KPI có so sánh với kỳ trước khác 0, trong khi số đơn (khoảng 1.500) vẫn gọn trong danh sách. Generator không đụng tồn kho, nên script ảnh vẫn tìm được sản phẩm còn hàng; đơn của script ảnh là đơn mới nhất nên nằm đầu danh sách đơn.
 
+Quy trình này đã chạy lại ngày 2026-11-23 (cổng 4100/3100) sau Đợt 4-5: script không cần sửa; 14 trong 20 ảnh đổi nội dung (nhãn "Ngày rang" ở `product.png`, KPI lợi nhuận gộp ở `admin-analytics.png`, ...), 6 ảnh giữ nguyên byte.
+
 Lần chạy đầu mất khoảng 1-3 phút vì có bước `next build`. Script giả định DB **vừa seed** (có thể kèm dữ liệu demo từ generator): muốn chụp lại thì xóa container và làm lại từ đầu (chạy lần hai trên cùng DB sẽ có thêm đơn và có thể thiếu tồn kho).
 
 ## Kiểm ảnh

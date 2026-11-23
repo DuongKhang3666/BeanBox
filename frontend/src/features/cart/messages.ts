@@ -1,4 +1,5 @@
 import { ApiError } from "@/lib/api/errors";
+import { ROAST_EXPIRED_LABEL } from "@/features/catalog/freshness";
 import { formatVND } from "@/lib/format";
 import type { CartItem, CartWarning, CouponInvalidReason } from "@/types/cart";
 
@@ -55,7 +56,9 @@ export function cartErrorMessage(err: unknown): string {
     case "QUANTITY_LIMIT_EXCEEDED":
       return `Mỗi sản phẩm tối đa ${MAX_LINE_QUANTITY} trong giỏ`;
     case "ITEM_UNAVAILABLE":
-      return "Sản phẩm này hiện ngừng bán.";
+      return asRecord(err.details)?.reason === "ROAST_EXPIRED"
+        ? `${ROAST_EXPIRED_LABEL}.`
+        : "Sản phẩm này hiện ngừng bán.";
     case "NOT_FOUND":
       return "Sản phẩm không còn trong giỏ hàng.";
     case "CART_EMPTY":
@@ -87,7 +90,7 @@ export function cartWarningMessage(warning: CartWarning, item: CartItem): string
     case "OUT_OF_STOCK":
       return "Sản phẩm đã hết hàng";
     case "UNAVAILABLE":
-      return "Sản phẩm hiện ngừng bán";
+      return item.roastStatus === "EXPIRED" ? ROAST_EXPIRED_LABEL : "Sản phẩm hiện ngừng bán";
   }
 }
 

@@ -138,7 +138,7 @@ Quy tắc phân lớp backend: `routes` (khai báo + middleware) -> `controller`
 - **So sánh sản phẩm (D-047):** `GET /products/compare?slugs=` (api-contract §4.7) trả 2–4 sản phẩm trong một `findMany` (không N+1, không `description`/`stock`), route khai báo trước `/products/:slug` nên slug `compare` được dành riêng (admin từ chối). FE: `features/compare/` (store localStorage `bb_compare_v1` + hook `useSyncExternalStore`, `CompareButton` trên thẻ và trang sản phẩm, `CompareBar` cố định đáy gắn ở `app/layout.tsx`, `CompareView`/`CompareTable` cho trang `/so-sanh` noindex đọc `?sp=`, gọi API phía client). Không có bảng DB mới.
 - Index: `pg_trgm` + GIN trên `searchText` (xem `db-schema.md`). Sort `relevance` dùng `word_similarity` qua raw query.
 - Lọc/sắp giá dùng cột denormalize `minPrice` (giá hiệu lực thấp nhất của variant active), `soldCount`, `ratingAvg`, `ratingCount`, `inStock`.
-- **Hạn chế đã chấp nhận (MVP):** `minPrice` cập nhật khi variant đổi, nên flash sale theo khung giờ (`saleStart/saleEnd`) **chưa phản ánh realtime** trong lọc/sắp giá; giá hiển thị (card, chi tiết, giỏ, checkout) luôn tính lại từ variant nên đúng. Hướng xử lý sau: job mỗi phút recompute `minPrice` cho sản phẩm có sale sắp bắt đầu/kết thúc, hoặc tính `minPrice` trong query bằng `LEAST` trên variant.
+- **Hạn chế đã chấp nhận (MVP):** `minPrice` cập nhật khi variant đổi, nên flash sale theo khung giờ (`saleStart/saleEnd`) **chưa phản ánh realtime** trong lọc/sắp giá; giá hiển thị (card, chi tiết, giỏ, checkout) luôn tính lại từ variant nên đúng. Đã xử lý ở D-080: job đối soát `minPrice` mỗi 10 phút (SQL tập hợp tìm sản phẩm lệch giá hiệu lực rồi gọi lại `refreshProductDenorm`), độ lệch tối đa ~10 phút.
 
 ## 7. Thanh toán & tác vụ nền
 
@@ -152,6 +152,8 @@ Quy tắc phân lớp backend: `routes` (khai báo + middleware) -> `controller`
   - Job dọn dẹp (M3): xóa giỏ guest không hoạt động > 30 ngày; xóa `RefreshToken`/`PasswordResetToken`/`EmailVerificationToken` đã hết hạn; xóa cứng `ContactMessage` có `status` `RESOLVED`/`SPAM` và `createdAt` cũ hơn `CONTACT_RETENTION_DAYS` ngày (D-029, mặc định 365, `0` = tắt). Chạy mỗi 60 phút, dùng `pg_try_advisory_xact_lock` để chỉ 1 instance chạy mỗi lượt; bật/tắt bằng env `JOBS_ENABLED` (mặc định `true`, luôn tắt khi `NODE_ENV=test`).
   - Job hết hạn thanh toán (M5, D-015): chạy mỗi 60 giây, advisory lock riêng, tối đa 50 đơn `PENDING_PAYMENT` có `expiresAt < now` mỗi lượt (kể cả `paymentStatus=FAILED`); mỗi đơn 1 transaction: `cancelOrderTx` (actor SYSTEM, hoàn kho, hoàn lượt mã), Payment `PENDING` -> `FAILED`; sau commit gửi email hủy và best-effort expire phiên Stripe (lỗi chỉ log). Cùng cờ `JOBS_ENABLED`.
   - Job hủy đơn COD khách vãng lai quá hạn xác nhận (D-057): chạy cùng nhịp 60 giây và dùng cùng advisory lock với job hết hạn thanh toán (chạy nối tiếp nhau); tối đa 50 đơn `PENDING`, `userId` null, COD, tạo trước `now - GUEST_COD_HOLD_HOURS` giờ mỗi lượt; mỗi đơn 1 transaction, `cancelOrderTx` actor `SYSTEM`, lý do `GUEST_COD_EXPIRE_REASON`, hoàn kho + hoàn lượt mã, gửi email trạng thái sau commit.
+- Job làm mới giá theo mốc sale (D-080): chạy 1 lần lúc khởi động rồi mỗi 10 phút, advisory lock riêng, tối đa 500 sản phẩm mỗi lượt; chỉ làm mới sản phẩm có `minPrice` khác giá hiệu lực tính từ biến thể (idempotent). Cùng cờ `JOBS_ENABLED`.
+- Tắt êm (D-079): `SIGTERM`/`SIGINT` và lỗi không bắt được đi qua một hàm tắt êm duy nhất (`lib/shutdown.ts`): ngừng nhận kết nối, đóng socket nhàn rỗi, `stopBackgroundJobs()` chờ lượt job đang chạy, đóng cả hai client Prisma rồi thoát (0 khi tín hiệu, 1 khi lỗi hoặc quá `SHUTDOWN_TIMEOUT_MS`); compose đặt `stop_grace_period: 30s`.
 - Email: Nodemailer (Mailpit khi dev); gửi sau commit, lỗi gửi mail không làm hỏng đơn (log + retry đơn giản). Từ M5 gửi cả email đổi trạng thái (`CONFIRMED`, `SHIPPING`, `DELIVERED`, `CANCELLED`, D-016; `api-contract.md` §13.9).
 
 ## 8. Cấu hình môi trường
@@ -170,6 +172,8 @@ Quy tắc phân lớp backend: `routes` (khai báo + middleware) -> `controller`
 | `REQUIRE_ADMIN_2FA` | `true`/`false`, mặc định `false` ở mọi môi trường (D-070): bắt ADMIN bật 2FA mới dùng được `/admin/*` |
 | `WEB_APP_URL` | gốc link trong email, mặc định `http://localhost:3000`; không dựng link từ header Host/Origin |
 | `JOBS_ENABLED` | mặc định `true`; bật/tắt job nền dọn dẹp (§7); luôn tắt khi `NODE_ENV=test` |
+| `SHUTDOWN_TIMEOUT_MS` | mặc định `25000` (1000..120000); thời gian tối đa tắt êm trước khi `exit(1)` (D-079); phải nhỏ hơn `stop_grace_period` (30s) của compose |
+| `AVATAR_URL_HOSTS` | mặc định rỗng; host `https` (phân tách dấu phẩy) được phép làm `avatarUrl`; rỗng = chỉ `/uploads/...` (D-081). Frontend dùng `NEXT_PUBLIC_AVATAR_URL_HOSTS` (lúc build) cùng giá trị |
 | `COOKIE_SECURE` | mặc định `true` khi production; `false` ở production bị từ chối lúc khởi động (D-045) |
 | `AUTH_RATE_LIMIT_PER_MIN` | mặc định `5`; số nguyên dương; limiter nhóm auth (register, login, forgot/reset/change-password). E2E/CI đặt `30`; production giữ 5 (D-045) |
 | `JWT_ACCESS_SECRET` | chuỗi >= 32 ký tự ngẫu nhiên; khi `NODE_ENV=production`, `JWT_ACCESS_SECRET`/`INTERNAL_API_SECRET` bắt đầu bằng `dev-` bị từ chối lúc khởi động (D-020) |

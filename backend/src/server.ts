@@ -1,10 +1,11 @@
 import { createApp } from './app.js';
 import { env } from './config/env.js';
-import { startBackgroundJobs } from './jobs/cleanup.js';
+import { startBackgroundJobs, stopBackgroundJobs } from './jobs/cleanup.js';
 import { logger } from './lib/logger.js';
 import { loadLocations } from './modules/locations/locations.data.js';
 import { disconnectPrisma } from './lib/prisma.js';
 import { tuneServerTimeouts } from './lib/serverTimeouts.js';
+import { createShutdown, installProcessHandlers } from './lib/shutdown.js';
 
 const app = createApp();
 if (env.PAYMENT_MOCKS_ENABLED) {
@@ -26,17 +27,21 @@ const server = app.listen(env.PORT, env.HOST, () => {
 });
 
 tuneServerTimeouts(server);
-const stopJobs = env.JOBS_ENABLED ? startBackgroundJobs() : () => undefined;
+if (env.JOBS_ENABLED) startBackgroundJobs();
 
-async function shutdown(signal: string) {
-  logger.info(`Nhận ${signal}, đang tắt...`);
-  stopJobs();
-  server.close(async () => {
-    await disconnectPrisma();
-    process.exit(0);
-  });
-  setTimeout(() => process.exit(1), 10_000).unref();
-}
-
-process.on('SIGTERM', () => void shutdown('SIGTERM'));
-process.on('SIGINT', () => void shutdown('SIGINT'));
+// D-079: tắt êm đúng một lần; lỗi cấp tiến trình cũng đi qua đây (exit 1).
+const shutdown = createShutdown({
+  closeServer: () =>
+    new Promise<void>((resolve, reject) => {
+      server.close((err) => (err ? reject(err) : resolve()));
+    }),
+  closeIdleConnections: () => server.closeIdleConnections(),
+  stopJobs: stopBackgroundJobs,
+  disconnect: disconnectPrisma,
+  exit: (code) => process.exit(code),
+  log: logger,
+  timeoutMs: env.SHUTDOWN_TIMEOUT_MS,
+  setTimer: (fn, ms) => setTimeout(fn, ms),
+  clearTimer: (h) => clearTimeout(h as NodeJS.Timeout),
+});
+installProcessHandlers(process, shutdown, logger);

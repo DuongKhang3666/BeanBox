@@ -68,6 +68,9 @@ export interface ProductListItem {
   } | null;
 }
 
+/** Độ tươi hạt (D-082): FRESH <= 30 ngày, PAST_RECOMMENDED 31-90 ngày, EXPIRED > 90 ngày (ngừng bán). */
+export type RoastStatus = "FRESH" | "PAST_RECOMMENDED" | "EXPIRED";
+
 export interface Variant {
   id: string;
   sku: string;
@@ -82,6 +85,9 @@ export interface Variant {
   maxQuantity: number;
   weightGram: number | null;
   roastDate: string | null;
+  /** Tuổi hạt (ngày, giờ VN) do server tính; null khi không có ngày rang. */
+  roastAgeDays: number | null;
+  roastStatus: RoastStatus | null;
 }
 
 export interface ProductImage {

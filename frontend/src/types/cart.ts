@@ -1,4 +1,4 @@
-import type { StockStatus } from "./catalog";
+import type { RoastStatus, StockStatus } from "./catalog";
 
 /** Theo docs/api-contract.md §8. Tiền là số nguyên VND. */
 export type CartWarning = "PRICE_CHANGED" | "INSUFFICIENT_STOCK" | "OUT_OF_STOCK" | "UNAVAILABLE";
@@ -32,6 +32,9 @@ export interface CartItem {
   maxQuantity: number;
   stockStatus: StockStatus;
   warnings: CartWarning[];
+  /** D-082: tuổi hạt (ngày) và mức độ tươi do server tính; null khi không có ngày rang. */
+  roastAgeDays: number | null;
+  roastStatus: RoastStatus | null;
 }
 
 export interface CartCoupon {

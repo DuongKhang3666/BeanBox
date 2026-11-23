@@ -196,9 +196,20 @@ jobs:
           npx prisma generate
           npx prisma migrate deploy
           npm run prisma:seed
-      - name: Cài Chromium cho Playwright
+      - name: Lấy phiên bản Playwright
+        id: playwright
         working-directory: frontend
-        run: npx playwright install --with-deps chromium
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Cache trình duyệt Playwright
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+      # D-083: Chromium cho project chromium + mobile-390, WebKit cho webkit-smoke. `--with-deps`
+      # vẫn cài thư viện hệ thống khi cache trúng (chỉ bỏ qua phần tải trình duyệt).
+      - name: Cài Chromium và WebKit cho Playwright
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium webkit
       - name: Chạy E2E
         working-directory: frontend
         run: npm run test:e2e

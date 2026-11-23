@@ -14,6 +14,7 @@ import {
   validateOptionalPhone,
 } from "@/features/auth/validation";
 import { todayISO, validateAvatarUrl, validateBirthDate } from "../validation";
+import { Avatar } from "./Avatar";
 import { Section } from "./Section";
 
 const FIELDS = ["fullName", "phone", "birthDate", "avatarUrl"] as const;
@@ -57,7 +58,8 @@ export function ProfileForm() {
     const nameErr = validateFullName(fullName);
     const phoneErr = validateOptionalPhone(phone);
     const birthErr = validateBirthDate(birthDate);
-    const avatarErr = validateAvatarUrl(avatarUrl);
+    // D-081: giá trị cũ không hợp lệ (dữ liệu trước khi siết) không chặn việc sửa trường khác; chỉ kiểm khi người dùng đổi ảnh.
+    const avatarErr = payload.avatarUrl === undefined ? null : validateAvatarUrl(avatarUrl);
     if (nameErr) fe.fullName = nameErr;
     if (phoneErr) fe.phone = phoneErr;
     if (birthErr) fe.birthDate = birthErr;
@@ -96,6 +98,7 @@ export function ProfileForm() {
       <form onSubmit={onSubmit} noValidate className="space-y-4" aria-busy={saving}>
         <FormError>{formError}</FormError>
         <FormNotice>{notice}</FormNotice>
+        <Avatar fullName={current.fullName} url={current.avatarUrl} />
         <TextField
           id="fullName"
           label="Họ và tên"
@@ -141,10 +144,10 @@ export function ProfileForm() {
         <TextField
           id="avatarUrl"
           label="Đường dẫn ảnh đại diện"
-          type="url"
           inputMode="url"
           autoComplete="off"
-          placeholder="https://"
+          placeholder="/uploads/..."
+          hint="Đường dẫn /uploads/... hoặc URL https của máy chủ ảnh được phép."
           value={avatarUrl}
           onChange={(e) => {
             setAvatarUrl(e.target.value);

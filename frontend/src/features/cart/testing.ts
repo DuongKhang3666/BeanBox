@@ -25,6 +25,8 @@ export function makeCartItem(over: Partial<CartItem> = {}): CartItem {
     maxQuantity: 20,
     stockStatus: "IN_STOCK",
     warnings: [],
+    roastAgeDays: null,
+    roastStatus: null,
     ...over,
   };
 }

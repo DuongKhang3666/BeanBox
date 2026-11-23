@@ -315,7 +315,10 @@ async function createOrderInTx(tx: Db, a: TxArgs): Promise<TxOutcome> {
   const unavailable = lines.filter((l) => l.priced.warnings.includes('UNAVAILABLE'));
   if (unavailable.length > 0) {
     throw new AppError(409, 'ITEM_UNAVAILABLE', 'Có sản phẩm không còn được bán', {
-      items: unavailable.map((l) => ({ variantId: l.variantId })),
+      items: unavailable.map((l) => ({
+        variantId: l.variantId,
+        ...(l.priced.roastStatus === 'EXPIRED' ? { reason: 'ROAST_EXPIRED' } : {}),
+      })),
     });
   }
   const short = lines.filter((l) => l.quantity > l.stock);

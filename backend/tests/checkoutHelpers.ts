@@ -70,6 +70,7 @@ export function createFixtures(app: () => Express, prefix: string) {
       weightGram?: number;
       productId?: string;
       status?: 'ACTIVE' | 'DRAFT';
+      roastDate?: Date | null;
     } = {},
   ) {
     const productId =
@@ -95,6 +96,7 @@ export function createFixtures(app: () => Express, prefix: string) {
         stock: over.stock ?? 50,
         weightGram: over.weightGram ?? 500,
         isActive: over.isActive ?? true,
+        roastDate: over.roastDate ?? null,
       },
     });
   }

@@ -89,7 +89,12 @@ export function collectIssues(lines: readonly CartLine[]): CheckoutIssue[] {
   for (const l of lines) {
     const w = l.priced.warnings;
     if (w.includes('UNAVAILABLE')) {
-      issues.push({ variantId: l.variantId, type: 'UNAVAILABLE', available: 0 });
+      issues.push({
+        variantId: l.variantId,
+        type: 'UNAVAILABLE',
+        available: 0,
+        ...(l.priced.roastStatus === 'EXPIRED' ? { reason: 'ROAST_EXPIRED' as const } : {}),
+      });
     } else if (w.includes('OUT_OF_STOCK')) {
       issues.push({ variantId: l.variantId, type: 'OUT_OF_STOCK', available: 0 });
     } else if (w.includes('INSUFFICIENT_STOCK')) {

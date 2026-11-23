@@ -108,6 +108,13 @@ function paymentNotAllowedMessage(err: ApiError): string {
   }
 }
 
+/** D-082: `details.reason` hoặc một dòng trong `details.items` là ROAST_EXPIRED. */
+function hasRoastExpired(details: unknown): boolean {
+  const d = asRecord(details);
+  if (d?.reason === "ROAST_EXPIRED") return true;
+  return Array.isArray(d?.items) && d.items.some((i) => asRecord(i)?.reason === "ROAST_EXPIRED");
+}
+
 /** Lỗi API đơn hàng/thanh toán -> câu tiếng Việt cho người dùng. */
 export function orderErrorMessage(err: unknown): string {
   if (!(err instanceof ApiError)) return "Đã có lỗi xảy ra. Vui lòng thử lại.";
@@ -117,7 +124,9 @@ export function orderErrorMessage(err: unknown): string {
     case "OUT_OF_STOCK":
       return "Một số sản phẩm không đủ số lượng trong kho. Vui lòng kiểm tra lại giỏ hàng.";
     case "ITEM_UNAVAILABLE":
-      return "Một số sản phẩm hiện đã ngừng bán. Vui lòng kiểm tra lại giỏ hàng.";
+      return hasRoastExpired(err.details)
+        ? "Có lô cà phê đã quá hạn rang nên ngừng bán. Vui lòng kiểm tra lại giỏ hàng."
+        : "Một số sản phẩm hiện đã ngừng bán. Vui lòng kiểm tra lại giỏ hàng.";
     case "COUPON_INVALID": {
       const d = asRecord(err.details);
       const minOrder = typeof d?.minOrder === "number" ? d.minOrder : null;

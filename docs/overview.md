@@ -2,11 +2,11 @@
 
 > Trang này dành cho người muốn nắm nhanh dự án trong vài phút (ví dụ người phỏng vấn). Chi tiết từng quyết định ở [decisions.md](decisions.md); cách chạy demo ở [README](../README.md).
 
-BeanBox là web thương mại điện tử bán hạt cà phê, dụng cụ pha chế và phụ kiện (giao diện tiếng Việt, tiền VND). Dự án gồm storefront Next.js, REST API Express + Prisma + PostgreSQL và khu quản trị có phân tích kinh doanh. Dự án chạy trên localhost: thanh toán (VNPay giả, MoMo giả, chuyển khoản VietQR demo) và vận chuyển (mã vận đơn, hành trình) đều là giả lập, nhưng được viết để đi qua đúng logic như khi nối nhà cung cấp thật: giá tính ở server, đặt đơn idempotent, giữ tồn kho trong transaction, callback thanh toán có chữ ký, phiên đăng nhập với refresh token xoay vòng và xác thực 2 lớp. Có 70 quyết định kỹ thuật (D-001 đến D-070) được ghi lại cùng đánh đổi.
+BeanBox là web thương mại điện tử bán hạt cà phê, dụng cụ pha chế và phụ kiện (giao diện tiếng Việt, tiền VND). Dự án gồm storefront Next.js, REST API Express + Prisma + PostgreSQL và khu quản trị có phân tích kinh doanh. Dự án chạy trên localhost: thanh toán (VNPay giả, MoMo giả, chuyển khoản VietQR demo) và vận chuyển (mã vận đơn, hành trình) đều là giả lập, nhưng được viết để đi qua đúng logic như khi nối nhà cung cấp thật: giá tính ở server, đặt đơn idempotent, giữ tồn kho trong transaction, callback thanh toán có chữ ký, phiên đăng nhập với refresh token xoay vòng và xác thực 2 lớp. Có 83 quyết định kỹ thuật (D-001 đến D-083) được ghi lại cùng đánh đổi. **Trạng thái dự án: đã hoàn thiện và đóng roadmap (2026-11-23); chỉ bảo trì** (sửa lỗi, cập nhật phụ thuộc), xem [roadmap-next.md](roadmap-next.md).
 
 ## Quyết định theo chủ đề
 
-Mỗi dòng trỏ tới mục tương ứng trong [decisions.md](decisions.md). Phần cuối liệt kê các quyết định còn lại để bảng phủ đủ D-001 đến D-070.
+Mỗi dòng trỏ tới mục tương ứng trong [decisions.md](decisions.md). Phần cuối liệt kê các quyết định còn lại để bảng phủ đủ D-001 đến D-083.
 
 ### Bảo mật và phiên đăng nhập
 
@@ -33,6 +33,8 @@ Mỗi dòng trỏ tới mục tương ứng trong [decisions.md](decisions.md). 
 | [D-068](decisions.md#d-068-mã-vận-đơn-duy-nhất-ở-db)                                                                          | Mã vận đơn duy nhất ở DB (unique index), bắt P2002 trả 409 và thử lại khi sinh mã giả.                               |
 | [D-071](decisions.md#d-071-ghi-chú-nội-bộ-trên-đơn-hàng), [D-072](decisions.md#d-072-in-phiếu-giao-hàng-loạt), [D-073](decisions.md#d-073-xuất-và-nhập-csv-sản-phẩm) | Ghi chú nội bộ trên đơn (append-only), in phiếu giao hàng loạt (tối đa 50), xuất/nhập CSV sản phẩm 2 bước. |
 | [D-075](decisions.md#d-075-cache-http-cho-catalog-ảnh-và-cài-đặt), [D-076](decisions.md#d-076-khóa-tạm-theo-mã-đơn-cho-khách-vãng-lai), [D-077](decisions.md#d-077-mua-lại) | Cache HTTP ngắn cho catalog và ảnh bất biến, khóa tạm theo mã đơn (5 lần sai -> 15 phút) cho khách vãng lai, "Mua lại" đơn cũ vào giỏ. |
+| [D-079](decisions.md#d-079-tắt-êm-và-lỗi-tiến-trình), [D-080](decisions.md#d-080-làm-mới-minprice-theo-mốc-sale), [D-081](decisions.md#d-081-allowlist-ảnh-đại-diện), [D-082](decisions.md#d-082-độ-tươi-hạt-cà-phê) | Tắt êm khi nhận tín hiệu/lỗi tiến trình (chờ job, đóng DB, exit code đúng), job làm mới giá theo mốc sale, ảnh đại diện chỉ nhận `/uploads` hoặc host https cho phép, độ tươi hạt (cảnh báo 30 ngày, ngừng bán 90 ngày). |
+| [D-074](decisions.md#d-074-tách-file-lớn-và-hộp-thoại-dùng-chung) | Tách file lớn (cài đặt, checkout) và hộp thoại dùng chung dựa trên `<dialog>` native: inert nền, focus trap, trả focus. |
 | [D-078](decisions.md#d-078-giá-vốn-bình-quân-gia-quyền-di-động-và-lợi-nhuận-gộp) | Giá vốn bình quân gia quyền di động theo biến thể (nhập hàng kèm đơn giá), chụp vào dòng đơn lúc đặt, lợi nhuận gộp hàng hóa ở phân tích (chỉ Admin; đơn cũ chưa có giá vốn, không đoán). |
 
 ### Thanh toán
@@ -91,6 +93,7 @@ Mỗi dòng trỏ tới mục tương ứng trong [decisions.md](decisions.md). 
 | [D-036](decisions.md#d-036-nâng-prisma-7), [D-037](decisions.md#d-037-kiểm-env-trước-migrate-và-redirect-cổng-caddy)                               | Prisma 7; kiểm env bằng Zod trước khi migrate.                                  |
 | [D-056](decisions.md#d-056-mailer-bền-vững)                                                                                                        | Mailer bền vững: thử lại, không chặn đặt hàng, log không chứa email người nhận. |
 | [D-066](decisions.md#d-066-demo-chạy-bằng-một-lệnh-docker-composedemoyml)                                                                          | Demo chạy bằng một lệnh (`docker-compose.demo.yml`).                            |
+| [D-083](decisions.md#d-083-e2e-mobile-390-px-smoke-webkit-warm-up-khởi-động-nguội-đo-tải-đặt-hàng-đồng-thời) | E2E luồng mua ở 390 px và smoke WebKit, warm-up khởi động nguội, đo tải đặt hàng đồng thời cùng SKU (không oversell, không deadlock). |
 
 ### Các quyết định còn lại
 

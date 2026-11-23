@@ -194,9 +194,9 @@ Ghi chú (2026-11-21): vitest frontend chạy mặc định 16 worker trên máy
 - Chạy tay trên DB tạm (không có test tự động): giới hạn 3 đơn COD guest (409, thay đổi sau khi staff xác nhận, replay Idempotency-Key trả 200 đơn cũ, khách đăng nhập không bị giới hạn); job hết hạn 48 giờ (chỉ đơn guest 49 giờ bị hủy, tồn kho +1 đúng, lý do "Quá hạn xác nhận đơn", history `actorId` null, chạy lần 2 không đổi, analytics vận hành "Hết hạn tự động" ở JSON, CSV và UI); captcha Turnstile bằng khóa thử công khai của Cloudflare (thiếu/sai token -> 400 `CAPTCHA_FAILED`, khách đăng nhập không cần); mailer (SMTP đóng: đơn vẫn 201, 3 lần thử cách 1 giây và 4 giây rồi bỏ, log không có email người nhận; mailpit nhận mail; `SMTP_REQUIRE_TLS=true` với mailpit không TLS: log lỗi STARTTLS, đơn vẫn 201); analytics 250.000 đơn với `ANALYTICS_STATEMENT_TIMEOUT_MS=1000` dưới tải 6-8 request breakdown song song: 503 `ANALYTICS_TIMEOUT` tiếng Việt, UI khối lỗi có "Thử lại", đặt hàng song song vẫn 201, timeout mặc định -> 200. Ghi chú: một request breakdown 365 ngày đơn lẻ trên 100.000 đơn chỉ khoảng 0,85 giây nên không chạm 1 giây; cần tải song song hoặc dữ liệu lớn hơn để gây timeout.
 - Frontend trên production build: header mobile, chỉ báo tải (`aria-busy` true rồi false khi đổi sắp xếp và phân trang, chiều cao vùng lưới không đổi), giờ VN khi trình duyệt ở `America/Los_Angeles`, thông báo 409 ở checkout; slug không tồn tại -> 404, slug cũ -> 308. `global-error.tsx` chỉ có test render (ép lỗi layout gốc cần sửa mã nguồn).
 
-## E2E (Playwright, chỉ chromium; chạy cục bộ và trong CI)
+## E2E (Playwright: chromium desktop, mobile-390, webkit-smoke; chạy cục bộ và trong CI)
 
-Cài trình duyệt một lần: `npx playwright install chromium` (trong `frontend/`).
+Cài trình duyệt một lần: `npx playwright install chromium webkit` (trong `frontend/`; chỉ cần `chromium` nếu bỏ WebKit, xem dưới).
 
 Chạy: `npm run test:e2e` trong `frontend/`.
 
@@ -210,7 +210,7 @@ E2E_API_PORT=4100 E2E_WEB_PORT=3100 npm run test:e2e
 
 Khi đặt, backend chạy với `PORT`, `FRONTEND_ORIGINS` và `WEB_APP_URL` khớp cổng web; frontend chạy `next dev -p <E2E_WEB_PORT>` với `API_INTERNAL_URL` trỏ cổng API; `e2e/helpers.ts` gọi API ở `E2E_API_PORT`. Cặp server mới dùng chung DB dev nên phải chọn cổng chưa ai dùng. Lưu ý: nếu đã có một `next dev` khác đang chạy trong cùng thư mục `frontend/` thì Next có thể từ chối khởi động bản thứ hai (đã kiểm chứng khi cổng 3000 trống, chưa kiểm chứng khi có bản dev khác đang chạy); khi đó dừng bản dev đó hoặc chạy E2E trên bản đã dựng qua `E2E_BASE_URL`. Không đặt hai biến thì hành vi như cũ (CI không đổi).
 
-**Trong CI (D-033, job `e2e`).** Chạy sau khi `backend` và `frontend` xanh, trên runner Linux với Chromium do Playwright cài (`npx playwright install --with-deps chromium`). Postgres và Mailpit là service của job; job `npm ci` cả hai phía, chạy `prisma generate`, `migrate deploy` và seed bằng mật khẩu GIẢ chỉ dành cho CI (đặt trong env của job, không dùng ở nơi khác). Rate limit đặt hàng/mã/quote nới lên 200/phút và nhóm auth lên 30/phút (`AUTH_RATE_LIMIT_PER_MIN`) để E2E không chạm giới hạn. Khi `CI` được đặt, Playwright không dùng lại server có sẵn, thử lại 1 lần (`retries: 1`) và xuất báo cáo HTML; job tải `playwright-report` và `test-results` lên artifact khi lỗi (giữ 7 ngày).
+**Trong CI (D-033, job `e2e`).** Chạy sau khi `backend` và `frontend` xanh, trên runner Linux với Chromium và WebKit do Playwright cài (`npx playwright install --with-deps chromium webkit`, thư mục `~/.cache/ms-playwright` có cache theo phiên bản `@playwright/test`; D-083). Postgres và Mailpit là service của job; job `npm ci` cả hai phía, chạy `prisma generate`, `migrate deploy` và seed bằng mật khẩu GIẢ chỉ dành cho CI (đặt trong env của job, không dùng ở nơi khác). Rate limit đặt hàng/mã/quote nới lên 200/phút và nhóm auth lên 30/phút (`AUTH_RATE_LIMIT_PER_MIN`) để E2E không chạm giới hạn. Khi `CI` được đặt, Playwright không dùng lại server có sẵn, thử lại 1 lần (`retries: 1`) và xuất báo cáo HTML; job tải `playwright-report` và `test-results` lên artifact khi lỗi (giữ 7 ngày).
 
 - `playwright.config.ts` tự khởi động backend (`npm run dev` ở `backend/`, chờ `http://127.0.0.1:4000/api/v1/health`, `JOBS_ENABLED=false`) và frontend (`npm run dev`, cổng 3000); nếu cổng đã có server thì dùng lại (`reuseExistingServer`).
 - Mật khẩu tài khoản seed được đọc từ `backend/.env` ngay trong config, không hardcode và không in ra.
@@ -229,6 +229,62 @@ Khi đặt, backend chạy với `PORT`, `FRONTEND_ORIGINS` và `WEB_APP_URL` kh
 - Form liên hệ giới hạn 3 lần/10 phút/IP: chạy E2E quá 3 lần trong 10 phút sẽ gặp 429 ở kịch bản liên hệ; khởi động lại backend để xóa bộ đếm.
 - Test dùng DB dev: mỗi lần chạy tạo đơn mới (dùng email/SĐT ngẫu nhiên) và hủy lại để hoàn kho. Nếu test chết giữa chừng có thể còn đơn `CONFIRMED`/`PENDING`: hủy ở `/admin/don-hang`.
 - Máy chặn chạy file tải về (Windows "Application Control policy has blocked this file"): đặt `E2E_BROWSER_CHANNEL=msedge` (hoặc `chrome`) để dùng trình duyệt Chromium đã cài sẵn.
+
+### Warm-up khởi động nguội, project mobile và WebKit (D-083)
+
+**Warm-up (`e2e/global-setup.ts`).** `next dev` biên dịch từng route ở lần gọi đầu; webServer chỉ chờ một URL nên test đầu tiên sau khi server dev vừa khởi động vừa chờ biên dịch trang sản phẩm/giỏ/thanh toán vừa gọi `POST /cart/items` qua rewrite khi server còn bận, và thỉnh thoảng đỏ (đã ghi ở các đợt trước: `POST /cart/items` 404). Đo trên máy này: lần đầu gọi `/danh-muc/ca-phe-hat` sau khi xóa `.next/dev` mất 7,3 giây, các lần sau 0,2-0,6 giây. Cách sửa: `globalSetup` (chạy sau webServer, trước test) gọi QUA frontend, mỗi bước phải trả đúng mã 2 lần liên tiếp, timeout 120 giây/bước, log từng bước dạng `[warm-up] ...`: `GET /api/v1/health` và `GET /api/v1/products` (rewrite), `POST /api/v1/cart/items` thân rỗng (phải ra 400 JSON của backend; 404 nghĩa là rewrite chưa sẵn sàng), rồi các trang `/`, `/danh-muc/ca-phe-hat`, `/san-pham/<slug>`, `/gio-hang`, `/thanh-toan`, `/tra-cuu-don-hang`, `/dang-nhap`, `/admin`. `webServer.url` của frontend cũng là `/api/v1/health` nên Playwright chỉ coi frontend sẵn sàng khi rewrite chạy. Không dùng sleep cố định (chỉ khoảng thăm dò 0,5 giây giữa các lần thử lại). Warm-up mất khoảng 16-21 giây khi nguội. Giới hạn trung thực: không tái hiện được 404 ở mức HTTP thuần (POST đồng thời với biên dịch trang mới: 0 lỗi/56 lần) nên cơ chế 404 chính xác của Next chưa xác định; biện pháp loại bỏ điều kiện "biên dịch lúc test chạy". Sau khi sửa: `guest-order.spec.ts` khởi động lạnh 5 lần (xóa `.next/dev` mỗi lần) 5/5 đạt và cả bộ 2 lần 39/39 đạt. Lưu ý: trước khi sửa, 4 lần khởi động lạnh trong phiên này cũng đạt, tức là lỗi chập chờn chưa từng tái hiện nên "0 lỗi" sau sửa chưa phải bằng chứng thống kê mạnh.
+
+**Project (`playwright.config.ts`).**
+
+| Project | Thiết bị | Spec | Điều kiện |
+| --- | --- | --- | --- |
+| `chromium` | Desktop Chrome | mọi spec trừ `purchase-mobile.spec.ts` | luôn có |
+| `mobile-390` | Pixel 7 chỉnh 390x844, `isMobile`, `hasTouch`, cùng kênh với `chromium` | `purchase-mobile.spec.ts` | luôn có |
+| `webkit-smoke` | `devices["iPhone 13"]` (WebKit) | `purchase-mobile.spec.ts` | bỏ khi `E2E_SKIP_WEBKIT=1`, hoặc khi đặt `E2E_BROWSER_CHANNEL` mà không ép `E2E_SKIP_WEBKIT=0` |
+
+`purchase-mobile.spec.ts`: menu "Danh mục" của header mobile -> "Cà phê hạt" -> sản phẩm còn hàng -> thêm giỏ (ngăn kéo mini-cart) -> giỏ -> thanh toán COD -> trang thành công, kiểm `scrollWidth <= clientWidth` ở trang chủ, danh mục, chi tiết sản phẩm, giỏ, thanh toán và trang thành công; không đăng nhập (không tốn lượt limiter auth); hủy đơn qua API ở cuối. Cả bộ hiện là 39 test (38 chromium + 1 mobile-390), thêm 1 test webkit-smoke khi WebKit có mặt. Lệnh chọn project: `npx playwright test --project=mobile-390`. Webserver cục bộ nay nới limiter đặt đơn/mã/quote lên 200/phút (ưu tiên env) vì các project cùng đặt đơn từ một IP.
+
+**WebKit trên máy chặn file tải về.** Windows Application Control chặn trình duyệt do Playwright tải về, nên khi dùng `E2E_BROWSER_CHANNEL=msedge` project `webkit-smoke` bị bỏ qua. Kiểm WebKit cục bộ bằng image chính thức đúng phiên bản `@playwright/test` (hiện 1.65.0, `mcr.microsoft.com/playwright:v1.65.0-noble`, khoảng 2 GB, xóa bằng `docker rmi` khi xong). Cách đã dùng: server chạy trên máy chủ (backend `HOST=0.0.0.0`, `next dev`), chỉ Playwright chạy trong container; một forwarder TCP nhỏ trong container đưa `127.0.0.1:<cổng>` tới `host.docker.internal:<cổng>` nên trình duyệt trong container vẫn dùng origin `http://localhost:<cổng web>` (đúng CORS/CSP/Next dev) và helper gọi API ở `127.0.0.1:<cổng API>`; Playwright dùng lại server có sẵn (`reuseExistingServer`):
+
+```bash
+# 1) máy chủ: DB tạm + backend (HOST=0.0.0.0, cổng 4300) + next dev (cổng 3300, API_INTERNAL_URL=http://localhost:4300)
+# 2) forwarder, đặt ở file ngoài repo (fwd.js): với mỗi cổng trong FWD_PORTS,
+#    net.createServer(c => { const s = net.connect(PORT, "host.docker.internal"); c.pipe(s).pipe(c); }).listen(PORT, "127.0.0.1")
+docker run --rm --ipc=host --add-host=host.docker.internal:host-gateway \
+  -v <repo>:/repo -v <thư-mục-chứa-fwd.js>:/fwd:ro -w /repo/frontend \
+  -e FWD_PORTS=3300,4300 -e E2E_API_PORT=4300 -e E2E_WEB_PORT=3300 -e E2E_SKIP_WEBKIT=0 \
+  mcr.microsoft.com/playwright:v1.65.0-noble \
+  bash -c 'node /fwd/fwd.js & sleep 1; npx playwright test --project=webkit-smoke --project=mobile-390'
+```
+
+Trong container `mobile-390` dùng Chromium của image (Linux), không phải Edge. Kết quả ở mục "Kết quả kiểm Đợt 5 task 2".
+
+### Đo tải đặt hàng đồng thời cùng SKU (D-083)
+
+Script `backend/scripts/load-order-concurrency.ts` (chỉ `fetch`, không phụ thuộc mới). Mỗi lượt: đặt tồn của 1 biến thể = S (20), tạo trước N giỏ guest (100, mỗi giỏ 1 cái biến thể đó, email/SĐT/Idempotency-Key UUID v4 tất định theo lượt và chỉ số), bắn N `POST /orders` COD với tối đa C request cùng bay, rồi kiểm bằng SQL: đúng S đơn 201, N-S đơn 409 `OUT_OF_STOCK`, 0 lỗi 5xx, tồn cuối = 0, số `InventoryMovement` `ORDER_RESERVE` tăng đúng S, số dòng `Order` = S, `pg_stat_database.deadlocks` không tăng. In JSON (cấu hình, từng lượt, trung vị theo C); mã thoát 1 nếu có lượt sai. Rào an toàn: cần `LOAD_API_URL` và `LOAD_DATABASE_URL`, chỉ localhost, từ chối cổng API 4000/4100 và DB localhost:5432 trừ khi có `LOAD_ALLOW_PROTECTED=1`. Biến tùy chọn: `LOAD_STOCK`, `LOAD_ORDERS`, `LOAD_CONCURRENCY` ("25,50,100"), `LOAD_REPEATS` (3), `LOAD_SKU`, `LOAD_TAG`.
+
+Tái lập (DB và backend tạm; container Postgres 17 tạm nhớ `docker rm -fv` khi xong):
+
+```bash
+docker run -d --name bb-load-pg --shm-size=256m -e POSTGRES_USER=beanbox -e POSTGRES_PASSWORD=<tạm> -e POSTGRES_DB=beanbox_load -p 127.0.0.1:5440:5432 postgres:17
+cd backend
+export DATABASE_URL=postgresql://beanbox:<tạm>@127.0.0.1:5440/beanbox_load
+npx prisma migrate deploy && npm run prisma:seed
+PORT=4300 JOBS_ENABLED=false GENERAL_RATE_LIMIT_PER_MIN=100000 ORDER_RATE_LIMIT_PER_MIN=100000 \
+  QUOTE_RATE_LIMIT_PER_MIN=100000 COUPON_RATE_LIMIT_PER_MIN=100000 GUEST_COD_MAX_OPEN=100 \
+  npx tsx src/server.ts &            # backend tạm (không phải `tsx watch`)
+LOAD_API_URL=http://127.0.0.1:4300 LOAD_DATABASE_URL=$DATABASE_URL npx tsx scripts/load-order-concurrency.ts
+```
+
+Số đo (2026-11-23; máy: Intel Core i5-13450HX 10 nhân/16 luồng, 15,6 GB RAM, Windows 11, Docker Desktop 29.9.2, Node 24.14.0; Postgres 17.11 trong Docker với `shared_buffers=128MB` mặc định, `max_connections=100`; backend chạy trên máy chủ, pool `pg` mặc định 10 kết nối; Mailpit không chạy nên email xác nhận đơn gửi lỗi nền; client và server cùng một máy nên tranh CPU với nhau). SKU `ACD-250-PHIN`, N = 100 đơn, S = 20 tồn, mỗi mức C chạy 3 lần, bảng là trung vị của 3 lần:
+
+| C (đồng thời) | 201 | 409 OUT_OF_STOCK | 5xx | tồn cuối | ORDER_RESERVE | deadlock | p50 (ms) | p95 (ms) | p99 (ms) | tổng (ms) | thông lượng (đơn/giây) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 25 | 20 | 80 | 0 | 0 | 20 | 0 | 481 | 1388 | 1454 | 2739 | 36,5 |
+| 50 | 20 | 80 | 0 | 0 | 20 | 0 | 975 | 1673 | 1733 | 2535 | 39,4 |
+| 100 | 20 | 80 | 0 | 0 | 20 | 0 | 1748 | 2330 | 2372 | 2406 | 41,6 |
+
+Cả 9 lượt đạt mọi kiểm tra; log Postgres không có `deadlock` hay `ERROR`. Đọc số: độ trễ tăng gần tuyến tính theo C còn thông lượng gần phẳng (khoảng 40 đơn/giây): điểm nghẽn là pool 10 kết nối của backend cộng khóa dòng biến thể (`FOR UPDATE` trong `placeOrder`), không phải lỗi đúng đắn (đây là suy luận từ hình dạng số đo, chưa profile riêng); mỗi yêu cầu có kiểm tra giỏ, báo giá và giao dịch nên con số tuyệt đối chỉ có ý nghĩa so sánh trên cùng máy. Test tương ứng trong bộ test nhanh: `orders.integration.test.ts` ("race tồn kho": tồn 3, 5 giỏ guest song song -> đúng 3 đơn, 2 `OUT_OF_STOCK`, tồn 0, 3 movement) và `loadOrderConcurrency.test.ts` (rào an toàn, phân vị, UUID tất định của script).
 
 ### Lưu ý rate limit
 
@@ -490,3 +546,50 @@ Kết quả (2026-11-23, Windows, Docker Desktop, Edge): build không cache 280 
   - Nhóm 3: `Cache-Control` catalog thành công `public, max-age=30, s-maxage=60, stale-while-revalidate=120` (kể cả HEAD và qua proxy Next); 404/400 `no-store`; `/cart`, `/me`, `/admin/*` `no-store`; `/uploads` tên hex `public, max-age=31536000, immutable`, ảnh seed `public, max-age=86400`. Đổi phí ship ở settings -> quote thấy ngay (20.000 -> 27.000). Khóa mã đơn: 5 lần sai (404) -> lần 6 (đúng SĐT) 429 `ORDER_LOOKUP_LOCKED`, `Retry-After: 900`, mã khác không bị khóa; giao diện tra cứu hiện "Bạn đã nhập sai thông tin đơn hàng quá nhiều lần...". "Mua lại": API và nút trong chi tiết đơn: có hàng vào giỏ, sản phẩm hết hàng bị bỏ qua với `OUT_OF_STOCK` và hiện lý do trên giao diện.
   - Nhóm 4: tồn 10 @ 50.000, nhập 10 @ 60.000 -> `avgCost` 55.000 (SQL); Staff gửi `unitCost` 403, Staff nhập hàng không đơn giá 200 và `avgCost` giữ nguyên; đặt đơn -> `OrderItem.unitCost` = 55.000; Staff (inventory, movements, products, chi tiết sản phẩm, đơn) và khách (đơn, export cá nhân) không thấy `avgCost`/`unitCost`; `kpis.grossProfit` của `/admin/analytics/overview` = 552.900 khớp cộng tay (1.263.000 - 710.100) và tổng `top-products`; CSV `avg_cost` = 55000 khứ hồi `unchanged`.
 - **Chưa kiểm / hạn chế:** Safari, Firefox; CI trên runner GitHub thật; khóa mã đơn và cache settings là trong tiến trình (một instance). Bản in chỉ kiểm bằng `emulateMedia print` + PDF của Edge, không qua máy in thật.
+
+### Test Đợt 5 task 1 (D-079..D-082)
+
+- **Tắt êm (D-079):** `shutdown.test.ts` (đối tượng giả: thứ tự gọi server -> socket nhàn rỗi -> job -> DB -> exit; chờ job và server đang xử lý xong mới đóng DB; timeout tổng gọi `exit(1)`; gọi lần hai bị bỏ qua; mã thoát 0/1; bước lỗi vẫn chạy bước sau; handler `uncaughtException`/`unhandledRejection` log `fatal` rồi tắt êm 1, `SIGTERM`/`SIGINT` tắt êm 0) và `backgroundJobsStop.test.ts` (đồng hồ giả: `stopBackgroundJobs` chờ lượt đang chạy, không lên lịch lượt mới sau khi dừng, lỗi job không làm nó ném lỗi). `cleanup.integration.test.ts` kiểm dừng được và gọi lại an toàn.
+- **Làm mới minPrice (D-080)** `saleRefresh.integration.test.ts` (đồng hồ tiêm, năm 2030): trước `saleStart` giá thường và job không ghi sản phẩm (`updatedAt` không đổi), sau mốc `minPrice` = giá sale và `/products?sort=price_asc` + lọc `maxPrice` phản ánh đúng, chạy lại idempotent, sau `saleEnd` về giá thường, biên đúng `saleStart`/`saleEnd` (còn sale) và +1 ms (hết), giới hạn số sản phẩm mỗi lượt, advisory lock bị giữ thì `skipped`. Test SQL đối soát: 9 ca (sale bound mở một đầu/cả hai đầu, biến thể tắt, biến thể xóa, không biến thể, hai biến thể sale lệch pha) x 11 mốc thời gian: sản phẩm bị SQL coi là lệch đúng bằng sản phẩm có `minPrice` khác `computeProductDenorm`, và sau job mọi `minPrice` khớp.
+- **Ảnh đại diện (D-081):** `avatarUrl.test.ts` (validator: `/uploads` hợp lệ/không, `..`, `//`, query, hash, `%2e`, khoảng trắng, `\`, https đúng/sai host, host con và host giả mạo, user:pass, cổng, `#`, `http:`, `data:`, `javascript:`, quá dài); `me.integration.test.ts` (PATCH `/me`: 9 giá trị sai -> 400 field `avatarUrl`, giá trị cũ không đổi, `/uploads/...` được, https chỉ khi host nằm trong `AVATAR_URL_HOSTS` đặt tạm bằng `env`); FE `avatar.test.tsx` (allowlist, `validateAvatarUrl`, `Avatar` render ảnh hoặc chữ cái đầu) và `ProfileForm.test.tsx` (ảnh cũ không hợp lệ không hiển thị và không chặn sửa trường khác; `/uploads` hiển thị).
+- **Độ tươi hạt (D-082):** `freshness.test.ts` (tuổi theo ngày VN: biên 00:00/23:59:59 giờ VN, ngày rang tương lai = 0, ngưỡng 30/31/90/91, `priceCartLine`), `roastFreshness.integration.test.ts` (HTTP: thêm giỏ lô quá hạn 409 `ITEM_UNAVAILABLE` + `reason ROAST_EXPIRED`, lô `roastDate` null và lô mới được; chi tiết sản phẩm có `roastStatus`/`maxQuantity` 0; đồng hồ tiêm: giỏ tại 59/90/91 ngày, `addItem` tại 90 được và 91 bị từ chối, quote có issue `ROAST_EXPIRED`, đặt đơn tại 91 bị từ chối và không trừ kho, tại 90 đặt được, mua lại bỏ qua lô quá hạn); FE `freshness.test.tsx` (nhãn, `AddToCartPanel` tươi/quá 30/quá 90 ngày, biến thể mặc định, dòng giỏ, thông báo lỗi). Giỏ dùng user (không dùng giỏ khách vãng lai vì giỏ guest hết hạn 30 ngày theo đồng hồ tiêm).
+- **Kiểm thật tắt êm** (image `runtime` dựng tạm, DB tạm, mạng docker tạm, đã dọn): `docker stop` khi có một kết nối keep-alive nhàn rỗi: log "Tắt êm: SIGTERM" rồi "Đã tắt êm (exit 0)", mã thoát 0, 0,49 giây (trước đây có thể chờ tới 10 giây rồi bị SIGKILL do socket keep-alive 65 giây); ép `unhandledRejection` sau khi khởi động: log `fatal` (level 60) kèm stack, "Tắt êm: unhandledRejection", mã thoát 1. Trên Windows không gửi được SIGTERM thật tới tiến trình Node nên kiểm trong container Linux.
+- **Dữ liệu seed (D-080/D-082):** DB tạm seed sạch (40 sản phẩm, 4 biến thể có sale): SQL đối soát cho 0 sản phẩm lệch tại `now` và khớp `computeProductDenorm` cả 40 sản phẩm; tại +400 ngày phát hiện 1 sản phẩm lệch (sale đã hết hạn). `roastDate` seed = 3..28 ngày trước lúc seed nên không biến thể demo nào chạm ngưỡng cảnh báo 30 ngày hay chặn 90 ngày (tại ngày seed; sau 63 ngày các lô 28 ngày tuổi sẽ vượt 90 ngày: seed lại để làm tươi).
+
+### Kết quả kiểm Đợt 5 task 1 (2026-11-23, Windows, Postgres 17 tạm, Edge)
+
+- **Backend** (`TEST_DATABASE_URL` trỏ DB test tạm `postgres:17 --shm-size=256m`): `lint`, `typecheck`, `format:check`, `build` sạch; `test:coverage` 112 file, 2166 test đạt; statements 96,28 %, branches 89,13 %, functions 97,8 %, lines 97,8 % (trên ngưỡng D-055: 94 / 87 / 95 / 95).
+- **Frontend:** `lint`, `typecheck`, `format:check`, `build` sạch; `test:coverage` 122 file, 1072 test đạt; statements 86,47 %, branches 80,95 %, functions 86,05 %, lines 88,97 %. Lần chạy đầu (song song với backend `test:coverage` trên cùng máy) có 1 test cũ quá thời gian (`AdminCouponForm` PERCENT, đã ghi ở các đợt trước là nhạy với tải); chạy lại riêng đạt.
+- **Docker/CI:** `docker compose config -q` cho dev, prod (env giả như CI, kèm profile `backup`, `tools`) và demo đều 0; prod có `stop_grace_period: 30s` cho backend.
+- **E2E** (`guest-order`, `accounts`, `compare`, `m6b`; DB tạm migrate + seed mới; cổng API 4200 và web 3200; `E2E_BROWSER_CHANNEL=msedge`): 9/9 đạt ở lượt chạy lại. Lượt đầu (server dev khởi động nguội) 8/9: `guest-order` nhận `POST /cart/items` 404 ngay khi `next dev` mới khởi động; chạy lại riêng spec đó và chạy lại cả bộ đều đạt (thuộc nhóm lỗi khởi động nguội đã ghi ở các đợt trước, không tái hiện).
+- **Chưa kiểm:** `a11y`, `csp`, `payments-demo`, `two-factor` (không đụng luồng của chúng); `AVATAR_URL_HOSTS` với CSP `img-src` thật; CI trên runner GitHub thật.
+
+
+### Kết quả kiểm Đợt 5 task 2 (2026-11-23, Windows, Postgres 17 tạm, Edge)
+
+- **Backend** (`TEST_DATABASE_URL` trỏ DB test tạm `postgres:17 --shm-size=256m`, env như CI): `lint`, `typecheck`, `format:check` sạch; `test:coverage` 113 file, 2173 test đạt; statements 96,28 %, branches 89,13 %, functions 97,8 %, lines 97,8 % (ngưỡng D-055).
+- **Frontend:** `lint`, `typecheck`, `format:check` sạch (không đổi `src/`, chỉ `e2e/` và `playwright.config.ts` nên không chạy lại `test:coverage`).
+- **E2E khởi động nguội:** `guest-order.spec.ts` 5 lần, mỗi lần xóa `.next/dev` và khởi động lại cả backend lẫn `next dev` (project `chromium`, `E2E_BROWSER_CHANNEL=msedge`, DB tạm seed mới, cổng API 4300 / web 3300): 5/5 đạt (28-32 giây gồm warm-up khoảng 16 giây).
+- **E2E toàn bộ** (project `chromium` + `mobile-390`, Edge; mỗi lượt xóa `.next/dev`): 39/39 đạt, hai lượt liên tiếp (6,9 và 6,4 phút, chậm hơn thường lệ do chạy song song với việc tải image Docker).
+- **WebKit và mobile trong Docker** (image `mcr.microsoft.com/playwright:v1.65.0-noble`, server trên máy chủ, forwarder TCP như trên): `mobile-390` (Chromium Linux) và `webkit-smoke` (WebKit, iPhone 13) 2/2 đạt, 47 giây gồm warm-up 21 giây.
+- **CI:** `actionlint` 1.7.7 (image Docker) 0 lỗi sau khi thêm `webkit`, bước lấy phiên bản Playwright và `actions/cache` (ghim SHA v6.1.0) cho `~/.cache/ms-playwright`.
+- **Đo tải:** bảng ở mục "Đo tải đặt hàng đồng thời cùng SKU": 9/9 lượt đạt.
+- **Chưa kiểm:** CI trên runner GitHub thật (cài WebKit, cache trình duyệt, thời gian job); WebKit trên Edge/Windows cục bộ (bị chặn, chỉ qua Docker).
+
+### Kết quả kiểm tổng Đợt 5 (chốt dự án)
+
+Ngày 2026-11-23, Windows, Docker Desktop, Postgres 17 tạm (`postgres:17 --shm-size=256m`), Edge. Không sửa mã nguồn trong lượt kiểm này.
+
+- **Backend** (`TEST_DATABASE_URL` trỏ DB test tạm, env như CI): `lint`, `typecheck`, `format:check`, `build` sạch; migration deploy từ DB trống và `migrate diff --exit-code` = 0; `test:coverage` 113 file, 2.173 test đạt; statements 96,28 %, branches 89,13 %, functions 97,8 %, lines 97,8 % (ngưỡng D-055: 94 / 87 / 95 / 95).
+- **Frontend:** `lint`, `typecheck`, `format:check`, `build` sạch; `test:coverage` 122 file, 1.072 test đạt; statements 86,47 %, branches 80,95 %, functions 86,05 %, lines 88,97 %.
+- **Docker/CI:** `docker build --target runtime` (backend) và build frontend thành công (tag tạm, đã `docker rmi`); `docker compose config -q` dev, prod (env giả như CI, kèm profile `backup`, `tools`) và demo đều 0; `actionlint` 1.7.7 0 lỗi; gitleaks v8.30.0 `git` (32 commit) và `dir` (chỉ file tracked/mới) không có rò rỉ.
+- **E2E** (project `chromium` + `mobile-390`, `E2E_BROWSER_CHANNEL=msedge`, cổng API 4200 / web 3200, mỗi lượt một DB tạm migrate + seed mới và xóa `.next/dev`): 39/39 đạt, hai lượt liên tiếp (4,9 và 6,6 phút). Cộng 1 test `webkit-smoke` thì bộ đầy đủ là 40 test.
+- **WebKit + mobile trong Docker** (`mcr.microsoft.com/playwright:v1.65.0-noble`, cách ở mục "Warm-up khởi động nguội, project mobile và WebKit (D-083)"): `mobile-390` và `webkit-smoke` 2/2 đạt (30 giây gồm warm-up khoảng 10 giây).
+- **Đo tải đặt hàng đồng thời, đo lại C = 50** (DB và backend tạm, 3 lượt): 3/3 lượt đạt (đúng 20 đơn 201, 80 đơn 409, 0 lỗi 5xx, tồn cuối 0); p50 714 ms, p95 1324 ms, p99 1377 ms, 51,1 đơn/giây. Thông lượng cao hơn lần đo trong bảng (39,4 đơn/giây ở C = 50) vì máy ít tải hơn; số tuyệt đối chỉ so sánh được trên cùng điều kiện.
+- **Demo một lệnh** (`docker compose -f docker-compose.demo.yml up --build -d`, không có tài nguyên `beanbox-demo*` từ trước): 147 giây tới khi mọi container healthy, `http://localhost:3300` trả 200 ngay sau đó (có cache lớp build: 34 bước `CACHED`); `init` thoát 0 (1.500 đơn, 4.329 dòng hàng, 138 user demo). RAM 4 container: khoảng 230 MB lúc mới khởi động, 378 MB sau khi chạy kịch bản. Kịch bản README bước 2 (VNPay giả), 3 (chuyển khoản), 4 (staff xác nhận, đóng gói, giao: sinh mã `BBL-...`), 5 (tra cứu có hành trình mô phỏng), 6 (`/admin/phan-tich` có KPI "Lợi nhuận gộp" = 219.912.300 đ, "Biên lợi nhuận gộp", "Độ phủ giá vốn"; xuất CSV tải được) và 9 (độ tươi hạt, đặt đơn COD rồi "Mua lại") đạt bằng Playwright + Edge. Lưu ý: chạy tự động nhanh liên tục từ một IP chạm giới hạn chung 100 yêu cầu/phút (analytics báo "Bạn thao tác quá nhanh"), tự hết sau khoảng một phút; người dùng thao tác tay không gặp. `docker stop` backend: log "Tắt êm: SIGTERM" rồi "Đã tắt êm (exit 0)", mã thoát 0, 0,59 giây (D-079). `down -v --rmi local` dọn sạch.
+- **Chức năng thật Đợt 5** (backend + frontend tạm, DB tạm seed sạch):
+  - D-080: đặt SQL biến thể `CHEMEX-3C` sale 100.000 đ bắt đầu 2 phút trước, `minPrice` sản phẩm còn 1.150.000. Backend `JOBS_ENABLED=false`: `/products?sort=price_asc&maxPrice=120000` không có `chemex-3-cup` (lệch). Khởi động lại với `JOBS_ENABLED=true`: log "đã làm mới 1 sản phẩm, 0 lỗi", `minPrice` = 100.000, sản phẩm xuất hiện đầu danh sách lọc/sắp xếp. Đạt.
+  - D-081: PATCH `/me` `avatarUrl`: `/uploads/...` và https đúng host `AVATAR_URL_HOSTS` 200; `http:`, `data:`, `/uploads/../x`, host ngoài allowlist, host giả mạo `img.allowed.test.evil.com`, `javascript:` đều 400 (field `avatarUrl`). UI hồ sơ: https host chỉ server cho phép (frontend chưa khai `NEXT_PUBLIC_AVATAR_URL_HOSTS`) hiện chữ cái, nhập `http:` báo lỗi, nhập `/uploads/...` lưu và hiện ảnh. Đạt.
+  - D-082: `roastDate` 95 ngày trước: trang sản phẩm "Ngày rang: 20/08/2026 (Rang 95 ngày trước)", nút "Ngừng bán do quá hạn rang" bị khóa; thêm giỏ 409 `ITEM_UNAVAILABLE` (`reason ROAST_EXPIRED`); lô đã nằm trong giỏ rồi quá hạn: quote có issue `ROAST_EXPIRED`, `POST /orders` 409 và tồn kho không đổi. `roastDate` 40 ngày trước: nhãn "Rang 40 ngày trước" + cảnh báo "Nên dùng trong 30 ngày", thêm giỏ 201, quote không issue, đặt đơn COD 201 và trừ kho. 20/20 kiểm tra API và 6/6 kiểm tra UI đạt.
+- **Prettier:** `README.md` đạt. Các file `docs/*.md` khác lệch định dạng từ trước (15 file còn lệch khi chạy `prettier --check` với cấu hình backend, gồm các file đợt này chỉ thêm đoạn mới); không format hàng loạt để tránh diff lớn.
+- **Chưa kiểm:** CI trên runner GitHub thật (cài WebKit, cache trình duyệt, Trivy); Safari thật và Firefox; WebKit trên Windows cục bộ (chỉ qua Docker).

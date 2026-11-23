@@ -4,6 +4,33 @@
 - HEAD: 6fd1313
 - Phạm vi rà soát: bảo mật, hiệu năng backend/DB, frontend UX/SEO/a11y, vận hành/CI/deploy, test, tài liệu, tính năng TMĐT.
 
+## Trạng thái: ĐÓNG (2026-11-23)
+
+Roadmap này đã đóng sau Đợt 5. Dự án ở trạng thái hoàn thiện và chỉ bảo trì (sửa lỗi, cập nhật phụ thuộc từ Dependabot); không mở tính năng mới. Mỗi mục R-01..R-24 có dòng "Trạng thái cuối" ngay dưới tiêu đề; các dòng "Trạng thái" cũ bên dưới giữ nguyên làm lịch sử. Phần (b) R-25..R-37 giữ "Ngoài phạm vi".
+
+Tóm tắt theo đợt:
+
+- **Đợt 1 (2026-11-21):** R-01, R-02, R-04, R-06, R-07, R-08, R-12 (trừ "Mua lại").
+- **Đợt 2:** R-03 phần kỹ thuật (D-065), R-10, R-11, R-22 (D-063..D-065).
+- **Đợt 3:** ghim SHA, Trivy, demo một lệnh, `REQUIRE_ADMIN_2FA` (D-066, D-067, D-069, D-070).
+- **Đợt 4:** R-21 (D-071..D-073), R-13 và tách file (D-074), R-09, R-05, "Mua lại" (D-075..D-077), R-23 một phần (D-078).
+- **Đợt 5:** R-16 phần `server.ts` (D-079), R-17 (D-080), R-18 một phần (D-081), R-24a (D-082), R-14 rút gọn (D-083).
+
+KHÔNG LÀM (chủ dự án chốt khi đóng roadmap):
+
+| Mục | Lý do ngắn |
+| --- | --- |
+| R-19 bảng tổng hợp analytics | Chưa cần ở quy mô demo (D-054); rủi ro lớn cho đợt chốt. |
+| R-23 phần mở rộng (nhà cung cấp, lô, backfill, phí) | Rủi ro số liệu; D-078 đã đủ cho lợi nhuận gộp. |
+| R-06 outbox | Chỉ có ý nghĩa với SMTP thật, ngoài phạm vi. |
+| R-24b ảnh trong đánh giá | Cần kiểm duyệt upload công khai. |
+| R-16 phần còn lại (tách thêm file) | Tách chỉ để tách, không đổi hành vi. |
+| R-20 VAT | Không cần cho portfolio. |
+| R-15 grace window refresh | Nới phát hiện trộm token; tần suất lỗi chưa xác minh. |
+| R-04, R-02, R-11 phần còn lại | Phần có giá trị đã làm; phần còn lại là mở rộng hoặc cần domain/hạ tầng thật. |
+| R-21 xuất CSV đơn | Đã có CSV sản phẩm và phân tích. |
+| R-12/R-13 Firefox | Chỉ làm smoke WebKit (D-083). |
+
 ## Cập nhật phạm vi (2026-11-21)
 
 Chủ dự án chốt: BeanBox là dự án portfolio/CV, chỉ chạy localhost, không deploy thật, thanh toán chỉ ở chế độ demo. Hệ quả cho roadmap:
@@ -85,6 +112,7 @@ Nhãn "(chưa xác minh)" nghĩa là chưa kiểm chứng được trong lần r
 # Phần (a) - Làm được ngay, không cần hạ tầng
 
 ### R-01 Sửa tài liệu lỗi thời và liên kết gãy
+- **Trạng thái cuối (2026-11-23):** Đã làm (Đợt 1).
 - **Trạng thái:** Đã làm (Đợt 1): các điểm nêu bên dưới đã được sửa trong docs (xem lịch sử git của `docs/`).
 - **Nhóm:** Tài liệu.
 - **Mô tả:** Sửa các điểm sau:
@@ -102,6 +130,7 @@ Nhãn "(chưa xác minh)" nghĩa là chưa kiểm chứng được trong lần r
 - **Rủi ro:** Thấp.
 
 ### R-02 Lớp lỗi và trạng thái tải ở frontend
+- **Trạng thái cuối (2026-11-23):** Đã làm một phần (Đợt 1, D-059). Phần còn lại: Không làm - noindex khi chỉ danh sách sản phẩm lỗi là tối ưu nhỏ; dịch vụ thu lỗi cần hạ tầng ngoài (R-28, ngoài phạm vi).
 - **Trạng thái:** Đã làm (Đợt 1), xem D-059. Có: `global-error.tsx`, chỉ báo tải phía client cho danh mục/tìm kiếm khi đổi lọc/sắp xếp/trang (`aria-busy` + chữ ẩn "Đang tải..."), noindex ở nhánh API lỗi, test. KHÔNG dùng `loading.tsx` ở `/san-pham/[slug]` và `/danh-muc/[slug]` (làm slug không tồn tại trả 200 và đe dọa 308 của D-018; đã bỏ, đo lại 404/308 đúng). Đã kiểm: ErrorState không bị cache khi API sống lại. Chưa làm: noindex khi chỉ danh sách sản phẩm lỗi; dịch vụ thu lỗi.
 - **Nhóm:** UX/SEO.
 - **Mô tả:**
@@ -117,6 +146,7 @@ Nhãn "(chưa xác minh)" nghĩa là chưa kiểm chứng được trong lần r
 - **Rủi ro:** Thấp.
 
 ### R-03 Quyền dữ liệu cá nhân (Nghị định 13/2023)
+- **Trạng thái cuối (2026-11-23):** Đã làm một phần (Đợt 2, D-065: xóa/xuất dữ liệu). Phần còn lại: Không làm - ghi nhận đồng ý, chính sách bảo mật, thời hạn giữ AuditLog là phần pháp lý, ngoài phạm vi.
 - **Trạng thái:** Đã làm phần kỹ thuật (Đợt 2, D-065): `DELETE /me` (ẩn danh hóa) và `GET /me/export`, kèm UI ở `/tai-khoan`. CHƯA làm (pháp lý/nội dung, ngoài phạm vi): ghi nhận đồng ý (`consentAt`/`consentVersion`), cập nhật chính sách bảo mật, thời hạn giữ AuditLog (có IP).
 - **Nhóm:** Pháp lý-dữ liệu.
 - **Mô tả:**
@@ -137,6 +167,7 @@ Nhãn "(chưa xác minh)" nghĩa là chưa kiểm chứng được trong lần r
 - **Rủi ro:** Xung đột nghĩa vụ lưu chứng từ; cần tư vấn pháp lý cho văn bản.
 
 ### R-04 Chống giữ kho bằng đơn COD khách vãng lai
+- **Trạng thái cuối (2026-11-23):** Đã làm một phần (Đợt 1, D-057). Phần còn lại: Không làm - bộ lọc "đơn nghi vấn" và xác minh email ngoài quy mô demo (chủ dự án chốt).
 - **Trạng thái:** Đã làm (Đợt 1), xem D-057. Có: hạn giữ kho 48 giờ + job tự hủy, giới hạn 3 đơn COD đang chờ theo SĐT/email (409 `TOO_MANY_PENDING_ORDERS`), Turnstile cho `POST /orders` của khách vãng lai khi có key, nhãn "Hết hạn tự động". Chưa làm: bộ lọc "đơn nghi vấn" cho staff; xác minh email.
 - **Nhóm:** Bảo mật (lạm dụng nghiệp vụ).
 - **Mô tả:** Đơn COD trừ kho ngay và không có hạn; đặt đơn guest không captcha, limiter chỉ theo IP; email nhập tùy ý nên có thể bị dùng gửi mail xác nhận tới người khác. Đề xuất:
@@ -151,6 +182,7 @@ Nhãn "(chưa xác minh)" nghĩa là chưa kiểm chứng được trong lần r
 - **Rủi ro:** Tăng ma sát checkout.
 
 ### R-05 Bảo vệ thao tác khách vãng lai bằng mã đơn
+- **Trạng thái cuối (2026-11-23):** Đã làm (Đợt 4, D-076).
 - **Trạng thái:** Đã làm (Đợt 4, nhóm 3), xem D-076. 5 lần sai trong 15 phút -> khóa mã đơn 15 phút (`429 ORDER_LOOKUP_LOCKED`) cho track, hủy, tạo thanh toán, GET/claim chuyển khoản; trạng thái trong RAM (1 instance).
 - **Nhóm:** Bảo mật.
 - **Mô tả:** Mã đơn `BB-YYMMDD-XXXX` chỉ có 4 ký tự ngẫu nhiên (31^4 ~ 923.521 mỗi ngày); cùng SĐT là đủ để tra cứu, hủy và tạo phiên thanh toán; giới hạn hiện chỉ theo IP. Đề xuất: khóa tạm theo mã đơn sau N lần sai, hoặc mã tra cứu dài hơn gửi qua email. Khả năng khai thác thực tế chưa xác minh.
@@ -162,6 +194,7 @@ Nhãn "(chưa xác minh)" nghĩa là chưa kiểm chứng được trong lần r
 - **Rủi ro:** Đổi định dạng mã ảnh hưởng FE/email.
 
 ### R-06 Mailer bền vững
+- **Trạng thái cuối (2026-11-23):** Đã làm một phần (Đợt 1, D-056). Phần còn lại: Không làm - outbox chỉ có ý nghĩa với SMTP thật (R-26, ngoài phạm vi); mailer đã retry trong RAM.
 - **Trạng thái:** Đã làm (Đợt 1), xem D-056. Có: `SMTP_SECURE`/`SMTP_REQUIRE_TLS`, timeout, retry trong RAM 3 lần (1 giây, 4 giây) chỉ cho lỗi tạm thời, log có ngữ cảnh, test transport options. Chưa làm: outbox (bảng + job) và kiểm thật qua SMTP thật (cần R-26).
 - **Nhóm:** Độ tin cậy/Bảo mật.
 - **Mô tả:** Đề xuất biến `SMTP_SECURE`/requireTLS ở production, timeout, retry có giới hạn (bảng outbox + job), test transport options.
@@ -173,6 +206,7 @@ Nhãn "(chưa xác minh)" nghĩa là chưa kiểm chứng được trong lần r
 - **Rủi ro:** Thêm bảng/migration nếu làm outbox.
 
 ### R-07 CI: coverage, kiểm format, Dependabot
+- **Trạng thái cuối (2026-11-23):** Đã làm (Đợt 1, D-055; Đợt 3, D-067; Đợt 5: job e2e có WebKit, D-083). Trivy chưa chạy trên runner GitHub thật.
 - **Trạng thái:** Đã làm (Đợt 1), xem D-055 (coverage + ngưỡng, `format:check`, Dependabot). Đợt 3 (D-067): đã ghim SHA mọi `uses:` (kèm comment phiên bản) và thêm Trivy chỉ báo cáo (HIGH/CRITICAL, `--ignore-unfixed`, ghi Job Summary, `continue-on-error`); chưa chạy trên runner GitHub thật.
 - **Nhóm:** CI/Test.
 - **Mô tả:** Đề xuất `@vitest/coverage-v8` báo cáo + ngưỡng không cho tụt, `format:check` (`prettier --check`) trong CI, Dependabot (npm, Docker, Actions) gom nhóm; cân nhắc Trivy cho image ở chế độ báo cáo.
@@ -188,6 +222,7 @@ Nhãn "(chưa xác minh)" nghĩa là chưa kiểm chứng được trong lần r
 - **Rủi ro:** Lần đầu format hàng loạt, nhiều PR Dependabot.
 
 ### R-08 Bảo vệ DB khỏi truy vấn nặng
+- **Trạng thái cuối (2026-11-23):** Đã làm (Đợt 1, D-058). Cache analytics và bảng tổng hợp: Không làm (xem R-19).
 - **Trạng thái:** Đã làm (Đợt 1), xem D-058. Có: pool riêng cho analytics + `statement_timeout` (503 `ANALYTICS_TIMEOUT`), `DATABASE_POOL_MAX`, `mem_limit`/`cpus` trong compose prod (ước lượng, chưa đo trên VPS thật). Không làm theo quyết định: cache analytics 60 giây và bảng tổng hợp (R-19).
 - **Nhóm:** Hiệu năng/Vận hành.
 - **Mô tả:** Đề xuất `SET LOCAL statement_timeout` cho truy vấn analytics, kích thước pool qua env, cache trong bộ nhớ 60 giây cho analytics (ghi trên UI), giới hạn tài nguyên container dựa trên số đo.
@@ -199,6 +234,7 @@ Nhãn "(chưa xác minh)" nghĩa là chưa kiểm chứng được trong lần r
 - **Rủi ro:** Đặt giới hạn quá thấp làm backend bị kill khi xuất CSV; cache làm số liệu trễ.
 
 ### R-09 Cache HTTP cho catalog, ảnh và cài đặt
+- **Trạng thái cuối (2026-11-23):** Đã làm (Đợt 4, D-075).
 - **Trạng thái:** Đã làm (Đợt 4, nhóm 3), xem D-075. Catalog `public, max-age=30, s-maxage=60, stale-while-revalidate=120` (lỗi luôn `no-store`), ảnh tên ngẫu nhiên `immutable` 1 năm, cache `getShopSettings` 30 giây.
 - **Nhóm:** Hiệu năng.
 - **Mô tả:** Đề xuất `public, max-age=30, s-maxage=60, stale-while-revalidate` cho catalog; `immutable` 1 năm cho ảnh sản phẩm; cache settings 30-60 giây, xóa khi admin lưu.
@@ -210,6 +246,7 @@ Nhãn "(chưa xác minh)" nghĩa là chưa kiểm chứng được trong lần r
 - **Rủi ro:** Giá/tồn hiển thị trễ vài chục giây (đặt hàng vẫn tính lại ở server).
 
 ### R-10 Trang chủ ISR
+- **Trạng thái cuối (2026-11-23):** Đã làm (Đợt 2, D-064).
 - **Trạng thái:** Đã làm (Đợt 2, D-064): `revalidate = 60`, bỏ `connection()`, build qua khi backend tắt; chưa đo lại TTFB.
 - **Nhóm:** Hiệu năng FE/SEO.
 - **Mô tả:** Đề xuất `revalidate=60` và cách build không cần backend.
@@ -221,6 +258,7 @@ Nhãn "(chưa xác minh)" nghĩa là chưa kiểm chứng được trong lần r
 - **Rủi ro:** HTML cũ tối đa 60 giây.
 
 ### R-11 SEO kỹ thuật
+- **Trạng thái cuối (2026-11-23):** Đã làm một phần (Đợt 2-3, D-064, D-069). Phần còn lại: Không làm - logo thương hiệu riêng và Rich Results Test cần domain công khai thật.
 - **Trạng thái:** Đã làm (Đợt 2, D-064): ảnh OG, canonical trang chủ và `?page=N`, noindex URL có lọc, sitemap `lastmod` (`updatedAt`), JSON-LD (`logo`, `itemCondition`, `ItemList`). Cố ý KHÔNG làm `shippingDetails`/`hasMerchantReturnPolicy` (dữ liệu demo). Chưa làm: logo thương hiệu riêng, Rich Results Test thực tế (cần domain công khai), Đợt 3 (D-069): `robots.txt` chỉ chặn `/admin` và `/api/`, không chặn trang noindex.
 - **Nhóm:** SEO.
 - **Mô tả:**
@@ -237,7 +275,8 @@ Nhãn "(chưa xác minh)" nghĩa là chưa kiểm chứng được trong lần r
 - **Rủi ro:** Dữ liệu cấu trúc lệch nội dung hiển thị.
 
 ### R-12 UX mobile và định dạng thời gian
-- **Trạng thái:** Đã làm (Đợt 1, trừ "Mua lại"), xem D-059. "Mua lại" đã làm ở Đợt 4 nhóm 3, xem D-077. Header mobile 3 hàng/165 px -> 2 hàng/113 px (menu Danh mục thả xuống); formatter ngày giờ cố định `Asia/Ho_Chi_Minh` có test. Chưa làm: "Mua lại" (FR-ORD-07, P2).
+- **Trạng thái cuối (2026-11-23):** Đã làm (Đợt 1, D-059; "Mua lại" Đợt 4, D-077; smoke WebKit Đợt 5, D-083). Firefox: Không làm - ngoài phạm vi smoke của dự án portfolio.
+- **Trạng thái:** Đã làm (Đợt 1, trừ "Mua lại"), xem D-059. Phần Safari/Firefox: gộp vào smoke WebKit của R-14 (D-083); Firefox không làm. "Mua lại" đã làm ở Đợt 4 nhóm 3, xem D-077. Header mobile 3 hàng/165 px -> 2 hàng/113 px (menu Danh mục thả xuống); formatter ngày giờ cố định `Asia/Ho_Chi_Minh` có test.
 - **Nhóm:** UX.
 - **Mô tả:**
   - Rút gọn header mobile (hiện 3 hàng, sticky chiếm ~165/844 px; mục nav cuối bị cắt, không có gợi ý cuộn).
@@ -251,10 +290,11 @@ Nhãn "(chưa xác minh)" nghĩa là chưa kiểm chứng được trong lần r
 - **Rủi ro:** Thấp.
 
 ### R-13 Hộp thoại dùng chung
+- **Trạng thái cuối (2026-11-23):** Đã làm (Đợt 4, D-074; smoke WebKit Đợt 5, D-083). Firefox: Không làm.
 - **Nhóm:** A11y/Nợ kỹ thuật FE.
 - **Mô tả:** Đề xuất hook `useDialog` hoặc `<dialog>` native thay cho 5 hộp thoại tự viết.
 - **Lý do / bằng chứng:** 5 hộp thoại lặp lại focus trap (`MiniCart.tsx`, `ConfirmDialog.tsx`, `AdminModal.tsx`, `StatusDialog.tsx`, `CancelOrderDialog.tsx`); chỉ MiniCart khóa cuộn nền; selector phần tử focus bỏ sót input/select/textarea (`MiniCart.tsx:9`); không dùng `inert` cho nền (ảnh hưởng trình đọc màn hình chưa xác minh).
-- **Trạng thái:** Đã làm (Đợt 4, nhóm 2), xem D-074. `components/ui/Dialog.tsx` (`<dialog>` native + `showModal()`) thay cho 6 hộp thoại tự viết (MiniCart dạng ngăn kéo, ConfirmDialog, AdminModal, StatusDialog, CancelOrderDialog, DeleteAccountDialog): inert nền, focus trap do trình duyệt, khóa cuộn nền cho mọi hộp, trả focus, Escape chặn khi đang gửi, selector focus không còn sót input/select/textarea. Chưa kiểm Safari/Firefox.
+- **Trạng thái:** Đã làm (Đợt 4, nhóm 2), xem D-074. `components/ui/Dialog.tsx` (`<dialog>` native + `showModal()`) thay cho 6 hộp thoại tự viết (MiniCart dạng ngăn kéo, ConfirmDialog, AdminModal, StatusDialog, CancelOrderDialog, DeleteAccountDialog): inert nền, focus trap do trình duyệt, khóa cuộn nền cho mọi hộp, trả focus, Escape chặn khi đang gửi, selector focus không còn sót input/select/textarea. Safari: đã có smoke WebKit của luồng mua (R-14, D-083; luồng đi qua hộp thoại mini-cart); Firefox KHÔNG làm.
 - **Ưu tiên:** P2.
 - **Độ khó:** M.
 - **Phụ thuộc:** Không.
@@ -262,6 +302,8 @@ Nhãn "(chưa xác minh)" nghĩa là chưa kiểm chứng được trong lần r
 - **Rủi ro:** Hồi quy hành vi dialog.
 
 ### R-14 Lấp khoảng trống kiểm thử
+- **Trạng thái cuối (2026-11-23):** Đã làm một phần (Đợt 5, D-083): E2E mobile 390 px, smoke WebKit, warm-up khởi động nguội, đo tải đặt hàng đồng thời. Phần còn lại: Không làm - test riêng `CheckoutForm.tsx`, cô lập DB test mỗi worker, test hợp đồng FE-BE.
+- **Trạng thái:** Đã làm phần rút gọn (Đợt 5 task 2), xem D-083: project E2E `mobile-390` và `webkit-smoke` cho luồng mua (`purchase-mobile.spec.ts`), warm-up khởi động nguội (`e2e/global-setup.ts`), script đo tải đặt hàng đồng thời `backend/scripts/load-order-concurrency.ts` kèm bảng số đo ở `testing.md`. KHÔNG làm (chốt dự án): test riêng `CheckoutForm.tsx`, cô lập DB test mỗi worker, test hợp đồng FE-BE thay cho mock fetch.
 - **Nhóm:** Test.
 - **Mô tả:**
   - Test riêng cho `CheckoutForm.tsx` (737 dòng).
@@ -276,6 +318,7 @@ Nhãn "(chưa xác minh)" nghĩa là chưa kiểm chứng được trong lần r
 - **Rủi ro:** CI chậm hơn.
 
 ### R-15 Refresh token khi nhiều tab
+- **Trạng thái cuối (2026-11-23):** Không làm - nới grace window làm yếu phát hiện trộm token, mà tần suất đăng xuất oan chưa xác minh được.
 - **Nhóm:** Bảo mật/UX.
 - **Mô tả:** Đề xuất grace window 10-30 giây cho token vừa xoay.
 - **Lý do / bằng chứng:** Hai refresh đồng thời cùng token bị coi là dùng lại và thu hồi cả family (`backend/src/modules/auth/auth.service.ts` ~230-248); FE single-flight + Web Locks giữa tab giảm khả năng nhưng retry mạng vẫn có thể gây đăng xuất oan (tần suất chưa xác minh).
@@ -286,6 +329,7 @@ Nhãn "(chưa xác minh)" nghĩa là chưa kiểm chứng được trong lần r
 - **Rủi ro:** Nới phát hiện trộm token trong khoảng ngắn.
 
 ### R-16 Nợ kỹ thuật mã nguồn
+- **Trạng thái cuối (2026-11-23):** Đã làm một phần (Đợt 4 D-074, Đợt 5 D-079). Phần còn lại: Không làm - tách thêm file chỉ để tách không đổi hành vi, chỉ tăng rủi ro hồi quy.
 - **Nhóm:** Nợ kỹ thuật.
 - **Mô tả:**
   - Tách file lớn khi sửa tiếp.
@@ -295,7 +339,7 @@ Nhãn "(chưa xác minh)" nghĩa là chưa kiểm chứng được trong lần r
   - File lớn: frontend `AdminSettings.tsx` 923 dòng, `CheckoutForm.tsx` 737, `ProductForm.tsx` 677; backend `catalog.service.ts` 666, `orders.service.ts` 643, `cart.service.ts` 633.
   - Helper trùng: `escapeLike` ở `admin/orders/orders.service.ts` và `lib/text.ts`; `intParam` ở 3 schema; `emailSchema` ở 2 nơi; regex NUL lặp nhiều file.
   - `server.ts` không xử lý `unhandledRejection`/`uncaughtException`, shutdown không chờ job đang chạy.
-- **Trạng thái:** Đã làm một phần (Đợt 4, nhóm 2), xem D-074: tách `AdminSettings.tsx` (1049 -> 97 dòng + `settings/`) và `CheckoutForm.tsx` (816 -> 194 dòng + component/hook); gom `escapeLike`, `emailSchema`, `intParam`, `NO_NUL` về `lib/text.ts`/`lib/validation.ts`. Chưa làm: tách các file còn > 500 dòng (danh sách ở D-074), `intParam` của `catalog.schema.ts`, `CONTROL_CHARS`, và `server.ts` (`unhandledRejection`/`uncaughtException`, shutdown chờ job).
+- **Trạng thái:** Đã làm (Đợt 4 nhóm 2 + Đợt 5 task 1). Phần `server.ts` xong ở Đợt 5 (D-079): `unhandledRejection`/`uncaughtException` log `fatal` rồi tắt êm `exit(1)`, `SIGTERM`/`SIGINT` tắt êm `exit(0)` có chờ job đang chạy (`stopBackgroundJobs()`), timeout `SHUTDOWN_TIMEOUT_MS`, `stop_grace_period: 30s`. Phần tách file còn lại KHÔNG làm (chốt dự án, `wave5-plan.md`). Đợt 4 nhóm 2, xem D-074: tách `AdminSettings.tsx` (1049 -> 97 dòng + `settings/`) và `CheckoutForm.tsx` (816 -> 194 dòng + component/hook); gom `escapeLike`, `emailSchema`, `intParam`, `NO_NUL` về `lib/text.ts`/`lib/validation.ts`. Không làm (chốt dự án): tách các file còn > 500 dòng (danh sách ở D-074), `intParam` của `catalog.schema.ts`, `CONTROL_CHARS`.
 - **Ưu tiên:** P2.
 - **Độ khó:** M.
 - **Phụ thuộc:** Không.
@@ -303,26 +347,31 @@ Nhãn "(chưa xác minh)" nghĩa là chưa kiểm chứng được trong lần r
 - **Rủi ro:** Refactor rộng; làm kèm tính năng.
 
 ### R-17 Đúng đắn dữ liệu denorm
+- **Trạng thái cuối (2026-11-23):** Đã làm (Đợt 5, D-080).
 - **Nhóm:** Hiệu năng/Dữ liệu.
 - **Mô tả:** Job định kỳ làm mới sản phẩm có saleStart/saleEnd vừa qua mốc.
 - **Lý do / bằng chứng:** `minPrice` chỉ tính lại khi có thao tác ghi nên lọc/sắp xếp theo giá dùng giá cũ khi khung sale bắt đầu/kết thúc mà không ai sửa sản phẩm (`backend/src/modules/catalog/catalog.denorm.ts`, đã ghi ở `docs/db-schema.md`).
 - **Ưu tiên:** P2.
 - **Độ khó:** S.
 - **Phụ thuộc:** Không.
+- **Trạng thái:** Đã làm (Đợt 5 task 1), xem D-080: job `jobs/saleRefresh.ts` đối soát bằng SQL tập hợp rồi gọi `refreshProductDenorm`, mỗi 10 phút và lúc khởi động.
 - **Tiêu chí xong:** Sau mốc sale, `minPrice` được cập nhật mà không cần sửa sản phẩm (có test).
 - **Rủi ro:** Thấp.
 
 ### R-18 Upload và avatar
+- **Trạng thái cuối (2026-11-23):** Đã làm một phần (Đợt 5, D-081: allowlist avatar). Phần còn lại: Không làm - re-encode bằng sharp (thêm dependency native vào image) và job dọn file mồ côi.
 - **Nhóm:** Bảo mật.
 - **Mô tả:** Re-encode bằng sharp, job dọn file không còn tham chiếu, avatar chỉ nhận `/uploads/...` hoặc https whitelist.
 - **Lý do / bằng chứng:** Ảnh lưu nguyên (EXIF/GPS, không giới hạn số điểm ảnh, đã chấp nhận D-013), không dọn file mồ côi (`admin/uploads/uploads.service.ts`, không có bước dọn trong `cleanup.ts`); `avatarUrl` nhận mọi URL http/https (`modules/me/me.schema.ts` ~33-43; việc FE hiển thị chưa xác minh).
 - **Ưu tiên:** P2.
 - **Độ khó:** M.
 - **Phụ thuộc:** Không.
+- **Trạng thái:** Đã làm một phần (Đợt 5 task 1), xem D-081: avatar chỉ nhận `/uploads/...` hoặc https có host trong `AVATAR_URL_HOSTS`, FE chỉ render khi qua cùng bộ kiểm. KHÔNG làm (chốt dự án): re-encode bằng sharp và job dọn file mồ côi.
 - **Tiêu chí xong:** Ảnh upload bị loại metadata; file mồ côi được dọn; avatar bị giới hạn nguồn (có test).
 - **Rủi ro:** Thêm dependency native vào image.
 
 ### R-19 Bảng tổng hợp analytics theo ngày
+- **Trạng thái cuối (2026-11-23):** Không làm - D-054 đo chưa cần ở quy mô demo; bảng và job tổng hợp là rủi ro lớn cho đợt chốt.
 - **Nhóm:** Hiệu năng.
 - **Mô tả:** Theo D-054, khi p50 vượt ~1 s (khoảng 150-200k đơn/năm) cần bảng tổng hợp theo ngày; hiện chưa cần.
 - **Lý do / bằng chứng:** D-054.
@@ -333,6 +382,7 @@ Nhãn "(chưa xác minh)" nghĩa là chưa kiểm chứng được trong lần r
 - **Rủi ro:** Cập nhật bảng khi đơn đổi trạng thái/hoàn tiền.
 
 ### R-20 Thông tin xuất hóa đơn VAT
+- **Trạng thái cuối (2026-11-23):** Không làm - hóa đơn VAT là phạm vi pháp lý/thuế, không cần cho portfolio.
 - **Nhóm:** TMĐT/Pháp lý.
 - **Mô tả:** Checkout có tùy chọn "Xuất hóa đơn công ty" (MST 10/13 số, tên, địa chỉ, email nhận), lưu snapshot trên đơn, admin xem/in và đánh dấu đã xuất; chưa tích hợp hóa đơn điện tử.
 - **Lý do / bằng chứng:** FR-CHK-11 (`docs/requirements.md` ~167); Order không có trường này.
@@ -343,6 +393,7 @@ Nhãn "(chưa xác minh)" nghĩa là chưa kiểm chứng được trong lần r
 - **Rủi ro:** Chưa phải hóa đơn điện tử hợp lệ.
 
 ### R-21 Công cụ vận hành đơn và sản phẩm
+- **Trạng thái cuối (2026-11-23):** Đã làm một phần (Đợt 4, D-071..D-073). Phần còn lại: Không làm - xuất CSV danh sách đơn (đã có xuất CSV ở phân tích và CSV sản phẩm).
 - **Trạng thái:** Đã làm một phần (Đợt 4, D-071..D-073): ghi chú nội bộ trên đơn, in phiếu giao hàng loạt (tối đa 50 đơn), xuất/nhập CSV sản phẩm (xem trước rồi áp dụng). Chưa làm: xuất CSV danh sách đơn (đã có xuất CSV ở khu phân tích D-053).
 - **Nhóm:** Vận hành bán hàng.
 - **Mô tả:** Ghi chú nội bộ trên đơn (hiện `Order.note` là của khách); in phiếu giao hàng loạt (hiện in từng đơn, `app/admin/don-hang/[code]/in`); xuất CSV đơn/sản phẩm; nhập sản phẩm CSV có xem trước và báo lỗi từng dòng; tái dùng khuôn CSV an toàn của D-053.
@@ -354,6 +405,7 @@ Nhãn "(chưa xác minh)" nghĩa là chưa kiểm chứng được trong lần r
 - **Rủi ro:** Dữ liệu import sai làm hỏng slug/biến thể.
 
 ### R-22 Xác thực 2 lớp cho Admin
+- **Trạng thái cuối (2026-11-23):** Đã làm (Đợt 2, D-063; Đợt 3, D-070).
 - **Trạng thái:** Đã làm: TOTP tùy chọn cho Staff/Admin + mã dự phòng (Đợt 2, D-063); bắt buộc cho Admin bằng cờ `REQUIRE_ADMIN_2FA`, mặc định tắt (Đợt 3, D-070). Khuyến nghị bật khi chạy thật.
 - **Nhóm:** Bảo mật.
 - **Mô tả:** TOTP bắt buộc với ADMIN + mã khôi phục.
@@ -365,6 +417,7 @@ Nhãn "(chưa xác minh)" nghĩa là chưa kiểm chứng được trong lần r
 - **Rủi ro:** Khóa chính chủ khi mất thiết bị.
 
 ### R-23 Giá vốn, nhập hàng và lợi nhuận
+- **Trạng thái cuối (2026-11-23):** Đã làm một phần (Đợt 4, D-078). Phần còn lại: Không làm - nhà cung cấp, phiếu nhập, giá vốn theo lô, backfill đơn cũ, phí cổng/ship trong lãi: rủi ro số liệu, demo hiện tại đã đủ.
 - **Nhóm:** Vận hành bán hàng.
 - **Mô tả:** Thêm giá vốn (biến thể hoặc lô), nhà cung cấp, phiếu nhập gắn InventoryMovement RESTOCK, snapshot `unitCost` vào OrderItem, mục lợi nhuận gộp trong analytics (chỉ Admin).
 - **Lý do / bằng chứng:** Hiện không có trường/model; D-052 ghi giá trị tồn dùng giá niêm yết.
@@ -376,6 +429,7 @@ Nhãn "(chưa xác minh)" nghĩa là chưa kiểm chứng được trong lần r
 - **Trạng thái (2026-11-23): Đã làm một phần theo D-078.** Chốt phương pháp bình quân gia quyền di động theo biến thể; nhập hàng ghi `unitCost`, snapshot `OrderItem.unitCost`, lợi nhuận gộp trong analytics (chỉ Admin), có test. CHƯA làm: nhà cung cấp, phiếu nhập, giá vốn theo lô, backfill đơn cũ, phí cổng thanh toán/ship trong lãi.
 
 ### R-24 Tính năng nhỏ tăng tin cậy cho cà phê
+- **Trạng thái cuối (2026-11-23):** Đã làm một phần ((a) độ tươi hạt Đợt 5, D-082; (c) "Mua lại" Đợt 4, D-077). Phần còn lại: Không làm - (b) ảnh trong đánh giá cần upload công khai có kiểm duyệt.
 - **Nhóm:** TMĐT.
 - **Mô tả:**
   - (a) Độ tươi hạt: đã hiển thị ngày rang; xác minh quy tắc §5.6 có được áp ở checkout không, rồi bổ sung nhãn/cảnh báo.
@@ -385,7 +439,8 @@ Nhãn "(chưa xác minh)" nghĩa là chưa kiểm chứng được trong lần r
 - **Ưu tiên:** P2.
 - **Độ khó:** S-M mỗi phần.
 - **Phụ thuộc:** Không.
-- **Tiêu chí xong:** Từng phần có test riêng; (a) sau khi xác minh quy tắc §5.6 (chưa xác minh).
+- **Trạng thái:** (a) Đã làm (Đợt 5 task 1), xem D-082: quy tắc §5.6 (khuyến nghị 30 ngày, ngừng bán > 90 ngày) trước đó CHƯA được áp ở giỏ/báo giá/đặt đơn; nay server chặn và FE hiện nhãn/cảnh báo. (b) KHÔNG làm (chốt dự án). (c) Đã làm ở D-077.
+- **Tiêu chí xong:** Từng phần có test riêng; (a) sau khi xác minh quy tắc §5.6 (đã xác minh, D-082).
 - **Rủi ro:** (b) cần upload công khai có kiểm duyệt.
 
 ---

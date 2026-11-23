@@ -44,6 +44,27 @@ describe("ProfileForm", () => {
     expect(await screen.findByRole("status")).toHaveTextContent("Đã lưu");
   });
 
+  it("ảnh cũ không hợp lệ: không hiển thị ảnh, không chặn việc sửa trường khác (D-081)", async () => {
+    current = makeUser({ avatarUrl: "http://old.test/a.png" });
+    const fetchMock = vi.fn(async () => jsonRes(200, { data: makeUser({ fullName: "Tên Mới" }) }));
+    vi.stubGlobal("fetch", fetchMock);
+    const u = userEvent.setup();
+    const { container } = render(<ProfileForm />);
+    expect(container.querySelector("img")).toBeNull();
+    await u.clear(screen.getByLabelText("Họ và tên"));
+    await u.type(screen.getByLabelText("Họ và tên"), "Tên Mới");
+    await u.click(screen.getByRole("button", { name: "Lưu thay đổi" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(bodyOf(fetchMock, 0)).toEqual({ fullName: "Tên Mới" });
+  });
+
+  it("ảnh /uploads hợp lệ được hiển thị", () => {
+    current = makeUser({ avatarUrl: "/uploads/avatars/a.png" });
+    vi.stubGlobal("fetch", vi.fn());
+    const { container } = render(<ProfileForm />);
+    expect(container.querySelector("img")).toHaveAttribute("src", "/uploads/avatars/a.png");
+  });
+
   it("xóa ô SĐT -> gửi phone: null (chỉ trường đó)", async () => {
     const fetchMock = vi.fn(async () => jsonRes(200, { data: makeUser({ phone: null }) }));
     vi.stubGlobal("fetch", fetchMock);
@@ -68,8 +89,8 @@ describe("ProfileForm", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("avatarUrl không phải http(s) bị chặn; xóa ngày sinh/ảnh -> null", async () => {
-    current = makeUser({ birthDate: "1990-05-01", avatarUrl: "https://x.test/a.png" });
+  it("avatarUrl ngoài /uploads và https bị chặn; xóa ngày sinh/ảnh -> null", async () => {
+    current = makeUser({ birthDate: "1990-05-01", avatarUrl: "/uploads/avatars/a.png" });
     const fetchMock = vi.fn(async () =>
       jsonRes(200, { data: makeUser({ birthDate: null, avatarUrl: null }) }),
     );
@@ -77,9 +98,9 @@ describe("ProfileForm", () => {
     const u = userEvent.setup();
     render(<ProfileForm />);
     await u.clear(screen.getByLabelText("Đường dẫn ảnh đại diện"));
-    await u.type(screen.getByLabelText("Đường dẫn ảnh đại diện"), "ftp://x.test/a.png");
+    await u.type(screen.getByLabelText("Đường dẫn ảnh đại diện"), "http://x.test/a.png");
     await u.click(screen.getByRole("button", { name: "Lưu thay đổi" }));
-    expect(await screen.findByText(/http:\/\/ hoặc https:\/\//)).toBeInTheDocument();
+    expect(await screen.findByText(/hoặc URL https:\/\//)).toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
 
     await u.clear(screen.getByLabelText("Đường dẫn ảnh đại diện"));

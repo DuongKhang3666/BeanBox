@@ -1,4 +1,10 @@
 import { z } from 'zod';
+import { env } from '../../config/env.js';
+import {
+  AVATAR_URL_ERROR,
+  AVATAR_URL_MAX_LENGTH,
+  isAllowedAvatarUrl,
+} from '../../lib/avatarUrl.js';
 import { phoneSchema } from '../../lib/phone.js';
 
 const VN_OFFSET_MS = 7 * 60 * 60 * 1000;
@@ -30,17 +36,11 @@ const birthDateSchema = z
     return date;
   });
 
+/** D-081: allowlist (/uploads/... hoặc https của host trong AVATAR_URL_HOSTS); đọc env lúc gọi để test chỉnh được. */
 const avatarUrlSchema = z
   .string()
-  .max(500, 'Đường dẫn ảnh tối đa 500 ký tự')
-  .refine((v) => {
-    try {
-      const u = new URL(v);
-      return u.protocol === 'http:' || u.protocol === 'https:';
-    } catch {
-      return false;
-    }
-  }, 'Đường dẫn ảnh phải là URL http hoặc https');
+  .max(AVATAR_URL_MAX_LENGTH, `Đường dẫn ảnh tối đa ${AVATAR_URL_MAX_LENGTH} ký tự`)
+  .refine((v) => isAllowedAvatarUrl(v, env.AVATAR_URL_HOSTS), AVATAR_URL_ERROR);
 
 const fullNameSchema = z
   .string()
