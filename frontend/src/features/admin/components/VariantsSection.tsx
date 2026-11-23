@@ -99,10 +99,13 @@ function Actions({
 export function VariantsSection({
   product,
   readOnly,
+  canSetCost = false,
   onChange,
 }: {
   product: AdminProduct;
   readOnly: boolean;
+  /** D-078: chỉ Admin thấy/sửa giá vốn bình quân của biến thể. */
+  canSetCost?: boolean;
   onChange: (variants: AdminVariant[]) => void;
 }) {
   const variants = product.variants;
@@ -147,13 +150,21 @@ export function VariantsSection({
         stockStatus: stockVariant.stockStatus,
         isActive: stockVariant.isActive,
         updatedAt: stockVariant.updatedAt,
+        ...(stockVariant.avgCost !== undefined ? { avgCost: stockVariant.avgCost } : {}),
       }
     : null;
 
-  function patchStock(id: string, stock: number) {
+  function patchStock(id: string, stock: number, avgCost?: number | null) {
     onChange(
       variants.map((v) =>
-        v.id === id ? { ...v, stock, stockStatus: stockStatusOf(stock, v.lowStockThreshold) } : v,
+        v.id === id
+          ? {
+              ...v,
+              stock,
+              stockStatus: stockStatusOf(stock, v.lowStockThreshold),
+              ...(avgCost !== undefined ? { avgCost } : {}),
+            }
+          : v,
       ),
     );
   }
@@ -308,6 +319,7 @@ export function VariantsSection({
         <VariantDialog
           productId={product.id}
           variant={form.variant}
+          canSetCost={canSetCost}
           onClose={() => setForm(null)}
           onSaved={(saved, mode) => {
             onChange(
@@ -334,7 +346,7 @@ export function VariantsSection({
           onClose={() => setStockId(null)}
           onStockChanged={(cur) => patchStock(stockItem.variantId, cur)}
           onAdjusted={(updated, before) => {
-            patchStock(updated.variantId, updated.stock);
+            patchStock(updated.variantId, updated.stock, updated.avgCost);
             setStockId(null);
             setError(null);
             setNotice(

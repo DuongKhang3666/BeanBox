@@ -81,6 +81,17 @@ export function rateLimitedMessage(err: unknown): string {
     : "Bạn thao tác quá nhanh, vui lòng thử lại sau ít phút.";
 }
 
+/** 429 ORDER_LOOKUP_LOCKED (D-076): mã đơn bị khóa tạm do nhập sai nhiều lần; nêu thời gian chờ theo phút. */
+export function orderLookupLockedMessage(err: unknown): string {
+  const sec = retryAfterSec(err);
+  const base = "Bạn đã nhập sai thông tin đơn hàng quá nhiều lần.";
+  if (!sec) return `${base} Vui lòng thử lại sau ít phút.`;
+  const minutes = Math.ceil(sec / 60);
+  return minutes <= 1
+    ? `${base} Vui lòng thử lại sau khoảng 1 phút.`
+    : `${base} Vui lòng thử lại sau khoảng ${minutes} phút.`;
+}
+
 /** 409 PAYMENT_NOT_ALLOWED: câu theo details.reason (§13.2). */
 function paymentNotAllowedMessage(err: ApiError): string {
   switch (asRecord(err.details)?.reason) {
@@ -134,6 +145,8 @@ export function orderErrorMessage(err: unknown): string {
       return "Không tìm thấy đơn hàng.";
     case "RATE_LIMITED":
       return rateLimitedMessage(err);
+    case "ORDER_LOOKUP_LOCKED":
+      return orderLookupLockedMessage(err);
     case "NETWORK_ERROR":
       return "Không thể kết nối tới máy chủ. Vui lòng kiểm tra mạng và thử lại.";
     default:

@@ -101,6 +101,8 @@ export const invItem = (
   lowStockThreshold: 5,
   price: 100000,
   stockValue: 0,
+  avgCost: null,
+  stockCostValue: null,
   lastSoldAt: null,
   ...over,
 });
@@ -113,6 +115,8 @@ export function makeInventory(over: Partial<AnalyticsInventory> = {}): Analytics
       lowStock: 1,
       stockUnits: 400,
       stockValue: 38000000,
+      stockCostValue: 23000000,
+      variantsWithoutCost: 3,
       slowMovers: 1,
       slowMoversValue: 2000000,
     },

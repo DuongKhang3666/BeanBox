@@ -1,11 +1,15 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { errRes, jsonRes } from "@/features/account/testing";
 import { tokenStore } from "@/lib/api/client";
+import { makeCart } from "@/features/cart/testing";
 import { makeOrder, makeOrderListItem } from "../testing";
 import { AccountOrderDetail } from "./AccountOrderDetail";
 import { OrderHistory } from "./OrderHistory";
+
+const replaceCart = vi.fn();
+vi.mock("@/features/cart/CartProvider", () => ({ useCart: () => ({ replaceCart }) }));
 
 let search = "";
 vi.mock("next/navigation", () => ({
@@ -23,6 +27,7 @@ function stubFetch(handler: (path: string, init: RequestInit) => Response) {
 const META = { page: 1, pageSize: 10, total: 1, totalPages: 1 };
 
 beforeEach(() => {
+  replaceCart.mockReset();
   search = "";
   tokenStore.clear();
 });
@@ -165,5 +170,133 @@ describe("AccountOrderDetail", () => {
       await screen.findByText("Đơn hàng không thể hủy ở trạng thái hiện tại"),
     ).toBeInTheDocument();
     expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+});
+
+describe("AccountOrderDetail - Mua lại (D-077)", () => {
+  const CODE = "BB-261110-K7QP";
+  const ref = { variantId: "v1", productName: "Robusta Buôn Ma Thuột", variantName: "250 g" };
+
+  function stubReorder(result: unknown, status = 200) {
+    return stubFetch((path, init) => {
+      if (init.method === "POST" && path.endsWith("/reorder")) {
+        return status === 200
+          ? jsonRes(200, { data: result })
+          : errRes(status, "NOT_FOUND", "Không tìm thấy đơn hàng");
+      }
+      return jsonRes(200, { data: makeOrder({ status: "DELIVERED", canCancel: false }) });
+    });
+  }
+
+  it("có nút Mua lại cả khi đơn đã giao; bấm -> POST reorder, cập nhật giỏ, tóm tắt + link giỏ hàng", async () => {
+    const cart = makeCart();
+    const mock = stubReorder({ added: [{ ...ref, quantity: 2 }], adjusted: [], skipped: [], cart });
+    const u = userEvent.setup();
+    render(<AccountOrderDetail code={CODE} />);
+    await u.click(await screen.findByRole("button", { name: "Mua lại" }));
+
+    const status = await screen.findByRole("status", { name: "Kết quả mua lại" });
+    expect(status).toHaveTextContent("Đã thêm 1 sản phẩm vào giỏ hàng.");
+    expect(within(status).getByRole("link", { name: "Xem giỏ hàng" })).toHaveAttribute(
+      "href",
+      "/gio-hang",
+    );
+    expect(replaceCart).toHaveBeenCalledWith(cart);
+    const post = mock.mock.calls.find(([, i]) => (i as RequestInit).method === "POST")!;
+    expect(String(post[0])).toBe(`/api/v1/me/orders/${CODE}/reorder`);
+  });
+
+  it("điều chỉnh và bỏ qua được nêu rõ từng dòng với lý do", async () => {
+    stubReorder({
+      added: [],
+      adjusted: [{ ...ref, requested: 4, added: 3 }],
+      skipped: [
+        {
+          variantId: "v2",
+          productName: "Phin nhôm",
+          variantName: "Phin nhôm",
+          quantity: 1,
+          reason: "OUT_OF_STOCK",
+        },
+        {
+          variantId: "v3",
+          productName: "Cà phê A",
+          variantName: "500 g",
+          quantity: 1,
+          reason: "DISCONTINUED",
+        },
+        {
+          variantId: "v4",
+          productName: "Cà phê B",
+          variantName: "500 g",
+          quantity: 1,
+          reason: "UNAVAILABLE",
+        },
+      ],
+      cart: makeCart(),
+    });
+    const u = userEvent.setup();
+    render(<AccountOrderDetail code={CODE} />);
+    await u.click(await screen.findByRole("button", { name: "Mua lại" }));
+    const status = await screen.findByRole("status", { name: "Kết quả mua lại" });
+    expect(status).toHaveTextContent("Đã thêm 1 sản phẩm vào giỏ hàng.");
+    expect(status).toHaveTextContent("Robusta Buôn Ma Thuột (250 g): chỉ thêm được 3/4");
+    expect(status).toHaveTextContent("Phin nhôm: hết hàng.");
+    expect(status).toHaveTextContent("Cà phê A (500 g): đã ngừng bán.");
+    expect(status).toHaveTextContent("Cà phê B (500 g): không thể thêm");
+  });
+
+  it("không thêm được dòng nào -> câu riêng", async () => {
+    stubReorder({
+      added: [],
+      adjusted: [],
+      skipped: [{ ...ref, quantity: 1, reason: "OUT_OF_STOCK" }],
+      cart: makeCart(),
+    });
+    const u = userEvent.setup();
+    render(<AccountOrderDetail code={CODE} />);
+    await u.click(await screen.findByRole("button", { name: "Mua lại" }));
+    expect(
+      await screen.findByText("Chưa thêm được sản phẩm nào vào giỏ hàng."),
+    ).toBeInTheDocument();
+  });
+
+  it("đang xử lý: nút disabled + aria-busy, bấm lặp chỉ gửi một request", async () => {
+    let release!: (r: Response) => void;
+    const mock = stubFetch((path, init) =>
+      init.method === "POST"
+        ? (undefined as unknown as Response)
+        : jsonRes(200, { data: makeOrder({ status: "DELIVERED", canCancel: false }) }),
+    );
+    mock.mockImplementation(async (_input: string, init: RequestInit = {}) =>
+      init.method === "POST"
+        ? new Promise<Response>((r) => (release = r))
+        : jsonRes(200, { data: makeOrder({ status: "DELIVERED", canCancel: false }) }),
+    );
+    const u = userEvent.setup();
+    render(<AccountOrderDetail code={CODE} />);
+    const btn = await screen.findByRole("button", { name: "Mua lại" });
+    await u.click(btn);
+    const busy = await screen.findByRole("button", { name: "Đang thêm..." });
+    expect(busy).toBeDisabled();
+    expect(busy).toHaveAttribute("aria-busy", "true");
+    await u.click(busy);
+    expect(mock.mock.calls.filter(([, i]) => (i as RequestInit).method === "POST")).toHaveLength(1);
+    release(
+      jsonRes(200, {
+        data: { added: [{ ...ref, quantity: 1 }], adjusted: [], skipped: [], cart: makeCart() },
+      }),
+    );
+    expect(await screen.findByRole("button", { name: "Mua lại" })).toBeEnabled();
+  });
+
+  it("lỗi -> alert tiếng Việt, giỏ không đổi, bấm lại được", async () => {
+    stubReorder(null, 404);
+    const u = userEvent.setup();
+    render(<AccountOrderDetail code={CODE} />);
+    await u.click(await screen.findByRole("button", { name: "Mua lại" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Không tìm thấy đơn hàng.");
+    expect(replaceCart).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Mua lại" })).toBeEnabled();
   });
 });

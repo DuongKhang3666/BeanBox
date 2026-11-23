@@ -3,7 +3,9 @@ import { requireAdmin } from '../../../middlewares/auth.js';
 import { validate } from '../../../middlewares/validate.js';
 import * as controller from './orders.controller.js';
 import {
+  addOrderNoteSchema,
   adminOrdersQuerySchema,
+  printOrdersQuerySchema,
   refundPaymentSchema,
   updateOrderStatusSchema,
 } from './orders.schema.js';
@@ -12,7 +14,13 @@ import {
 export const adminOrdersRouter = Router();
 
 adminOrdersRouter.get('/', validate(adminOrdersQuerySchema, 'query'), controller.listOrders);
+// D-072: khai báo TRƯỚC `/:code` để `print` không bị coi là mã đơn.
+adminOrdersRouter.get('/print', validate(printOrdersQuerySchema, 'query'), controller.printOrders);
 adminOrdersRouter.get('/:code', controller.getOrder);
+// D-071: ghi chú nội bộ (Staff+ đọc/thêm, chỉ Admin xóa; không có sửa).
+adminOrdersRouter.get('/:code/notes', controller.listNotes);
+adminOrdersRouter.post('/:code/notes', validate(addOrderNoteSchema), controller.addNote);
+adminOrdersRouter.delete('/:code/notes/:noteId', requireAdmin, controller.deleteNote);
 adminOrdersRouter.patch(
   '/:code/status',
   validate(updateOrderStatusSchema),

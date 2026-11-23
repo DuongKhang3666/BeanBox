@@ -1,3 +1,4 @@
+import { Prisma } from '../../../generated/prisma/client.js';
 import { analyticsPrisma } from '../../../lib/prisma.js';
 import { vnDayStart } from '../admin.schema.js';
 import { vnDateKey } from '../dashboard/dashboard.service.js';
@@ -28,6 +29,14 @@ export interface TopProduct {
   revenue: number;
   quantity: number;
   orders: number;
+  /** D-078: giá vốn hàng bán của các dòng có giá vốn; null khi KHÔNG dòng nào có giá vốn. */
+  cogs: number | null;
+  /** (doanh thu hàng hóa thuần - giá vốn) của các dòng có giá vốn; null khi thiếu giá vốn. */
+  grossProfit: number | null;
+  /** grossProfit / doanh thu hàng hóa thuần của các dòng có giá vốn (0..1); null khi thiếu. */
+  margin: number | null;
+  /** Σ lineTotal dòng có giá vốn / Σ lineTotal (0..1). */
+  costCoverage: number;
 }
 
 export interface TopProductsDto {
@@ -47,7 +56,16 @@ interface ProductRow {
   revenue: Raw;
   quantity: Raw;
   orders: Raw;
+  costed_lines: Raw;
+  costed_total: Raw;
+  costed_net: Raw;
+  cogs: Raw;
 }
+
+const ORDER_BY_REVENUE = Prisma.sql`revenue DESC, quantity DESC, li."productId"`;
+const ORDER_BY_QUANTITY = Prisma.sql`quantity DESC, revenue DESC, li."productId"`;
+
+const round4 = (v: number) => Math.round(v * 10_000) / 10_000;
 
 export async function getTopProducts(
   query: TopProductsQuery,
@@ -59,61 +77,67 @@ export async function getTopProducts(
   const sort = query.sort ?? 'revenue';
   const limit = query.limit ?? 10;
 
-  // Hai câu SQL cố định theo sort (không nối chuỗi). Tên hiện tại của sản phẩm, thiếu thì tên
-  // đã lưu trên dòng hàng; sản phẩm xóa mềm vẫn tính (deleted = true).
-  const rows =
-    sort === 'quantity'
-      ? await analyticsPrisma.$queryRaw<ProductRow[]>`
-        SELECT oi."productId" AS product_id,
-          COALESCE(MAX(p."name"), MAX(oi."productName")) AS name,
-          MAX(p."slug") AS slug,
-          BOOL_OR(p."id" IS NULL OR p."deletedAt" IS NOT NULL) AS deleted,
-          MAX(c."name") AS category_name,
-          SUM(oi."lineTotal")::bigint AS revenue,
-          SUM(oi."quantity")::bigint AS quantity,
-          COUNT(DISTINCT o."id")::int AS orders
-        FROM "OrderItem" oi
-        JOIN "Order" o ON o."id" = oi."orderId"
-        LEFT JOIN "Product" p ON p."id" = oi."productId"
-        LEFT JOIN "Category" c ON c."id" = p."categoryId"
-        WHERE o."paymentStatus" = 'PAID' AND o."status" NOT IN ('CANCELLED', 'RETURNED')
-          AND o."paidAt" >= ${start} AND o."paidAt" < ${end}
-        GROUP BY oi."productId"
-        ORDER BY quantity DESC, revenue DESC, oi."productId"
-        LIMIT ${limit}`
-      : await analyticsPrisma.$queryRaw<ProductRow[]>`
-        SELECT oi."productId" AS product_id,
-          COALESCE(MAX(p."name"), MAX(oi."productName")) AS name,
-          MAX(p."slug") AS slug,
-          BOOL_OR(p."id" IS NULL OR p."deletedAt" IS NOT NULL) AS deleted,
-          MAX(c."name") AS category_name,
-          SUM(oi."lineTotal")::bigint AS revenue,
-          SUM(oi."quantity")::bigint AS quantity,
-          COUNT(DISTINCT o."id")::int AS orders
-        FROM "OrderItem" oi
-        JOIN "Order" o ON o."id" = oi."orderId"
-        LEFT JOIN "Product" p ON p."id" = oi."productId"
-        LEFT JOIN "Category" c ON c."id" = p."categoryId"
-        WHERE o."paymentStatus" = 'PAID' AND o."status" NOT IN ('CANCELLED', 'RETURNED')
-          AND o."paidAt" >= ${start} AND o."paidAt" < ${end}
-        GROUP BY oi."productId"
-        ORDER BY revenue DESC, quantity DESC, oi."productId"
-        LIMIT ${limit}`;
+  // Tên hiện tại của sản phẩm, thiếu thì tên đã lưu trên dòng hàng; sản phẩm xóa mềm vẫn tính
+  // (deleted = true). `li`: một dòng hàng + giảm giá cấp đơn đã phân bổ cho dòng theo tỷ lệ
+  // lineTotal (làm tròn nửa lên, D-078); cửa sổ theo đơn nên không N+1. ORDER BY chọn từ hai
+  // mảnh cố định (không nối chuỗi từ input).
+  const rows = await analyticsPrisma.$queryRaw<ProductRow[]>`
+    WITH li AS (
+      SELECT oi."productId", oi."productName", o."id" AS order_id, oi."lineTotal", oi."quantity",
+        oi."unitCost",
+        CASE WHEN SUM(oi."lineTotal") OVER (PARTITION BY o."id") > 0
+          THEN (2 * o."discountTotal"::bigint * oi."lineTotal"
+                + SUM(oi."lineTotal") OVER (PARTITION BY o."id"))
+               / (2 * SUM(oi."lineTotal") OVER (PARTITION BY o."id"))
+          ELSE 0 END AS alloc
+      FROM "OrderItem" oi
+      JOIN "Order" o ON o."id" = oi."orderId"
+      WHERE o."paymentStatus" = 'PAID' AND o."status" NOT IN ('CANCELLED', 'RETURNED')
+        AND o."paidAt" >= ${start} AND o."paidAt" < ${end}
+    )
+    SELECT li."productId" AS product_id,
+      COALESCE(MAX(p."name"), MAX(li."productName")) AS name,
+      MAX(p."slug") AS slug,
+      BOOL_OR(p."id" IS NULL OR p."deletedAt" IS NOT NULL) AS deleted,
+      MAX(c."name") AS category_name,
+      SUM(li."lineTotal")::bigint AS revenue,
+      SUM(li."quantity")::bigint AS quantity,
+      COUNT(DISTINCT li.order_id)::int AS orders,
+      (COUNT(*) FILTER (WHERE li."unitCost" IS NOT NULL))::int AS costed_lines,
+      COALESCE(SUM(li."lineTotal") FILTER (WHERE li."unitCost" IS NOT NULL), 0)::bigint AS costed_total,
+      COALESCE(SUM(li."lineTotal" - li.alloc) FILTER (WHERE li."unitCost" IS NOT NULL), 0)::bigint AS costed_net,
+      COALESCE(SUM(li."unitCost"::bigint * li."quantity") FILTER (WHERE li."unitCost" IS NOT NULL), 0)::bigint AS cogs
+    FROM li
+    LEFT JOIN "Product" p ON p."id" = li."productId"
+    LEFT JOIN "Category" c ON c."id" = p."categoryId"
+    GROUP BY li."productId"
+    ORDER BY ${sort === 'quantity' ? ORDER_BY_QUANTITY : ORDER_BY_REVENUE}
+    LIMIT ${limit}`;
 
   return {
     range: rangeOut(range),
     sort,
     limit,
-    items: rows.map((r) => ({
-      productId: r.product_id,
-      name: r.name,
-      slug: r.slug,
-      deleted: r.deleted,
-      categoryName: r.category_name,
-      revenue: num(r.revenue),
-      quantity: num(r.quantity),
-      orders: num(r.orders),
-    })),
+    items: rows.map((r) => {
+      const revenue = num(r.revenue);
+      const hasCost = num(r.costed_lines) > 0;
+      const net = num(r.costed_net);
+      const cogs = num(r.cogs);
+      return {
+        productId: r.product_id,
+        name: r.name,
+        slug: r.slug,
+        deleted: r.deleted,
+        categoryName: r.category_name,
+        revenue,
+        quantity: num(r.quantity),
+        orders: num(r.orders),
+        cogs: hasCost ? cogs : null,
+        grossProfit: hasCost ? net - cogs : null,
+        margin: hasCost && net > 0 ? round4((net - cogs) / net) : null,
+        costCoverage: revenue > 0 ? round4(num(r.costed_total) / revenue) : 0,
+      };
+    }),
     generatedAt: now.toISOString(),
   };
 }

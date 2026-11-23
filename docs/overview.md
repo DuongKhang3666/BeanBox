@@ -31,6 +31,9 @@ Mỗi dòng trỏ tới mục tương ứng trong [decisions.md](decisions.md). 
 | [D-013](decisions.md#d-013-quy-tắc-nghiệp-vụ-admin-m4)                                                                        | Máy trạng thái đơn và quy tắc nghiệp vụ khu Admin.                                                                   |
 | [D-057](decisions.md#d-057-chống-giữ-kho-bằng-đơn-cod-khách-vãng-lai)                                                         | Chống giữ kho bằng nhiều đơn COD của khách vãng lai: giới hạn đơn mở, hạn xác nhận, khóa advisory theo SĐT và email. |
 | [D-068](decisions.md#d-068-mã-vận-đơn-duy-nhất-ở-db)                                                                          | Mã vận đơn duy nhất ở DB (unique index), bắt P2002 trả 409 và thử lại khi sinh mã giả.                               |
+| [D-071](decisions.md#d-071-ghi-chú-nội-bộ-trên-đơn-hàng), [D-072](decisions.md#d-072-in-phiếu-giao-hàng-loạt), [D-073](decisions.md#d-073-xuất-và-nhập-csv-sản-phẩm) | Ghi chú nội bộ trên đơn (append-only), in phiếu giao hàng loạt (tối đa 50), xuất/nhập CSV sản phẩm 2 bước. |
+| [D-075](decisions.md#d-075-cache-http-cho-catalog-ảnh-và-cài-đặt), [D-076](decisions.md#d-076-khóa-tạm-theo-mã-đơn-cho-khách-vãng-lai), [D-077](decisions.md#d-077-mua-lại) | Cache HTTP ngắn cho catalog và ảnh bất biến, khóa tạm theo mã đơn (5 lần sai -> 15 phút) cho khách vãng lai, "Mua lại" đơn cũ vào giỏ. |
+| [D-078](decisions.md#d-078-giá-vốn-bình-quân-gia-quyền-di-động-và-lợi-nhuận-gộp) | Giá vốn bình quân gia quyền di động theo biến thể (nhập hàng kèm đơn giá), chụp vào dòng đơn lúc đặt, lợi nhuận gộp hàng hóa ở phân tích (chỉ Admin; đơn cũ chưa có giá vốn, không đoán). |
 
 ### Thanh toán
 

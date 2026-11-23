@@ -49,12 +49,14 @@ export function AddToCartPanel({ variants }: { variants: Variant[] }) {
   const qty = clamp(quantity);
   const compareAt = variant.isOnSale ? variant.price : null;
 
-  async function onAdd() {
+  async function onAdd(e: React.MouseEvent<HTMLButtonElement>) {
     if (!variant || pending.adding) return;
+    // Ghi nhận nút TRƯỚC khi nó bị disable (đang thêm) để mini-cart trả focus về đúng chỗ khi đóng.
+    const opener = e.currentTarget;
     setError(null);
     try {
       await addItem(variant.id, qty);
-      openMiniCart();
+      openMiniCart(opener);
     } catch (e) {
       setError(cartErrorMessage(e));
     }

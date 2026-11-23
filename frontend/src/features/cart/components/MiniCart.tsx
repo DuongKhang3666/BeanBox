@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect, useId, useRef } from "react";
+import { useId } from "react";
 import { ButtonLink } from "@/components/ui/Button";
+import { Dialog } from "@/components/ui/Dialog";
 import { ProductImage } from "@/features/catalog/components/ProductImage";
 import { formatVND } from "@/lib/format";
 import { useCart } from "../CartProvider";
-
-const FOCUSABLE = 'a[href], button:not(:disabled), [tabindex]:not([tabindex="-1"])';
 
 export function MiniCart() {
   const { miniCartOpen } = useCart();
@@ -14,65 +13,22 @@ export function MiniCart() {
 }
 
 function MiniCartDialog() {
-  const { cart, closeMiniCart } = useCart();
+  const { cart, closeMiniCart, getMiniCartFocusTarget } = useCart();
   const titleId = useId();
-  const boxRef = useRef<HTMLDivElement>(null);
-  const closeRef = useRef(closeMiniCart);
-  useEffect(() => {
-    closeRef.current = closeMiniCart;
-  });
-
-  useEffect(() => {
-    const opener = document.activeElement as HTMLElement | null;
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    boxRef.current?.focus();
-
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        closeRef.current();
-      } else if (e.key === "Tab" && boxRef.current) {
-        const items = Array.from(boxRef.current.querySelectorAll<HTMLElement>(FOCUSABLE));
-        if (items.length === 0) return;
-        const first = items[0]!;
-        const last = items[items.length - 1]!;
-        const active = document.activeElement;
-        if (e.shiftKey && (active === first || active === boxRef.current)) {
-          e.preventDefault();
-          last.focus();
-        } else if (!e.shiftKey && active === last) {
-          e.preventDefault();
-          first.focus();
-        }
-      }
-    };
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prevOverflow;
-      if (opener?.isConnected) opener.focus();
-    };
-  }, []);
 
   const items = cart?.items ?? [];
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex justify-end bg-coffee-900/50"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) closeMiniCart();
-      }}
-      data-testid="minicart-overlay"
+    <Dialog
+      variant="drawer"
+      labelledBy={titleId}
+      initialFocus="container"
+      returnFocusTo={getMiniCartFocusTarget}
+      closeOnBackdrop
+      onClose={closeMiniCart}
+      testId="minicart-overlay"
     >
-      <div
-        ref={boxRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        tabIndex={-1}
-        className="flex h-full w-full flex-col bg-cream-50 shadow-xl outline-none sm:max-w-md"
-      >
+      <div className="flex h-full w-full flex-col bg-cream-50 shadow-xl sm:max-w-md">
         <div className="flex items-center justify-between border-b border-coffee-200 px-4 py-3">
           <h2 id={titleId} className="font-serif text-lg font-bold text-coffee-900">
             Giỏ hàng của bạn
@@ -131,6 +87,6 @@ function MiniCartDialog() {
           </div>
         </div>
       </div>
-    </div>
+    </Dialog>
   );
 }

@@ -6,6 +6,8 @@ import type {
   AdminProductQuery,
   AdminVariant,
   ImageInput,
+  ImportPreview,
+  ImportResult,
   ProductInput,
   UploadResult,
   VariantInput,
@@ -121,5 +123,36 @@ export async function deleteAdminImage(productId: string, imageId: string): Prom
   const { data } = await api.delete<AdminImage[]>(
     `/admin/products/${enc(productId)}/images/${enc(imageId)}`,
   );
+  return data;
+}
+
+/** D-073: xuất CSV mọi biến thể (Admin). Trả blob + tên file an toàn từ server. */
+export function exportProductsCsv() {
+  return api.download("/admin/products/export");
+}
+
+/** D-073 bước 1: gửi nguyên file làm body `text/csv`; server KHÔNG ghi DB. */
+export async function previewProductImport(file: Blob, fileName: string): Promise<ImportPreview> {
+  const { data } = await api.request<ImportPreview>("/admin/products/import/preview", {
+    method: "POST",
+    rawBody: file,
+    contentType: "text/csv",
+    query: { filename: fileName },
+  });
+  return data;
+}
+
+/** D-073 bước 2: cùng file + fingerprint của bước 1; server tính lại và áp dụng trong 1 transaction. */
+export async function commitProductImport(
+  file: Blob,
+  fileName: string,
+  fingerprint: string,
+): Promise<ImportResult> {
+  const { data } = await api.request<ImportResult>("/admin/products/import/commit", {
+    method: "POST",
+    rawBody: file,
+    contentType: "text/csv",
+    query: { filename: fileName, fingerprint },
+  });
   return data;
 }

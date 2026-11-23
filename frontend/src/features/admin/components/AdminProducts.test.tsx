@@ -1,11 +1,16 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { errRes, jsonRes } from "@/features/account/testing";
+import { errRes, jsonRes, makeUser } from "@/features/account/testing";
 import { tokenStore } from "@/lib/api/client";
 import { BRAND_LIST, CATEGORY_TREE } from "../productTesting";
 import { makeProductListItem } from "../testing";
 import { AdminProducts } from "./AdminProducts";
+
+let role: "ADMIN" | "STAFF" = "ADMIN";
+vi.mock("@/features/auth/AuthProvider", () => ({
+  useAuth: () => ({ status: "authenticated", user: makeUser({ role }) }),
+}));
 
 let search = "";
 const replace = vi.fn();
@@ -47,6 +52,7 @@ const ITEMS = [
 ];
 
 beforeEach(() => {
+  role = "ADMIN";
   search = "";
   replace.mockReset();
   tokenStore.clear();

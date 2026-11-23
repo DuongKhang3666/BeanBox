@@ -251,13 +251,44 @@ export async function getAllSettings(
   return { values, updatedAt };
 }
 
-/** Đọc cấu hình bằng 1 query, không cache. */
-export async function getShopSettings(
-  db: Prisma.TransactionClient | PrismaClient = prisma,
+/**
+ * D-075: cache trong tiến trình (1 instance, D-027) TTL 30 giây cho lần đọc bằng client mặc định.
+ * Lần đọc trong transaction (tạo đơn) KHÔNG dùng cache để giá/phí luôn đúng lúc ghi sổ.
+ * Xóa cache khi admin lưu settings (`invalidateShopSettingsCache`).
+ */
+export const SHOP_SETTINGS_CACHE_TTL_MS = 30_000;
+// Test ghi thẳng bảng Setting nhiều nơi -> mặc định tắt khi NODE_ENV=test; test cache bật lại bằng setShopSettingsCacheTtl.
+let settingsTtlMs = process.env.NODE_ENV === 'test' ? 0 : SHOP_SETTINGS_CACHE_TTL_MS;
+let settingsCache: { value: ShopSettings; expiresAt: number } | null = null;
+
+export function invalidateShopSettingsCache(): void {
+  settingsCache = null;
+}
+
+/** Chỉ dùng trong test: đổi TTL (0 = tắt cache) và xóa cache. */
+export function setShopSettingsCacheTtl(ms: number): void {
+  settingsTtlMs = ms;
+  settingsCache = null;
+}
+
+async function readShopSettings(
+  db: Prisma.TransactionClient | PrismaClient,
 ): Promise<ShopSettings> {
   const rows = await db.setting.findMany({
     where: { key: { in: Object.keys(SCHEMAS) } },
     select: { key: true, value: true },
   });
   return parseShopSettings(rows);
+}
+
+/** Đọc cấu hình bằng 1 query; client mặc định được cache TTL 30 giây. Trả bản sao (không dùng chung tham chiếu). */
+export async function getShopSettings(
+  db: Prisma.TransactionClient | PrismaClient = prisma,
+): Promise<ShopSettings> {
+  if (db !== prisma || settingsTtlMs <= 0) return readShopSettings(db);
+  const now = Date.now();
+  if (settingsCache && settingsCache.expiresAt > now) return structuredClone(settingsCache.value);
+  const value = await readShopSettings(db);
+  settingsCache = { value, expiresAt: now + settingsTtlMs };
+  return structuredClone(value);
 }

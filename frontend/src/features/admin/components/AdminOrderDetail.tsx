@@ -29,6 +29,7 @@ import {
   OrderPayments,
   TransferClaimedBadge,
 } from "./OrderPayments";
+import { OrderNotes } from "./OrderNotes";
 import { StatusDialog } from "./StatusDialog";
 
 const load = (code: string) => getAdminOrder(code);
@@ -301,6 +302,8 @@ export function AdminOrderDetail({ code }: { code: string }) {
             <History history={order.history} />
           </Card>
         ) : null}
+
+        <OrderNotes code={order.code} />
 
         {action ? (
           <StatusDialog

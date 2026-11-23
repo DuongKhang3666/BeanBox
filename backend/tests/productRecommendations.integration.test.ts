@@ -251,7 +251,10 @@ describe('GET /products/:slug/bought-together', () => {
     const res = await bt('t9-x');
     expect(res.status).toBe(200);
     expect(slugsOf(res)).toEqual(['t9-y', 't9-z']);
-    expect(res.headers['cache-control']).toBeUndefined();
+    // D-075: catalog công khai, cache ngắn
+    expect(res.headers['cache-control']).toBe(
+      'public, max-age=30, s-maxage=60, stale-while-revalidate=120',
+    );
     const item = res.body.data[0] as Record<string, unknown>;
     expect(item).toHaveProperty('minPrice');
     expect(item).not.toHaveProperty('stock');

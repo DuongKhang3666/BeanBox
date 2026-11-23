@@ -4,6 +4,7 @@ import { startBackgroundJobs } from './jobs/cleanup.js';
 import { logger } from './lib/logger.js';
 import { loadLocations } from './modules/locations/locations.data.js';
 import { disconnectPrisma } from './lib/prisma.js';
+import { tuneServerTimeouts } from './lib/serverTimeouts.js';
 
 const app = createApp();
 if (env.PAYMENT_MOCKS_ENABLED) {
@@ -24,6 +25,7 @@ const server = app.listen(env.PORT, env.HOST, () => {
   logger.info(`BeanBox API lắng nghe tại ${env.HOST}:${env.PORT}`);
 });
 
+tuneServerTimeouts(server);
 const stopJobs = env.JOBS_ENABLED ? startBackgroundJobs() : () => undefined;
 
 async function shutdown(signal: string) {

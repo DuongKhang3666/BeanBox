@@ -45,6 +45,9 @@ export function createOrdersRouter({
     controller.listMyOrders,
   );
 
+  // D-077: mua lại = thêm các dòng còn bán của đơn cũ vào giỏ của chính user.
+  router.post('/me/orders/:code/reorder', requireAuth, controller.reorder);
+
   // Thứ tự: `/orders/track` PHẢI đứng trước `/orders/:code`, nếu không `:code` nuốt "track".
   router.get(
     '/orders/track',

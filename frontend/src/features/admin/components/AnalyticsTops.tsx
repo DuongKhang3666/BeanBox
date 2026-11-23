@@ -13,7 +13,7 @@ import type {
   TopProductsSort,
 } from "@/types/admin";
 import { getAnalyticsTopCustomers, getAnalyticsTopProducts } from "../api/analytics";
-import { formatInt, rangeLabel } from "../analyticsRange";
+import { formatInt, formatRate, rangeLabel } from "../analyticsRange";
 import { adminErrorMessage } from "../errors";
 import { formatVnDate } from "../format";
 import {
@@ -69,7 +69,7 @@ export function TopProductsBlock({ from, to, refresh }: Range) {
     const d = res.data!;
     body = (
       <TableScroll label="Bảng top sản phẩm">
-        <table className="w-full min-w-[560px] border-collapse text-sm">
+        <table className="w-full min-w-[680px] border-collapse text-sm">
           <caption className="px-3 py-2 text-left text-sm text-coffee-800">
             Top {d.items.length} sản phẩm theo {sort === "revenue" ? "doanh thu" : "số lượng bán"},{" "}
             {rangeLabel(d.range)}
@@ -90,6 +90,12 @@ export function TopProductsBlock({ from, to, refresh }: Range) {
               </th>
               <th scope="col" className={TH_NUM}>
                 Số đơn
+              </th>
+              <th scope="col" className={TH_NUM}>
+                Lợi nhuận gộp
+              </th>
+              <th scope="col" className={TH_NUM}>
+                Biên
               </th>
             </tr>
           </thead>
@@ -122,6 +128,14 @@ export function TopProductsBlock({ from, to, refresh }: Range) {
                 <td className={TD_NUM}>{formatVND(p.revenue)}</td>
                 <td className={TD_NUM}>{formatInt(p.quantity)}</td>
                 <td className={TD_NUM}>{formatInt(p.orders)}</td>
+                <td className={TD_NUM}>
+                  {p.grossProfit === null ? (
+                    <span className="text-coffee-700">Chưa có giá vốn</span>
+                  ) : (
+                    formatVND(p.grossProfit)
+                  )}
+                </td>
+                <td className={TD_NUM}>{p.margin === null ? "—" : formatRate(p.margin)}</td>
               </tr>
             ))}
           </tbody>

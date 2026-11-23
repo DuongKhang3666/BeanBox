@@ -24,6 +24,7 @@ import {
   validationError,
 } from '../checkout/checkout.service.js';
 import { resolveLocation } from '../locations/locations.data.js';
+import { reorderLines, type ReorderResult } from '../cart/cart.service.js';
 import { getShopSettings } from '../settings/settings.service.js';
 import { expireStripeSessionsBestEffort } from '../payments/payments.expire.js';
 import type { StripeHttp } from '../payments/stripe.js';
@@ -305,6 +306,12 @@ async function createOrderInTx(tx: Db, a: TxArgs): Promise<TxOutcome> {
 
   const lines = await loadCartLines(tx, cart.id, now);
   if (lines.length === 0) throw cartEmpty();
+  // D-078: giá vốn bình quân đọc SAU khi đã khóa biến thể (nhập hàng song song phải chờ), chụp vào dòng đơn.
+  const costRows = await tx.productVariant.findMany({
+    where: { id: { in: variantIds } },
+    select: { id: true, avgCost: true },
+  });
+  const avgCostOf = new Map(costRows.map((r) => [r.id, r.avgCost]));
   const unavailable = lines.filter((l) => l.priced.warnings.includes('UNAVAILABLE'));
   if (unavailable.length > 0) {
     throw new AppError(409, 'ITEM_UNAVAILABLE', 'Có sản phẩm không còn được bán', {
@@ -442,6 +449,7 @@ async function createOrderInTx(tx: Db, a: TxArgs): Promise<TxOutcome> {
           unitPrice: l.priced.unitPrice,
           quantity: l.quantity,
           lineTotal: l.priced.lineTotal,
+          unitCost: avgCostOf.get(l.variantId) ?? null,
         })),
       },
       history: { create: { fromStatus: null, toStatus: status, actorId: userId } },
@@ -527,6 +535,26 @@ export async function getOrderForUser(
   });
   if (!order || order.userId !== userId) throw orderNotFound();
   return toOrderDto(order, dto);
+}
+
+/** D-077: POST /me/orders/:code/reorder. Đơn không thuộc user (hoặc không tồn tại) -> 404. Mọi trạng thái đều được. */
+export async function reorderForUser(
+  rawCode: string,
+  userId: string,
+  now: Date = new Date(),
+): Promise<ReorderResult> {
+  const order = await prisma.order.findUnique({
+    where: { code: normalizeOrderCode(rawCode) },
+    select: {
+      userId: true,
+      items: {
+        orderBy: { id: 'asc' },
+        select: { variantId: true, quantity: true, productName: true, variantName: true },
+      },
+    },
+  });
+  if (!order || order.userId !== userId) throw orderNotFound();
+  return reorderLines(userId, order.items, now);
 }
 
 /** GET /orders/track: code + SĐT khớp `contactPhone`; mọi trường hợp khác -> 404 cùng thông báo. */

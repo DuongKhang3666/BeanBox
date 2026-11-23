@@ -65,7 +65,7 @@ function ItemsTable({
   return (
     <div className="space-y-2">
       <TableScroll label={label}>
-        <table className="w-full min-w-[720px] border-collapse text-sm">
+        <table className="w-full min-w-[800px] border-collapse text-sm">
           <caption className="px-3 py-2 text-left text-sm text-coffee-800">{caption}</caption>
           <thead className="bg-cream-100">
             <tr>
@@ -83,6 +83,9 @@ function ItemsTable({
               </th>
               <th scope="col" className={TH_NUM}>
                 Giá trị tồn
+              </th>
+              <th scope="col" className={TH_NUM}>
+                Giá trị theo giá vốn
               </th>
               <th scope="col" className={TH}>
                 Bán gần nhất
@@ -107,6 +110,9 @@ function ItemsTable({
                 <td className={TD_NUM}>{formatInt(i.lowStockThreshold)}</td>
                 <td className={TD_NUM}>{formatVND(i.price)}</td>
                 <td className={TD_NUM}>{formatVND(i.stockValue)}</td>
+                <td className={TD_NUM}>
+                  {i.stockCostValue === null ? "Chưa có" : formatVND(i.stockCostValue)}
+                </td>
                 <td className="px-3 py-2 whitespace-nowrap">
                   {i.lastSoldAt ? formatVnDate(i.lastSoldAt) : "Chưa từng bán"}
                 </td>
@@ -172,6 +178,15 @@ export function InventoryBlock({ refresh }: { refresh: number }) {
             label="Giá trị tồn kho"
             value={formatVND(s.stockValue)}
             note="Tồn x giá niêm yết, chỉ biến thể còn hàng"
+          />
+          <Stat
+            label="Giá trị tồn theo giá vốn"
+            value={formatVND(s.stockCostValue)}
+            note={
+              s.variantsWithoutCost > 0
+                ? `Tồn x giá vốn bình quân; chưa tính ${formatInt(s.variantsWithoutCost)} biến thể còn hàng chưa có giá vốn`
+                : "Tồn x giá vốn bình quân"
+            }
           />
           <Stat
             label={`Bán chậm (${d.slowDays} ngày)`}

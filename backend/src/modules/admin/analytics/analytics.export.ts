@@ -68,6 +68,9 @@ export function overviewRows(dto: OverviewDto): CsvRow[] {
     metric('Giảm giá (VND)', k.discountTotal),
     metric('Hoàn tiền (VND)', k.refundedAmount),
     metric('Khách mới', k.newCustomers),
+    metric('Lợi nhuận gộp (VND)', k.grossProfit),
+    rateMetric('Biên lợi nhuận gộp (%)', k.grossMargin),
+    rateMetric('Độ phủ giá vốn (%)', k.costCoverage),
   ];
 }
 
@@ -152,7 +155,19 @@ export function breakdownRows(dto: BreakdownDto): CsvRow[] {
 
 export function topProductsRows(dto: TopProductsDto): CsvRow[] {
   return [
-    ['Hạng', 'Sản phẩm', 'Danh mục', 'Doanh thu (VND)', 'Số lượng', 'Số đơn', 'Ghi chú'],
+    [
+      'Hạng',
+      'Sản phẩm',
+      'Danh mục',
+      'Doanh thu (VND)',
+      'Số lượng',
+      'Số đơn',
+      'Ghi chú',
+      'Giá vốn hàng bán (VND)',
+      'Lợi nhuận gộp (VND)',
+      'Biên lợi nhuận (%)',
+      'Độ phủ giá vốn (%)',
+    ],
     ...dto.items.map((p, i): CsvRow => [
       i + 1,
       p.name,
@@ -161,6 +176,10 @@ export function topProductsRows(dto: TopProductsDto): CsvRow[] {
       p.quantity,
       p.orders,
       p.deleted ? 'Đã xóa' : null,
+      p.cogs,
+      p.grossProfit,
+      p.margin === null ? null : pct(p.margin),
+      pct(p.costCoverage),
     ]),
   ];
 }
@@ -295,6 +314,8 @@ export function inventoryRows(items: InventoryItem[]): CsvRow[] {
       'Giá niêm yết (VND)',
       'Giá trị tồn (VND)',
       'Bán gần nhất',
+      'Giá vốn bình quân (VND)',
+      'Giá trị tồn theo giá vốn (VND)',
     ],
     ...items.map((i): CsvRow => [
       i.productName,
@@ -305,6 +326,8 @@ export function inventoryRows(items: InventoryItem[]): CsvRow[] {
       i.price,
       i.stockValue,
       i.lastSoldAt,
+      i.avgCost,
+      i.stockCostValue,
     ]),
   ];
 }

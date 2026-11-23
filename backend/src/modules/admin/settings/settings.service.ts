@@ -1,7 +1,11 @@
 import type { Prisma } from '../../../generated/prisma/client.js';
 import { deepEqual, writeAudit, type AuditDiff } from '../../../lib/audit.js';
 import { prisma } from '../../../lib/prisma.js';
-import { getAllSettings, type AllSettings } from '../../settings/settings.service.js';
+import {
+  getAllSettings,
+  invalidateShopSettingsCache,
+  type AllSettings,
+} from '../../settings/settings.service.js';
 import type { SettingsPatch } from './settings.schema.js';
 
 export interface SettingsResponse {
@@ -19,6 +23,18 @@ export async function getAdminSettings(): Promise<SettingsResponse> {
 }
 
 export async function updateSettings(
+  patch: SettingsPatch,
+  actor: { userId: string; ip: string | undefined },
+): Promise<SettingsResponse> {
+  try {
+    return await applyUpdate(patch, actor);
+  } finally {
+    // Xóa cache cả khi lỗi: tránh giữ giá trị cũ nếu transaction đã commit nhưng phản hồi thất bại.
+    invalidateShopSettingsCache();
+  }
+}
+
+async function applyUpdate(
   patch: SettingsPatch,
   actor: { userId: string; ip: string | undefined },
 ): Promise<SettingsResponse> {

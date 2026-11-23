@@ -31,6 +31,7 @@ export function HeaderCart() {
   return (
     <Link
       href="/gio-hang"
+      data-cart-trigger
       aria-label={`Giỏ hàng, ${count} sản phẩm`}
       className="relative inline-flex h-11 w-11 items-center justify-center rounded-lg text-coffee-800 hover:bg-coffee-100"
     >

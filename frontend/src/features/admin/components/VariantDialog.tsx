@@ -37,11 +37,14 @@ const describedBy = (id: string, error?: string, hasHint?: boolean) =>
 export function VariantDialog({
   productId,
   variant,
+  canSetCost = false,
   onSaved,
   onClose,
 }: {
   productId: string;
   variant?: AdminVariant;
+  /** D-078: chỉ Admin thấy và sửa được giá vốn bình quân. */
+  canSetCost?: boolean;
   onSaved: (saved: AdminVariant, mode: "create" | "update") => void;
   onClose: () => void;
 }) {
@@ -67,10 +70,21 @@ export function VariantDialog({
   const [roastDate, setRoastDate] = useState(variant?.roastDate ?? "");
   const [sortOrder, setSortOrder] = useState(String(variant?.sortOrder ?? 0));
   const [isActive, setIsActive] = useState(variant?.isActive ?? true);
+  const [avgCost, setAvgCost] = useState(variant?.avgCost != null ? String(variant.avgCost) : "");
+  const [costConfirmed, setCostConfirmed] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [general, setGeneral] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
+
+  const costText = avgCost.trim();
+  const costValue = costText === "" ? null : Number(costText);
+  /** Đang sửa tay giá vốn của biến thể đã có: cần xác nhận. */
+  const costChanged =
+    canSetCost &&
+    editing &&
+    /^\d+$/.test(costText || "0") &&
+    costValue !== (variant!.avgCost ?? null);
 
   function updateRow(id: number, patch: Partial<AttrRow>) {
     setRows((cur) => cur.map((r) => (r.id === id ? { ...r, ...patch } : r)));
@@ -105,6 +119,12 @@ export function VariantDialog({
     put("weightGram", intRangeError(weight, 0, 100000, "Khối lượng"));
     put("sortOrder", intRangeError(sortOrder, 0, 9999, "Thứ tự"));
     if (roastDate && !ROAST_RE.test(roastDate)) e.roastDate = "Ngày rang không hợp lệ.";
+    if (canSetCost && costText !== "") {
+      put("avgCost", intRangeError(costText, 0, 100_000_000, "Giá vốn"));
+    }
+    if (!e.avgCost && costChanged && !costConfirmed) {
+      e.avgCost = "Vui lòng xác nhận sửa giá vốn thủ công.";
+    }
     return e;
   }
 
@@ -129,6 +149,7 @@ export function VariantDialog({
       if (roastDate) body.roastDate = roastDate;
       body.sortOrder = Number(sortOrder.trim());
       body.isActive = isActive;
+      if (canSetCost && costValue !== null) body.avgCost = costValue;
       return body;
     }
     if (code !== variant.sku) body.sku = code;
@@ -145,6 +166,7 @@ export function VariantDialog({
     if ((roastDate || null) !== variant.roastDate) body.roastDate = roastDate || null;
     if (Number(sortOrder.trim()) !== variant.sortOrder) body.sortOrder = Number(sortOrder.trim());
     if (isActive !== variant.isActive) body.isActive = isActive;
+    if (canSetCost && costValue !== (variant.avgCost ?? null)) body.avgCost = costValue;
     return body;
   }
 
@@ -190,6 +212,7 @@ export function VariantDialog({
           "weightGram",
           "roastDate",
           "sortOrder",
+          "avgCost",
         ]) {
           if (fe[k]) shown[k] = fe[k];
         }
@@ -390,6 +413,33 @@ export function VariantDialog({
           </div>
           {numberInput("vd-order", "Thứ tự hiển thị", sortOrder, setSortOrder, "sortOrder")}
         </div>
+
+        {canSetCost ? (
+          <div>
+            {numberInput(
+              "vd-cost",
+              "Giá vốn bình quân (VND)",
+              avgCost,
+              (v) => {
+                setAvgCost(v);
+                setCostConfirmed(false);
+              },
+              "avgCost",
+              "Tự cập nhật khi nhập hàng có đơn giá. Chỉ sửa tay để nhập dữ liệu ban đầu hoặc sửa sai; để trống = chưa có giá vốn.",
+            )}
+            {costChanged ? (
+              <label className="mt-2 flex min-h-11 items-center gap-2 text-sm text-coffee-900">
+                <input
+                  type="checkbox"
+                  className="h-5 w-5 accent-moss-700"
+                  checked={costConfirmed}
+                  onChange={(e) => setCostConfirmed(e.target.checked)}
+                />
+                Tôi xác nhận sửa giá vốn thủ công (ghi vào nhật ký hoạt động)
+              </label>
+            ) : null}
+          </div>
+        ) : null}
 
         <label className="flex min-h-11 items-center gap-2 text-base text-coffee-900">
           <input

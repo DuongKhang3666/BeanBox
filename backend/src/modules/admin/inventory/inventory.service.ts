@@ -1,5 +1,6 @@
 import type { InventoryReason, Prisma } from '../../../generated/prisma/client.js';
 import { diffFields, writeAudit } from '../../../lib/audit.js';
+import { weightedAvgCost } from '../../../lib/cost.js';
 import { AppError } from '../../../lib/errors.js';
 import { prisma } from '../../../lib/prisma.js';
 import { escapeLike, normalizeSearch } from '../../../lib/text.js';
@@ -71,6 +72,7 @@ function inventoryOrderBy(
 
 export async function listInventory(
   q: InventoryQuery,
+  includeCost = false,
 ): Promise<{ data: InventoryItemDto[]; meta: ListMeta }> {
   const where = buildInventoryWhere(q);
   const [total, rows] = await Promise.all([
@@ -84,7 +86,7 @@ export async function listInventory(
     }),
   ]);
   return {
-    data: rows.map(toInventoryItem),
+    data: rows.map((r) => toInventoryItem(r, includeCost)),
     meta: { page: q.page, pageSize: q.pageSize, total, totalPages: Math.ceil(total / q.pageSize) },
   };
 }
@@ -94,6 +96,7 @@ export async function listInventory(
 
 export async function listMovements(
   q: MovementsQuery,
+  includeCost = false,
 ): Promise<{ data: InventoryMovementDto[]; meta: ListMeta }> {
   const where: Prisma.InventoryMovementWhereInput = {
     ...(q.variantId ? { variantId: q.variantId } : {}),
@@ -118,7 +121,7 @@ export async function listMovements(
     }),
   ]);
   return {
-    data: rows.map(toMovementDto),
+    data: rows.map((r) => toMovementDto(r, includeCost)),
     meta: { page: q.page, pageSize: q.pageSize, total, totalPages: Math.ceil(total / q.pageSize) },
   };
 }
@@ -130,17 +133,33 @@ export interface AdjustArgs {
   input: AdjustInput;
   actorId: string;
   ip: string | null;
+  /** D-078: Admin mới được ghi/xem giá nhập và giá vốn. */
+  isAdmin: boolean;
 }
 
 export async function adjustInventory(
   args: AdjustArgs,
 ): Promise<{ item: InventoryItemDto; movement: InventoryMovementDto | null }> {
-  const { input, actorId, ip } = args;
+  const { input, actorId, ip, isAdmin } = args;
+
+  // D-078: nhập hàng ghi đơn giá nhập (Admin bắt buộc); Staff không thấy/không ghi giá vốn.
+  if (input.reason === 'RESTOCK') {
+    if (isAdmin && input.unitCost === undefined) {
+      throw new AppError(400, 'VALIDATION_ERROR', 'Dữ liệu không hợp lệ', [
+        { field: 'unitCost', message: 'Vui lòng nhập đơn giá nhập' },
+      ]);
+    }
+    if (!isAdmin && input.unitCost !== undefined) {
+      throw new AppError(403, 'FORBIDDEN', 'Chỉ Admin được ghi đơn giá nhập');
+    }
+  }
 
   return prisma.$transaction(async (tx) => {
     // Thứ tự khóa: Variant -> Product (cùng đặt/hủy đơn) để không deadlock.
-    const locked = await tx.$queryRaw<Array<{ id: string; productId: string; stock: number }>>`
-      SELECT "id", "productId", "stock" FROM "ProductVariant"
+    const locked = await tx.$queryRaw<
+      Array<{ id: string; productId: string; stock: number; avgCost: number | null }>
+    >`
+      SELECT "id", "productId", "stock", "avgCost" FROM "ProductVariant"
       WHERE "id" = ${input.variantId} AND "deletedAt" IS NULL FOR UPDATE`;
     const variant = locked[0];
     if (!variant) throw variantNotFound();
@@ -173,11 +192,21 @@ export async function adjustInventory(
           where: { id: variant.id },
           select: inventoryItemSelect,
         }),
+        isAdmin,
       );
 
     if (newStock === current) return { item: await itemOf(), movement: null };
 
-    await tx.productVariant.update({ where: { id: variant.id }, data: { stock: newStock } });
+    // Bình quân gia quyền di động (D-078): chỉ khi Admin nhập hàng có đơn giá; mọi thay đổi
+    // tồn khác (bán, hủy, hao hụt, kiểm kê, điều chỉnh) giữ nguyên giá vốn.
+    const costed = reason === 'RESTOCK' && isAdmin && input.unitCost !== undefined;
+    const newAvg = costed
+      ? weightedAvgCost(current, variant.avgCost, input.change!, input.unitCost!)
+      : variant.avgCost;
+    await tx.productVariant.update({
+      where: { id: variant.id },
+      data: { stock: newStock, ...(costed ? { avgCost: newAvg } : {}) },
+    });
     const movement = await tx.inventoryMovement.create({
       data: {
         variantId: variant.id,
@@ -186,6 +215,7 @@ export async function adjustInventory(
         reason,
         actorId,
         note: input.note ?? null,
+        ...(costed ? { unitCost: input.unitCost! } : {}),
       },
       select: movementSelect,
     });
@@ -195,12 +225,18 @@ export async function adjustInventory(
       action: 'inventory.adjust',
       entity: 'ProductVariant',
       entityId: variant.id,
-      diff: diffFields({ stock: current, reason: null }, { stock: newStock, reason }, [
-        'stock',
-        'reason',
-      ]),
+      diff: diffFields(
+        { stock: current, reason: null, avgCost: variant.avgCost, unitCost: null },
+        {
+          stock: newStock,
+          reason,
+          avgCost: newAvg,
+          unitCost: costed ? input.unitCost! : null,
+        },
+        ['stock', 'reason', 'avgCost', 'unitCost'],
+      ),
       ip,
     });
-    return { item: await itemOf(), movement: toMovementDto(movement) };
+    return { item: await itemOf(), movement: toMovementDto(movement, isAdmin) };
   }, TX_OPTIONS);
 }

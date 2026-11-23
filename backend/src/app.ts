@@ -38,6 +38,8 @@ import type { StripeHttp } from './modules/payments/stripe.js';
 import { settingsRouter } from './modules/settings/settings.routes.js';
 import { wishlistRouter } from './modules/wishlist/wishlist.routes.js';
 
+import { OrderLookupLock } from './lib/orderLookupLock.js';
+
 const API_PREFIX = '/api/v1';
 
 /** Không log query của /payments/* (chứa chữ ký vnp_SecureHash và dữ liệu giao dịch, §13.3). */
@@ -67,6 +69,17 @@ export const apiCacheControl: express.RequestHandler = (req, res, next) => {
   next();
 };
 
+/** Tên file upload do server sinh: 32 hex ngẫu nhiên + đuôi ảnh (uploads.service) -> nội dung không bao giờ đổi. */
+const RANDOM_UPLOAD_NAME = /^[0-9a-f]{32}\.(?:jpg|png|webp)$/;
+
+/** D-075: tên ngẫu nhiên -> immutable 1 năm; tên cố định (ảnh seed) -> 1 ngày. */
+export function uploadCacheControl(filePath: string): string {
+  const base = filePath.split(/[\\/]/).pop() ?? '';
+  return RANDOM_UPLOAD_NAME.test(base)
+    ? 'public, max-age=31536000, immutable'
+    : 'public, max-age=86400';
+}
+
 export interface AppOptions {
   /** Số request/phút/IP của rate limit chung (mặc định 100). Chỉ đổi trong test. */
   generalRateLimit?: number;
@@ -86,6 +99,8 @@ export interface AppOptions {
   uploadRateLimit?: number;
   /** Số request/phút/IP của GET /admin/analytics/export (mặc định env EXPORT_RATE_LIMIT_PER_MIN = 10). Chỉ đổi trong test. */
   exportRateLimit?: number;
+  /** Số request/phút/IP của POST /admin/products/import/* (mặc định 20). Chỉ đổi trong test. */
+  importRateLimit?: number;
   /** Số lần/giờ/người dùng của GET /me/export (mặc định 5). Chỉ đổi trong test. */
   dataExportRateLimit?: number;
   /** Cấu hình thanh toán online (mặc định đọc từ env). Test tiêm cấu hình giả. */
@@ -112,6 +127,8 @@ export interface AppOptions {
   captchaConfig?: CaptchaConfig | null;
   /** Hàm xác minh token Turnstile (mặc định gọi Cloudflare). Test tiêm bản giả, không đi qua mạng. */
   captchaVerify?: TurnstileVerifier;
+  /** Đồng hồ (ms) cho khóa tạm theo mã đơn (D-076). Chỉ đổi trong test. */
+  orderLookupNow?: () => number;
   /** Thư mục lưu/phục vụ ảnh upload (mặc định backend/uploads). Chỉ đổi trong test. */
   uploadsDir?: string;
 }
@@ -130,6 +147,9 @@ export function createApp(options: AppOptions = {}): Express {
     options.captchaVerify ??
     (captchaConfig ? createTurnstileVerifier(captchaConfig.secretKey) : undefined);
   app.locals.stripeHttp = options.stripeHttp;
+  app.locals.orderLookupLock = new OrderLookupLock(
+    options.orderLookupNow ? { now: options.orderLookupNow } : {},
+  );
   app.locals.paymentConfig = paymentConfig; // controller checkout/orders đọc để tính enabled/canPay
 
   // Limiter nhạy cảm: KHÔNG bỏ qua request nội bộ; store riêng mỗi app.
@@ -196,6 +216,8 @@ export function createApp(options: AppOptions = {}): Express {
       windowMs: 60_000,
       limit: options.exportRateLimit ?? env.EXPORT_RATE_LIMIT_PER_MIN,
     }),
+    // D-073: nhập CSV sản phẩm (preview + commit), store riêng.
+    import: createRateLimiter({ windowMs: 60_000, limit: options.importRateLimit ?? 20 }),
   };
 
   app.use(requestId);
@@ -234,7 +256,10 @@ export function createApp(options: AppOptions = {}): Express {
       redirect: false, // thư mục -> 404 thay vì 301
       dotfiles: 'deny',
       fallthrough: true,
-      maxAge: '1h',
+      cacheControl: false, // D-075: tự đặt Cache-Control theo tên file ở setHeaders
+      setHeaders: (res, filePath) => {
+        res.setHeader('Cache-Control', uploadCacheControl(filePath));
+      },
     }),
   );
   app.use(
@@ -305,6 +330,7 @@ export function createApp(options: AppOptions = {}): Express {
     createAdminRouter({
       uploadLimiter: limiters.upload,
       exportLimiter: limiters.export,
+      importLimiter: limiters.import,
       uploadsDir,
     }),
   );

@@ -9,6 +9,9 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
     return;
   }
 
+  // D-075: lỗi không bao giờ được cache công khai (route có thể đã đặt Cache-Control trước khi lỗi).
+  res.setHeader('Cache-Control', 'no-store');
+
   if (err instanceof ZodError) {
     res.status(400).json({
       error: {
@@ -21,6 +24,10 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
   }
 
   if (err instanceof AppError) {
+    const d = err.details as { retryAfterSec?: unknown } | undefined;
+    if (err.status === 429 && typeof d?.retryAfterSec === 'number') {
+      res.setHeader('Retry-After', String(d.retryAfterSec));
+    }
     res.status(err.status).json({
       error: {
         code: err.code,

@@ -15,6 +15,7 @@ import { useResource } from "../useResource";
 import { CancelOrderDialog } from "./CancelOrderDialog";
 import { OrderDetail } from "./OrderDetail";
 import { OrderStatusBadge } from "./OrderStatusBadge";
+import { ReorderButton } from "./ReorderButton";
 
 const load = (code: string) => getOrder(code);
 
@@ -96,6 +97,7 @@ export function AccountOrderDetail({ code }: { code: string }) {
         </div>
       </div>
       <FormNotice>{notice}</FormNotice>
+      <ReorderButton code={order.code} />
       {order.canPay ? (
         <section
           aria-label="Thanh toán đơn hàng"

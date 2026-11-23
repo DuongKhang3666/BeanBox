@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "@/lib/api/errors";
-import { deliveryEtaText, orderErrorMessage, orderStatusLabel, paymentStatusLabel } from "./labels";
+import {
+  deliveryEtaText,
+  orderErrorMessage,
+  orderLookupLockedMessage,
+  orderStatusLabel,
+  paymentStatusLabel,
+} from "./labels";
 
 describe("nhãn trạng thái", () => {
   it("paymentStatus đủ 4 giá trị", () => {
@@ -57,6 +63,19 @@ describe("deliveryEtaText (D-062)", () => {
   it("cùng một ngày thì chỉ hiện một ngày", () => {
     expect(deliveryEtaText({ status: "PENDING", etaFrom: "2026-12-01", etaTo: "2026-12-01" })).toBe(
       "01/12",
+    );
+  });
+});
+
+describe("orderLookupLockedMessage (D-076)", () => {
+  it("nêu số phút làm tròn lên; thiếu retryAfterSec -> câu chung", () => {
+    const e = (d?: unknown) => new ApiError(429, "ORDER_LOOKUP_LOCKED", "x", d);
+    expect(orderLookupLockedMessage(e({ retryAfterSec: 900 }))).toContain("khoảng 15 phút");
+    expect(orderLookupLockedMessage(e({ retryAfterSec: 61 }))).toContain("khoảng 2 phút");
+    expect(orderLookupLockedMessage(e({ retryAfterSec: 5 }))).toContain("khoảng 1 phút");
+    expect(orderLookupLockedMessage(e())).toContain("ít phút");
+    expect(orderErrorMessage(e({ retryAfterSec: 900 }))).toBe(
+      orderLookupLockedMessage(e({ retryAfterSec: 900 })),
     );
   });
 });

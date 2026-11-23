@@ -239,6 +239,8 @@ const roastDateSchema = dateOnly('Ngày rang')
 const lowStockSchema = intIn('Ngưỡng sắp hết', 0, 1000);
 const weightSchema = intIn('Khối lượng', 0, 100_000);
 const sortOrderSchema = intIn('Thứ tự', 0, 9999);
+/** D-078: giá vốn bình quân nhập tay (VND); chỉ Admin (service kiểm vai trò). */
+const avgCostSchema = intIn('Giá vốn', 0, 100_000_000).nullish();
 const isActiveSchema = z.boolean({ error: 'Trạng thái không hợp lệ' });
 
 export const createVariantSchema = z
@@ -256,6 +258,7 @@ export const createVariantSchema = z
     roastDate: roastDateSchema.transform((v) => v ?? null),
     sortOrder: sortOrderSchema.default(0),
     isActive: isActiveSchema.default(true),
+    avgCost: avgCostSchema.transform((v) => v ?? undefined),
   })
   .superRefine((v, ctx) => {
     const err = checkPricing(v);
@@ -278,6 +281,8 @@ export const updateVariantSchema = z
     roastDate: roastDateSchema,
     sortOrder: sortOrderSchema.optional(),
     isActive: isActiveSchema.optional(),
+    /** `null` = xóa giá vốn; số = đặt tay (D-078, chỉ Admin). */
+    avgCost: avgCostSchema,
   })
   .superRefine(atLeastOne);
 export type UpdateVariantInput = z.infer<typeof updateVariantSchema>;

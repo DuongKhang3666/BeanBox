@@ -35,6 +35,7 @@ import {
 } from "../productFilters";
 import { AdminPager } from "./AdminPager";
 import { categoryOptions } from "./categoryOptions";
+import { ProductCsvTools } from "./ProductCsvTools";
 import { RestoreProductButton } from "./RestoreProductButton";
 import { useDebouncedUrlInput } from "../useDebouncedUrlInput";
 
@@ -321,9 +322,12 @@ export function AdminProducts() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="font-serif text-2xl font-bold text-coffee-900">Sản phẩm</h1>
-        <Link href={`${PRODUCTS_BASE}/moi`} className={buttonClasses("primary")}>
-          Thêm sản phẩm
-        </Link>
+        <div className="flex flex-wrap items-start gap-2">
+          <ProductCsvTools onImported={res.retry} />
+          <Link href={`${PRODUCTS_BASE}/moi`} className={buttonClasses("primary")}>
+            Thêm sản phẩm
+          </Link>
+        </div>
       </div>
 
       <div role="group" aria-label="Phạm vi danh sách" className="flex gap-2">

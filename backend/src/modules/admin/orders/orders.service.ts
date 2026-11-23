@@ -13,6 +13,7 @@ import {
   SIMULATED_CARRIERS,
   type RandomIntFn,
 } from '../../../lib/shipment.js';
+import { escapeLike } from '../../../lib/text.js';
 import { vnDayEnd, vnDayStart } from '../admin.schema.js';
 import { cancelOrderTx, failPendingPaymentsTx } from '../../orders/orders.cancel.js';
 import {
@@ -46,9 +47,6 @@ const fieldError = (field: string, message: string) =>
 
 // ---------------------------------------------------------------------------
 // Danh sách
-
-/** Prisma `contains` KHÔNG escape ký tự đại diện của LIKE; Postgres mặc định escape bằng `\`. */
-const escapeLike = (s: string) => s.replace(/[\\%_]/g, '\\$&');
 
 /** `q` -> điều kiện OR (code / SĐT / email). */
 function searchClause(q: string): Prisma.OrderWhereInput[] {
@@ -171,13 +169,29 @@ export async function listOrders(q: AdminOrdersQuery): Promise<AdminOrderListRes
     return n >= 1 && (r.status === 'CANCELLED' || n >= 2);
   };
 
+  const noteCounts = rows.length
+    ? await prisma.orderNote.groupBy({
+        by: ['orderId'],
+        where: { orderId: { in: rows.map((r) => r.id) } },
+        _count: { _all: true },
+      })
+    : [];
+  const notesByOrder = new Map(noteCounts.map((n) => [n.orderId, n._count._all]));
+
   const statusCounts: Record<string, number> = Object.fromEntries(
     ORDER_STATUSES.map((s) => [s, 0]),
   );
   for (const g of grouped) statusCounts[g.status] = g._count._all;
 
   return {
-    data: rows.map((r) => toAdminOrderListItem(r, qtyByOrder.get(r.id) ?? 0, needsRefundOf(r))),
+    data: rows.map((r) =>
+      toAdminOrderListItem(
+        r,
+        qtyByOrder.get(r.id) ?? 0,
+        needsRefundOf(r),
+        notesByOrder.get(r.id) ?? 0,
+      ),
+    ),
     meta: {
       page: q.page,
       pageSize: q.pageSize,

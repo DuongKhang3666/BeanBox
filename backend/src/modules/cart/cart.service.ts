@@ -426,6 +426,102 @@ export async function addItem(
   );
 }
 
+// ---------------------------------------------------------------------------
+// Mua lại (D-077)
+
+export type ReorderSkipReason = 'DISCONTINUED' | 'OUT_OF_STOCK' | 'UNAVAILABLE';
+
+export interface ReorderLineInput {
+  variantId: string;
+  quantity: number;
+  productName: string;
+  variantName: string;
+}
+
+interface ReorderLineRef {
+  variantId: string;
+  productName: string;
+  variantName: string;
+}
+export interface ReorderResult {
+  /** Thêm đủ số lượng của đơn cũ. */
+  added: Array<ReorderLineRef & { quantity: number }>;
+  /** Chỉ thêm được một phần (0 < added < requested). */
+  adjusted: Array<ReorderLineRef & { requested: number; added: number }>;
+  /** Không thêm được dòng nào. `UNAVAILABLE` gồm cả trường hợp giỏ đã đạt giới hạn mua của biến thể. */
+  skipped: Array<ReorderLineRef & { quantity: number; reason: ReorderSkipReason }>;
+  cart: CartDto;
+}
+
+/**
+ * Đưa các dòng của một đơn cũ vào giỏ của người dùng, một transaction, khóa giỏ như `addItem`.
+ * Số lượng thêm = min(số cũ, min(tối đa mỗi dòng, tồn kho) - số đã có trong giỏ); giá lấy hiện hành.
+ */
+export async function reorderLines(
+  userId: string,
+  lines: readonly ReorderLineInput[],
+  now = new Date(),
+): Promise<ReorderResult> {
+  return guardDb(() =>
+    prisma.$transaction(async (tx) => {
+      const opened = (await openCartForWrite(tx, { kind: 'user', userId }, now, true))!;
+      const { cart } = opened;
+      const result: Omit<ReorderResult, 'cart'> = { added: [], adjusted: [], skipped: [] };
+
+      // Gộp dòng trùng biến thể (đơn hợp lệ không có, nhưng giữ an toàn).
+      const merged = new Map<string, ReorderLineInput>();
+      for (const l of lines) {
+        const prev = merged.get(l.variantId);
+        merged.set(l.variantId, prev ? { ...prev, quantity: prev.quantity + l.quantity } : l);
+      }
+
+      for (const line of merged.values()) {
+        const ref = {
+          variantId: line.variantId,
+          productName: line.productName,
+          variantName: line.variantName,
+        };
+        const variant = await loadVariantForCart(tx, line.variantId);
+        if (!variant || !isVariantSellable(variant)) {
+          result.skipped.push({ ...ref, quantity: line.quantity, reason: 'DISCONTINUED' });
+          continue;
+        }
+        const stock = Math.max(0, variant.stock);
+        if (stock === 0) {
+          result.skipped.push({ ...ref, quantity: line.quantity, reason: 'OUT_OF_STOCK' });
+          continue;
+        }
+        const existing = await tx.cartItem.findUnique({
+          where: { cartId_variantId: { cartId: cart.id, variantId: variant.id } },
+        });
+        const have = existing?.quantity ?? 0;
+        const room = Math.min(MAX_LINE_QUANTITY, stock) - have;
+        const toAdd = Math.min(line.quantity, room);
+        if (toAdd <= 0) {
+          result.skipped.push({ ...ref, quantity: line.quantity, reason: 'UNAVAILABLE' });
+          continue;
+        }
+        const unitPriceAtAdd = effectivePrice(variant, now);
+        if (existing) {
+          await tx.cartItem.update({
+            where: { id: existing.id },
+            data: { quantity: have + toAdd, unitPriceAtAdd },
+          });
+        } else {
+          await tx.cartItem.create({
+            data: { cartId: cart.id, variantId: variant.id, quantity: toAdd, unitPriceAtAdd },
+          });
+        }
+        if (toAdd === line.quantity) result.added.push({ ...ref, quantity: toAdd });
+        else result.adjusted.push({ ...ref, requested: line.quantity, added: toAdd });
+      }
+
+      await touch(tx, cart.id, now);
+      return { ...result, cart: await buildCartDto(tx, cart, now, null) };
+    }),
+  );
+}
+
 export async function updateItem(
   identity: CartIdentity,
   itemId: string,

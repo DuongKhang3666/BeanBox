@@ -19,6 +19,7 @@ import {
   deliveryEtaText,
   normalizeOrderCode,
   orderErrorMessage,
+  orderLookupLockedMessage,
   paymentMethodLabel,
   paymentStatusLabel,
   rateLimitedMessage,
@@ -40,6 +41,7 @@ function trackErrorMessage(err: unknown): { form?: string; fields?: Record<strin
   if (err instanceof ApiError) {
     if (err.status === 404) return { form: NOT_FOUND_MESSAGE };
     if (err.code === "RATE_LIMITED") return { form: rateLimitedMessage(err) };
+    if (err.code === "ORDER_LOOKUP_LOCKED") return { form: orderLookupLockedMessage(err) };
     if (err.code === "VALIDATION_ERROR") {
       const fields: Record<string, string> = {};
       if (Array.isArray(err.details)) {

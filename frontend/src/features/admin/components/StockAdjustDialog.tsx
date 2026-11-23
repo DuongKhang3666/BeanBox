@@ -5,13 +5,16 @@ import { Button } from "@/components/ui/Button";
 import { FieldError, Input, Label } from "@/components/ui/Input";
 import { FormError } from "@/features/auth/components/FormError";
 import { ApiError } from "@/lib/api/errors";
+import { formatVND } from "@/lib/format";
 import type { AdjustInventoryInput, AdjustReason, InventoryItem } from "@/types/admin";
 import { adjustInventory } from "../api/inventory";
+import { projectedAvgCost } from "../costing";
 import { adminErrorMessage, fieldErrorsOf } from "../errors";
 import { ADJUST_REASONS, INVENTORY_REASON_LABEL } from "../labels";
 import { AdminModal } from "./AdminModal";
 
 const MAX = 100000;
+const MAX_UNIT_COST = 100_000_000;
 const INT_RE = /^[+-]?\d+$/;
 
 const selectClass =
@@ -57,6 +60,7 @@ export function StockAdjustDialog({
 }) {
   const [reason, setReason] = useState<AdjustReason>("RESTOCK");
   const [amount, setAmount] = useState("");
+  const [unitCost, setUnitCost] = useState("");
   const [note, setNote] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [general, setGeneral] = useState<string | null>(null);
@@ -65,10 +69,21 @@ export function StockAdjustDialog({
 
   const after = projectedStock(item, reason, amount);
   const noteRequired = NOTE_REQUIRED[reason];
+  // D-078: server chỉ trả `avgCost` cho Admin; Staff không thấy và không nhập đơn giá.
+  const canSeeCost = item.avgCost !== undefined;
+  const needsCost = canSeeCost && reason === "RESTOCK";
+  const costText = unitCost.trim();
+  const costValid = /^\d+$/.test(costText) && Number(costText) <= MAX_UNIT_COST;
+  const qty = Number(amount.trim());
+  const newAvg =
+    needsCost && costValid && INT_RE.test(amount.trim()) && qty > 0
+      ? projectedAvgCost(item.stock, item.avgCost ?? null, qty, Number(costText))
+      : null;
 
   function changeReason(next: AdjustReason) {
     setReason(next);
     setAmount("");
+    setUnitCost("");
     setErrors({});
     setGeneral(null);
   }
@@ -95,6 +110,12 @@ export function StockAdjustDialog({
         e.amount = `Tồn kho không đủ để giảm (hiện còn ${item.stock}).`;
       }
     }
+    if (needsCost && !costValid) {
+      e.unitCost =
+        costText === ""
+          ? "Vui lòng nhập đơn giá nhập."
+          : `Đơn giá nhập phải là số nguyên từ 0 đến ${MAX_UNIT_COST.toLocaleString("vi-VN")}.`;
+    }
     const t = note.trim();
     if (noteRequired && !t) e.note = "Vui lòng nhập ghi chú.";
     else if (t.length > 255) e.note = "Ghi chú tối đa 255 ký tự.";
@@ -118,6 +139,7 @@ export function StockAdjustDialog({
     if (reason === "STOCKTAKE") body.newStock = n;
     else if (reason === "DAMAGE") body.change = -Math.abs(n);
     else body.change = n;
+    if (needsCost) body.unitCost = Number(costText);
     if (note.trim()) body.note = note.trim();
 
     busyRef.current = true;
@@ -145,6 +167,7 @@ export function StockAdjustDialog({
         const amountMsg = fe.change ?? fe.newStock;
         if (amountMsg) shown.amount = amountMsg;
         if (fe.note) shown.note = fe.note;
+        if (fe.unitCost) shown.unitCost = fe.unitCost;
         setErrors(shown);
         setGeneral(Object.keys(shown).length > 0 ? null : adminErrorMessage(err));
       }
@@ -195,6 +218,24 @@ export function StockAdjustDialog({
           <FieldError id="adj-amount-err">{errors.amount}</FieldError>
         </div>
 
+        {needsCost ? (
+          <div>
+            <Label htmlFor="adj-cost">Đơn giá nhập (VND / đơn vị)</Label>
+            <Input
+              id="adj-cost"
+              type="number"
+              inputMode="numeric"
+              min={0}
+              step={1}
+              value={unitCost}
+              invalid={Boolean(errors.unitCost)}
+              aria-describedby={errors.unitCost ? "adj-cost-err" : undefined}
+              onChange={(e) => setUnitCost(e.target.value)}
+            />
+            <FieldError id="adj-cost-err">{errors.unitCost}</FieldError>
+          </div>
+        ) : null}
+
         <dl
           className="grid grid-cols-2 gap-2 rounded-lg bg-cream-50 p-3 text-sm"
           aria-live="polite"
@@ -205,6 +246,18 @@ export function StockAdjustDialog({
           <dd className="text-right font-semibold text-coffee-900">
             {after === null ? "—" : after}
           </dd>
+          {needsCost ? (
+            <>
+              <dt className="text-coffee-700">Giá vốn hiện tại</dt>
+              <dd className="text-right font-semibold text-coffee-900">
+                {item.avgCost == null ? "Chưa có" : formatVND(item.avgCost)}
+              </dd>
+              <dt className="text-coffee-700">Giá vốn mới dự kiến</dt>
+              <dd className="text-right font-semibold text-coffee-900">
+                {newAvg === null ? "—" : formatVND(newAvg)}
+              </dd>
+            </>
+          ) : null}
         </dl>
 
         <div>

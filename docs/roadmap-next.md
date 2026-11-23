@@ -151,6 +151,7 @@ Nhãn "(chưa xác minh)" nghĩa là chưa kiểm chứng được trong lần r
 - **Rủi ro:** Tăng ma sát checkout.
 
 ### R-05 Bảo vệ thao tác khách vãng lai bằng mã đơn
+- **Trạng thái:** Đã làm (Đợt 4, nhóm 3), xem D-076. 5 lần sai trong 15 phút -> khóa mã đơn 15 phút (`429 ORDER_LOOKUP_LOCKED`) cho track, hủy, tạo thanh toán, GET/claim chuyển khoản; trạng thái trong RAM (1 instance).
 - **Nhóm:** Bảo mật.
 - **Mô tả:** Mã đơn `BB-YYMMDD-XXXX` chỉ có 4 ký tự ngẫu nhiên (31^4 ~ 923.521 mỗi ngày); cùng SĐT là đủ để tra cứu, hủy và tạo phiên thanh toán; giới hạn hiện chỉ theo IP. Đề xuất: khóa tạm theo mã đơn sau N lần sai, hoặc mã tra cứu dài hơn gửi qua email. Khả năng khai thác thực tế chưa xác minh.
 - **Lý do / bằng chứng:** `backend/src/lib/orderCode.ts:5-6,19`.
@@ -198,6 +199,7 @@ Nhãn "(chưa xác minh)" nghĩa là chưa kiểm chứng được trong lần r
 - **Rủi ro:** Đặt giới hạn quá thấp làm backend bị kill khi xuất CSV; cache làm số liệu trễ.
 
 ### R-09 Cache HTTP cho catalog, ảnh và cài đặt
+- **Trạng thái:** Đã làm (Đợt 4, nhóm 3), xem D-075. Catalog `public, max-age=30, s-maxage=60, stale-while-revalidate=120` (lỗi luôn `no-store`), ảnh tên ngẫu nhiên `immutable` 1 năm, cache `getShopSettings` 30 giây.
 - **Nhóm:** Hiệu năng.
 - **Mô tả:** Đề xuất `public, max-age=30, s-maxage=60, stale-while-revalidate` cho catalog; `immutable` 1 năm cho ảnh sản phẩm; cache settings 30-60 giây, xóa khi admin lưu.
 - **Lý do / bằng chứng:** GET catalog/suggest không đặt Cache-Control nên mỗi request trình duyệt chạm DB (`backend/src/app.ts` ~53-65; chỉ locations và settings/public có); `/uploads` maxAge 1 giờ dù tên file ngẫu nhiên bất biến (~208-216); `getShopSettings` đọc DB ở mọi thao tác giỏ/quote/đặt đơn (ghi "Không cache" trong `settings.service.ts`).
@@ -235,12 +237,12 @@ Nhãn "(chưa xác minh)" nghĩa là chưa kiểm chứng được trong lần r
 - **Rủi ro:** Dữ liệu cấu trúc lệch nội dung hiển thị.
 
 ### R-12 UX mobile và định dạng thời gian
-- **Trạng thái:** Đã làm (Đợt 1, trừ "Mua lại"), xem D-059. Header mobile 3 hàng/165 px -> 2 hàng/113 px (menu Danh mục thả xuống); formatter ngày giờ cố định `Asia/Ho_Chi_Minh` có test. Chưa làm: "Mua lại" (FR-ORD-07, P2).
+- **Trạng thái:** Đã làm (Đợt 1, trừ "Mua lại"), xem D-059. "Mua lại" đã làm ở Đợt 4 nhóm 3, xem D-077. Header mobile 3 hàng/165 px -> 2 hàng/113 px (menu Danh mục thả xuống); formatter ngày giờ cố định `Asia/Ho_Chi_Minh` có test. Chưa làm: "Mua lại" (FR-ORD-07, P2).
 - **Nhóm:** UX.
 - **Mô tả:**
   - Rút gọn header mobile (hiện 3 hàng, sticky chiếm ~165/844 px; mục nav cuối bị cắt, không có gợi ý cuộn).
   - Formatter thời gian cố định `Asia/Ho_Chi_Minh` (hiện không chỉ định `timeZone` nên giờ SSR, server UTC, có thể lệch giờ trình duyệt; chưa xác minh trên production).
-  - "Mua lại" (FR-ORD-07) chưa có.
+  - "Mua lại" (FR-ORD-07): đã có (D-077).
 - **Lý do / bằng chứng:** `components/layout/Header.tsx`, ảnh `docs/screenshots/mobile-home.png`; `lib/format.ts` dùng `Intl.DateTimeFormat("vi-VN")`; `docs/requirements.md:178`.
 - **Ưu tiên:** P1 (Mua lại: P2).
 - **Độ khó:** S-M.
@@ -252,6 +254,7 @@ Nhãn "(chưa xác minh)" nghĩa là chưa kiểm chứng được trong lần r
 - **Nhóm:** A11y/Nợ kỹ thuật FE.
 - **Mô tả:** Đề xuất hook `useDialog` hoặc `<dialog>` native thay cho 5 hộp thoại tự viết.
 - **Lý do / bằng chứng:** 5 hộp thoại lặp lại focus trap (`MiniCart.tsx`, `ConfirmDialog.tsx`, `AdminModal.tsx`, `StatusDialog.tsx`, `CancelOrderDialog.tsx`); chỉ MiniCart khóa cuộn nền; selector phần tử focus bỏ sót input/select/textarea (`MiniCart.tsx:9`); không dùng `inert` cho nền (ảnh hưởng trình đọc màn hình chưa xác minh).
+- **Trạng thái:** Đã làm (Đợt 4, nhóm 2), xem D-074. `components/ui/Dialog.tsx` (`<dialog>` native + `showModal()`) thay cho 6 hộp thoại tự viết (MiniCart dạng ngăn kéo, ConfirmDialog, AdminModal, StatusDialog, CancelOrderDialog, DeleteAccountDialog): inert nền, focus trap do trình duyệt, khóa cuộn nền cho mọi hộp, trả focus, Escape chặn khi đang gửi, selector focus không còn sót input/select/textarea. Chưa kiểm Safari/Firefox.
 - **Ưu tiên:** P2.
 - **Độ khó:** M.
 - **Phụ thuộc:** Không.
@@ -292,6 +295,7 @@ Nhãn "(chưa xác minh)" nghĩa là chưa kiểm chứng được trong lần r
   - File lớn: frontend `AdminSettings.tsx` 923 dòng, `CheckoutForm.tsx` 737, `ProductForm.tsx` 677; backend `catalog.service.ts` 666, `orders.service.ts` 643, `cart.service.ts` 633.
   - Helper trùng: `escapeLike` ở `admin/orders/orders.service.ts` và `lib/text.ts`; `intParam` ở 3 schema; `emailSchema` ở 2 nơi; regex NUL lặp nhiều file.
   - `server.ts` không xử lý `unhandledRejection`/`uncaughtException`, shutdown không chờ job đang chạy.
+- **Trạng thái:** Đã làm một phần (Đợt 4, nhóm 2), xem D-074: tách `AdminSettings.tsx` (1049 -> 97 dòng + `settings/`) và `CheckoutForm.tsx` (816 -> 194 dòng + component/hook); gom `escapeLike`, `emailSchema`, `intParam`, `NO_NUL` về `lib/text.ts`/`lib/validation.ts`. Chưa làm: tách các file còn > 500 dòng (danh sách ở D-074), `intParam` của `catalog.schema.ts`, `CONTROL_CHARS`, và `server.ts` (`unhandledRejection`/`uncaughtException`, shutdown chờ job).
 - **Ưu tiên:** P2.
 - **Độ khó:** M.
 - **Phụ thuộc:** Không.
@@ -339,6 +343,7 @@ Nhãn "(chưa xác minh)" nghĩa là chưa kiểm chứng được trong lần r
 - **Rủi ro:** Chưa phải hóa đơn điện tử hợp lệ.
 
 ### R-21 Công cụ vận hành đơn và sản phẩm
+- **Trạng thái:** Đã làm một phần (Đợt 4, D-071..D-073): ghi chú nội bộ trên đơn, in phiếu giao hàng loạt (tối đa 50 đơn), xuất/nhập CSV sản phẩm (xem trước rồi áp dụng). Chưa làm: xuất CSV danh sách đơn (đã có xuất CSV ở khu phân tích D-053).
 - **Nhóm:** Vận hành bán hàng.
 - **Mô tả:** Ghi chú nội bộ trên đơn (hiện `Order.note` là của khách); in phiếu giao hàng loạt (hiện in từng đơn, `app/admin/don-hang/[code]/in`); xuất CSV đơn/sản phẩm; nhập sản phẩm CSV có xem trước và báo lỗi từng dòng; tái dùng khuôn CSV an toàn của D-053.
 - **Lý do / bằng chứng:** Các điểm hiện trạng nêu trong mô tả.
@@ -368,6 +373,7 @@ Nhãn "(chưa xác minh)" nghĩa là chưa kiểm chứng được trong lần r
 - **Phụ thuộc:** Migration; chốt phương pháp giá vốn.
 - **Tiêu chí xong:** Lợi nhuận gộp trong analytics khớp dữ liệu nhập/bán (có test).
 - **Rủi ro:** Phải chốt phương pháp giá vốn.
+- **Trạng thái (2026-11-23): Đã làm một phần theo D-078.** Chốt phương pháp bình quân gia quyền di động theo biến thể; nhập hàng ghi `unitCost`, snapshot `OrderItem.unitCost`, lợi nhuận gộp trong analytics (chỉ Admin), có test. CHƯA làm: nhà cung cấp, phiếu nhập, giá vốn theo lô, backfill đơn cũ, phí cổng thanh toán/ship trong lãi.
 
 ### R-24 Tính năng nhỏ tăng tin cậy cho cà phê
 - **Nhóm:** TMĐT.

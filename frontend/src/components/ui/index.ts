@@ -6,3 +6,5 @@ export { Spinner } from "./Spinner";
 export { Container } from "./Container";
 export { EmptyState } from "./EmptyState";
 export { ErrorState } from "./ErrorState";
+export { Dialog } from "./Dialog";
+export type { DialogProps, DialogSize } from "./Dialog";

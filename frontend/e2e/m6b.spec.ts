@@ -19,7 +19,7 @@ test("khách gửi form liên hệ và thấy lời cảm ơn", async ({ page })
   await expect(page.getByText(/Cảm ơn bạn! BeanBox đã nhận được tin nhắn/)).toBeVisible();
 });
 
-test("admin xử lý tin nhắn, xem cài đặt và người dùng", async ({ page }) => {
+test("admin xử lý tin nhắn, xem cài đặt và người dùng", async ({ page, request }, testInfo) => {
   await login(page, "admin@beanbox.local", seedPassword("ADMIN"));
 
   // Liên hệ: tìm, mở chi tiết, đổi trạng thái, lưu
@@ -49,6 +49,11 @@ test("admin xử lý tin nhắn, xem cài đặt và người dùng", async ({ p
   );
   await expect(page.getByRole("region", { name: "Doanh thu", exact: true })).toBeVisible();
   await expect(page.getByText("Không tải được số liệu phân tích")).toHaveCount(0);
+  // D-078: lợi nhuận gộp (seed + đơn demo có giá vốn); ghi chú phạm vi tính
+  const profit = page.getByRole("region", { name: "Lợi nhuận gộp", exact: true });
+  await expect(profit).toBeVisible();
+  await expect(profit.getByText(/Chỉ tính dòng có giá vốn/)).toBeVisible();
+  await expect(page.getByRole("region", { name: "Độ phủ giá vốn", exact: true })).toBeVisible();
 
   // Bước 2: cơ cấu doanh thu, top sản phẩm, top khách hàng (dùng chung phiên admin, không đăng nhập thêm)
   await expect(page.getByRole("heading", { name: "Cơ cấu doanh thu" })).toBeVisible();
@@ -111,7 +116,7 @@ test("admin xử lý tin nhắn, xem cài đặt và người dùng", async ({ p
   expect([...bytes.subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf]); // BOM UTF-8
   const text = bytes.toString("utf8");
   expect(text.split("\r\n")[0]).toBe(
-    "\uFEFFHạng,Sản phẩm,Danh mục,Doanh thu (VND),Số lượng,Số đơn,Ghi chú",
+    "\uFEFFHạng,Sản phẩm,Danh mục,Doanh thu (VND),Số lượng,Số đơn,Ghi chú,Giá vốn hàng bán (VND),Lợi nhuận gộp (VND),Biên lợi nhuận (%),Độ phủ giá vốn (%)",
   );
   await expect(page.getByRole("alert").filter({ hasText: "Bạn xuất quá nhanh" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Xuất CSV top sản phẩm" })).toBeEnabled();
@@ -176,6 +181,65 @@ test("admin xử lý tin nhắn, xem cài đặt và người dùng", async ({ p
   await adminRow.getByRole("link").click();
   await expect(page).toHaveURL(/\/admin\/nguoi-dung\/[^/?]+$/);
   await expect(page.getByText("Bạn không thể khóa hoặc đổi vai trò của chính mình.")).toBeVisible();
+
+  // D-078: Admin nhập hàng có đơn giá nhập ở /admin/ton-kho -> thấy giá vốn mới dự kiến, lưu được.
+  await page.goto("/admin/ton-kho");
+  await page
+    .getByRole("button", { name: /^Điều chỉnh tồn kho / })
+    .first()
+    .click();
+  const adjustDialog = page.getByRole("dialog", { name: "Điều chỉnh tồn kho" });
+  await adjustDialog.getByLabel("Số lượng nhập").fill("1");
+  await adjustDialog.getByLabel(/Đơn giá nhập/).fill("100000");
+  await expect(adjustDialog.getByText("Giá vốn mới dự kiến")).toBeVisible();
+  await adjustDialog.getByRole("button", { name: "Lưu điều chỉnh" }).click();
+  await expect(adjustDialog).toBeHidden();
+
+  // --- Đợt 4 / R-21 (dùng chung phiên admin ở trên, không thêm lượt đăng nhập) ---
+  // Hai đơn mới (tạo bằng API) để thử ghi chú nội bộ và in hàng loạt.
+  const product = await findStockedProduct(request);
+  const orderA = await createGuestCodOrder(request, product.variantId);
+  const orderB = await createGuestCodOrder(request, product.variantId);
+
+  // D-071: thêm ghi chú nội bộ ở chi tiết đơn; tải lại vẫn còn.
+  const noteText = `Ghi chú nội bộ E2E ${token}`;
+  await page.goto(`/admin/don-hang/${orderA.code}`);
+  await expect(page.getByRole("heading", { name: `Đơn hàng ${orderA.code}` })).toBeVisible();
+  await page.getByLabel("Thêm ghi chú").fill(noteText);
+  await page.getByRole("button", { name: "Thêm ghi chú" }).click();
+  const notes = page.getByRole("list", { name: "Danh sách ghi chú nội bộ" });
+  await expect(notes.getByText(noteText)).toBeVisible();
+  await page.reload();
+  await expect(notes.getByText(noteText)).toBeVisible();
+
+  // D-072: chọn 2 đơn trong danh sách -> trang in hàng loạt có đúng 2 phiếu.
+  await page.goto("/admin/don-hang");
+  await page.getByRole("checkbox", { name: `Chọn đơn ${orderA.code}` }).check();
+  await page.getByRole("checkbox", { name: `Chọn đơn ${orderB.code}` }).check();
+  await page.getByRole("link", { name: "In phiếu (2)" }).click();
+  await expect(page).toHaveURL(/\/admin\/don-hang\/in-hang-loat\?codes=/);
+  await expect(page.getByRole("article")).toHaveCount(2);
+  await expect(page.getByRole("article", { name: `Phiếu giao hàng ${orderA.code}` })).toBeVisible();
+  await expect(page.getByRole("article", { name: `Phiếu giao hàng ${orderB.code}` })).toBeVisible();
+  await expect(page.getByRole("button", { name: "In 2 phiếu" })).toBeEnabled();
+
+  // D-073: xuất CSV sản phẩm -> nhập lại chính file đó -> xem trước toàn bộ "Không thay đổi".
+  await page.goto("/admin/san-pham");
+  const exportDownload = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Xuất CSV" }).click();
+  const exported = await exportDownload;
+  expect(exported.suggestedFilename()).toMatch(/^beanbox-products-\d{4}-\d{2}-\d{2}\.csv$/);
+  const csvPath = testInfo.outputPath("products-roundtrip.csv");
+  await exported.saveAs(csvPath);
+
+  await page.getByRole("button", { name: "Nhập CSV" }).click();
+  const importDialog = page.getByRole("dialog", { name: "Nhập sản phẩm từ CSV" });
+  await importDialog.getByLabel(/File CSV/).setInputFiles(csvPath);
+  await importDialog.getByRole("button", { name: "Xem trước" }).click();
+  await expect(importDialog.getByRole("button", { name: /^Không thay đổi \(\d+\)/ })).toBeVisible();
+  await expect(importDialog.getByRole("button", { name: /^Lỗi \(/ })).toHaveCount(0);
+  await expect(importDialog.getByRole("button", { name: /^(Tạo|Cập nhật) / })).toHaveCount(0);
+  await expect(importDialog.getByRole("button", { name: "Áp dụng" })).toBeEnabled();
 });
 
 test("chính sách vận chuyển hiển thị phí; CSP storefront thực thi, admin có nonce", async ({

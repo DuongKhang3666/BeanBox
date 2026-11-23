@@ -459,7 +459,11 @@ describe('getTopProducts', () => {
     expect(Object.keys(mine[0]!).sort()).toEqual(
       [
         'categoryName',
+        'cogs',
+        'costCoverage',
         'deleted',
+        'grossProfit',
+        'margin',
         'name',
         'orders',
         'productId',

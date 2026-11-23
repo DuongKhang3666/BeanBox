@@ -157,6 +157,7 @@ model User {
   wishlist                Wishlist[]
   orders                  Order[]
   orderStatusChanges      OrderStatusHistory[]
+  orderNotes              OrderNote[]
   inventoryMovements      InventoryMovement[]
   couponRedemptions       CouponRedemption[]
   reviews                 Review[]
@@ -390,6 +391,7 @@ model ProductVariant {
   lowStockThreshold Int       @default(5)
   weightGram        Int       @default(0)
   roastDate         DateTime? @db.Date
+  avgCost           Int? // giá vốn bình quân gia quyền di động (VND), null = chưa có (D-078); chỉ Admin thấy
   sortOrder         Int       @default(0)
   isActive          Boolean   @default(true)
   deletedAt         DateTime?
@@ -414,6 +416,7 @@ model InventoryMovement {
   orderId    String?
   actorId    String? // null = hệ thống (đặt hàng, job hết hạn)
   note       String?
+  unitCost   Int? // đơn giá nhập (VND) của dòng RESTOCK có giá nhập (D-078)
   createdAt  DateTime        @default(now())
 
   variant ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
@@ -511,6 +514,7 @@ model Order {
   coupon     Coupon?              @relation(fields: [couponId], references: [id], onDelete: SetNull)
   items      OrderItem[]
   history    OrderStatusHistory[]
+  notes      OrderNote[]
   payments   Payment[]
   movements  InventoryMovement[]
   redemption CouponRedemption?
@@ -538,6 +542,7 @@ model OrderItem {
   unitPrice   Int // giá hiệu lực tại thời điểm đặt
   quantity    Int
   lineTotal   Int
+  unitCost    Int? // snapshot giá vốn bình quân của biến thể lúc đặt (D-078); null = chưa có/đơn cũ
 
   order   Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product Product        @relation(fields: [productId], references: [id], onDelete: Restrict)
@@ -560,6 +565,20 @@ model OrderStatusHistory {
 
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
   actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([orderId, createdAt])
+}
+
+/// D-071: ghi chú nội bộ của nhân viên trên đơn. Append-only (không sửa); không bao giờ xuất ra API khách/guest.
+model OrderNote {
+  id        String   @id @default(cuid())
+  orderId   String
+  authorId  String? // null = tài khoản tác giả đã bị xóa
+  body      String // <= 2000 ký tự
+  createdAt DateTime @default(now())
+
+  order  Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  author User? @relation(fields: [authorId], references: [id], onDelete: SetNull)
 
   @@index([orderId, createdAt])
 }

@@ -156,7 +156,7 @@ async function prepareLookups(
     CREATE TEMP TABLE _var ON COMMIT DROP AS
     SELECT (row_number() OVER (ORDER BY md5(v."id")))::int AS rn,
            v."id" AS "variantId", v."productId", p."name" AS "productName", v."name" AS "variantName",
-           v."sku", v."weightGram", v."price" AS "unitPrice",
+           v."sku", v."weightGram", v."price" AS "unitPrice", v."avgCost",
            (SELECT i."url" FROM "ProductImage" i WHERE i."productId" = p."id"
               ORDER BY i."isPrimary" DESC, i."sortOrder" ASC LIMIT 1) AS "imageUrl"
     FROM "ProductVariant" v JOIN "Product" p ON p."id" = v."productId"
@@ -256,7 +256,7 @@ async function generateBatch(
   await db.$executeRawUnsafe(`
     CREATE TEMP TABLE _line ON COMMIT DROP AS
     SELECT g2.g, j.j, v."variantId", v."productId", v."productName", v."variantName", v."sku",
-           v."imageUrl", v."weightGram", v."unitPrice",
+           v."imageUrl", v."weightGram", v."unitPrice", v."avgCost",
            (CASE WHEN pg_temp.u(g2.g * 8 + j.j, 14) < 0.70 THEN 1 WHEN pg_temp.u(g2.g * 8 + j.j, 14) < 0.92 THEN 2 ELSE 3 END)::int AS quantity
     FROM _g2 g2 CROSS JOIN generate_series(0, 4) j(j)
     JOIN _var v ON v.rn = ((floor(${ctx.variants} * power(pg_temp.u(g2.g, 13), 1.8))::int
@@ -402,10 +402,11 @@ async function generateBatch(
 
   await db.$executeRawUnsafe(`
     INSERT INTO "OrderItem" ("id", "orderId", "productId", "variantId", "productName", "variantName", "sku",
-      "imageUrl", "weightGram", "unitPrice", "quantity", "lineTotal")
+      "imageUrl", "weightGram", "unitPrice", "quantity", "lineTotal", "unitCost")
     SELECT 'demi' || substr(md5(${tag("l.g::text || ':' || l.j")}), 1, 21), ${oid('l.g')},
       l."productId", l."variantId", l."productName", l."variantName", l."sku", l."imageUrl",
-      l."weightGram", l."unitPrice", l.quantity, l."unitPrice" * l.quantity
+      l."weightGram", l."unitPrice", l.quantity, l."unitPrice" * l.quantity,
+      l."avgCost" -- D-078: chụp giá vốn bình quân của biến thể (null nếu chưa có)
     FROM _line l WHERE EXISTS (SELECT 1 FROM "Order" x WHERE x."id" = ${oid('l.g')})`);
 
   // Lịch sử trạng thái đúng cách mã thật ghi (khởi tạo, xác nhận, xử lý, giao, hủy, trả hàng).

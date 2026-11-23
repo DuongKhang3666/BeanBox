@@ -1,6 +1,8 @@
 # BeanBox – Thiết kế cơ sở dữ liệu
 
-> Phiên bản 0.14 · 2026-11-23 · PostgreSQL + Prisma 7 (D-036).
+> Phiên bản 0.16 · 2026-11-23 · PostgreSQL + Prisma 7 (D-036).
+> Thay đổi 0.16: MIGRATION mới `d078_avg_cost` (D-078): 3 cột `Int?` (nullable, không default, KHÔNG backfill): `ProductVariant.avgCost` (giá vốn bình quân gia quyền di động, VND, null = chưa có), `InventoryMovement.unitCost` (đơn giá nhập của dòng `RESTOCK`), `OrderItem.unitCost` (snapshot `avgCost` lúc đặt; đơn cũ null). Không enum mới (`RESTOCK` đã có), không chỉ mục mới, không CHECK mới. Chỉ Admin đọc/ghi qua API; xem `api-contract.md` 0.28.
+> Thay đổi 0.15: MIGRATION mới `d071_order_note` (D-071): bảng `OrderNote` (`id`, `orderId` FK `ON DELETE CASCADE`, `authorId` FK `ON DELETE SET NULL`, `body`, `createdAt`; chỉ mục `[orderId, createdAt]`) và 2 quan hệ ngược (`Order.notes`, `User.orderNotes`). Ghi chú nội bộ của nhân viên, append-only, không bao giờ xuất ra API khách. Không đổi dữ liệu cũ. Không có thay đổi schema cho D-072/D-073.
 > Thay đổi 0.14: MIGRATION mới `d068_tracking_number_unique` (D-068): `Order.trackingNumber` thành `@unique` (chỉ mục `Order_trackingNumber_key`; NULL được phép nhiều bản). Migration (1) chuẩn hóa `''`/chỉ khoảng trắng thành NULL, (2) chạy khối `DO $$ ... RAISE EXCEPTION` nếu dữ liệu cũ có mã trùng (thông báo liệt kê vài mã trùng và câu SQL tìm mọi bản trùng; KHÔNG tự xóa/sửa dữ liệu), (3) `CREATE UNIQUE INDEX`. Tên chỉ mục trùng quy ước Prisma nên `prisma migrate diff` không báo drift. Lỗi unique -> 409 `TRACKING_NUMBER_TAKEN` (staff nhập) hoặc thử lại (mã sinh tự động), `api-contract.md` §12.1.
 > Thay đổi 0.13: MIGRATION mới `d065_user_deleted_at` (D-065): `User.deletedAt TIMESTAMP(3)` nullable, đặt khi khách tự xóa tài khoản (ẩn danh hóa, `api-contract.md` §6.6). Khác `status = DISABLED` do admin khóa; tài khoản đã xóa cũng được đặt `DISABLED` để chặn đăng nhập/refresh. Không đổi ràng buộc/index khác. Sau khi xóa: `email` = `deleted-<id>@deleted.invalid` (vẫn unique), `Order.contactPhone` = `""` (cột NOT NULL, không có CHECK), `shippingAddress` JSON ẩn tên/SĐT/line1 nhưng giữ tỉnh/phường, `Order.userId` giữ nguyên (analytics không đổi).
 > Thay đổi 0.12: MIGRATION mới `d063_two_factor` (D-063): `User` thêm `twoFactorEnabledAt`, `twoFactorSecretEnc` (secret TOTP mã hóa AES-256-GCM `v1:<iv>:<tag>:<ct>`), `twoFactorPendingSecretEnc` + `twoFactorPendingAt` (secret đang setup, chưa xác nhận, hết hạn 10 phút), `twoFactorLastStep Int?` (bước TOTP đã dùng, chống replay); bảng mới `TwoFactorBackupCode` (băm SHA-256, `usedAt`, unique `userId+codeHash`) và `TwoFactorChallenge` (token đăng nhập bước 2: `tokenHash` unique, `attempts`, `usedAt`, `expiresAt`); cả hai FK cascade theo `User`.
@@ -194,6 +196,7 @@ model User {
   wishlist                Wishlist[]
   orders                  Order[]
   orderStatusChanges      OrderStatusHistory[]
+  orderNotes              OrderNote[]
   inventoryMovements      InventoryMovement[]
   couponRedemptions       CouponRedemption[]
   reviews                 Review[]
@@ -426,6 +429,7 @@ model ProductVariant {
   lowStockThreshold Int       @default(5)
   weightGram        Int       @default(0)
   roastDate         DateTime? @db.Date
+  avgCost           Int? // D-078: giá vốn bình quân gia quyền di động (VND), null = chưa có; chỉ Admin thấy
   sortOrder         Int       @default(0)
   isActive          Boolean   @default(true)
   deletedAt         DateTime?
@@ -450,6 +454,7 @@ model InventoryMovement {
   orderId    String?
   actorId    String? // null = hệ thống (đặt hàng, job hết hạn)
   note       String?
+  unitCost   Int? // D-078: đơn giá nhập (VND) của dòng RESTOCK có giá nhập
   createdAt  DateTime        @default(now())
 
   variant ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
@@ -547,6 +552,7 @@ model Order {
   coupon     Coupon?              @relation(fields: [couponId], references: [id], onDelete: SetNull)
   items      OrderItem[]
   history    OrderStatusHistory[]
+  notes      OrderNote[]
   payments   Payment[]
   movements  InventoryMovement[]
   redemption CouponRedemption?
@@ -574,6 +580,7 @@ model OrderItem {
   unitPrice   Int // giá hiệu lực tại thời điểm đặt
   quantity    Int
   lineTotal   Int
+  unitCost    Int? // D-078: snapshot giá vốn bình quân của biến thể lúc đặt; null = chưa có/đơn cũ
 
   order   Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product Product        @relation(fields: [productId], references: [id], onDelete: Restrict)
@@ -596,6 +603,20 @@ model OrderStatusHistory {
 
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
   actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([orderId, createdAt])
+}
+
+/// D-071: ghi chú nội bộ của nhân viên trên đơn. Append-only (không sửa); không bao giờ xuất ra API khách/guest.
+model OrderNote {
+  id        String   @id @default(cuid())
+  orderId   String
+  authorId  String? // null = tài khoản tác giả đã bị xóa
+  body      String // <= 2000 ký tự
+  createdAt DateTime @default(now())
+
+  order  Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  author User? @relation(fields: [authorId], references: [id], onDelete: SetNull)
 
   @@index([orderId, createdAt])
 }
@@ -782,13 +803,14 @@ model ContactMessage {
 | `Product` | Thông tin chung; các cột denormalize ở §5; `tags` và `description` (Markdown) |
 | `CoffeeProfile` | 1-1 với Product loại cà phê hạt; `originCountry` là giá trị lọc `origin`; `brewMethods`/`tastingNotes` là mảng |
 | `ProductImage` | Nhiều ảnh, đúng 1 ảnh `isPrimary` khi có ảnh (partial unique §4) |
-| `ProductVariant` | SKU bán được: giá, giá sale theo khung giờ, tồn kho, cân nặng, ngày rang theo lô. Giá hiệu lực = `salePrice` nếu `salePrice` không null và `now` trong `[saleStart, saleEnd]` (bound null = mở), ngược lại `price` |
-| `InventoryMovement` | Sổ cái kho bất biến: mọi thay đổi `stock` đều ghi 1 dòng (`stockAfter` để đối soát). `ORDER_RESERVE` khi đặt, `ORDER_RELEASE` khi hủy/hết hạn |
+| `ProductVariant` | SKU bán được: giá, giá sale theo khung giờ, tồn kho, giá vốn bình quân `avgCost` (D-078, null = chưa có), cân nặng, ngày rang theo lô. Giá hiệu lực = `salePrice` nếu `salePrice` không null và `now` trong `[saleStart, saleEnd]` (bound null = mở), ngược lại `price` |
+| `InventoryMovement` | Sổ cái kho bất biến: mọi thay đổi `stock` đều ghi 1 dòng (`stockAfter` để đối soát). `ORDER_RESERVE` khi đặt, `ORDER_RELEASE` khi hủy/hết hạn. `unitCost` (D-078) chỉ có ở dòng `RESTOCK` do Admin nhập kèm đơn giá |
 | `Cart`, `CartItem` | Giỏ server-side. Giỏ user: `userId`; giỏ guest: `tokenHash`. `couponCode` lưu mã đang áp. `unique(cartId, variantId)`: thêm trùng thì cộng dồn |
 | `Wishlist` | Khóa phức hợp (userId, productId). Tối đa 100 mục/user (service, `WISHLIST_LIMIT`); `createdAt` là `addedAt` ở API. Sản phẩm ẩn/xóa mềm không tự bị xóa khỏi bảng, chỉ không hiển thị (api-contract §14.2) |
 | `Order` | `userId` null = khách vãng lai. `contactEmail/contactPhone` luôn có (đã đồng bộ requirements §7). `shippingAddress` là snapshot JSON. Tách `discountTotal` (giảm hàng) và `shippingDiscount` (giảm ship) để `grandTotal = subtotal - discountTotal + shippingFee - shippingDiscount`. `expiresAt` chỉ dùng cho `PENDING_PAYMENT`. `idempotencyKey` unique; `requestFingerprint` phát hiện cùng key khác payload |
-| `OrderItem` | Snapshot dòng hàng; `productId` kèm theo để review/báo cáo không cần join qua variant |
+| `OrderItem` | Snapshot dòng hàng; `productId` kèm theo để review/báo cáo không cần join qua variant. `unitCost` (D-078) là snapshot giá vốn lúc đặt, chỉ analytics Admin đọc, không có ở API đơn hàng nào |
 | `OrderStatusHistory` | Mỗi lần đổi trạng thái 1 dòng (kể cả lúc tạo, `fromStatus=null`), có ai/khi nào/ghi chú |
+| `OrderNote` | Ghi chú nội bộ của nhân viên trên đơn (D-071). Khác `Order.note` (ghi chú CỦA KHÁCH). Append-only: chỉ thêm và xóa (Admin), không sửa. `authorId` null khi tác giả bị xóa; xóa đơn xóa luôn ghi chú (cascade). Không có trong API khách/guest, `GET /me/export`; audit chỉ ghi id và độ dài |
 | `Payment` | Mỗi lần thử thanh toán online 1 dòng. COD không tạo Payment (trạng thái nằm ở `Order.paymentStatus`, chuyển `PAID` khi giao thành công). `unique(provider, providerTxnId)` chống xử lý IPN/webhook trùng. `providerRef` = `Payment.id` (VNPay `vnp_TxnRef`) hoặc Stripe Checkout Session id. Máy trạng thái (`api-contract.md` §13.5): `PENDING -> SUCCEEDED \| FAILED`, `FAILED -> SUCCEEDED` (thành công muộn đã xác thực), `SUCCEEDED -> REFUNDED` (admin, ghi `refundedAt`, `refundNote`, `refundedById`). `needsRefund` KHÔNG lưu cột: tính khi đọc = `SUCCEEDED` và (đơn `CANCELLED` hoặc có Payment `SUCCEEDED` khác tạo trước cùng đơn). `@@index([status])` phục vụ job hết hạn và lọc đơn cần hoàn tiền. Một đơn có thể có nhiều Payment (mỗi lần bấm thanh toán 1 dòng) |
 | `Coupon` | `code` lưu UPPERCASE. `usedCount` denormalize; tăng ngay khi tạo đơn (UPDATE có điều kiện `usedCount < usageLimit`, cùng transaction với trừ kho) và giảm khi đơn `CANCELLED` (D-004; `api-contract.md` §9.2, §10 mục 4) |
 | `CouponRedemption` | 1 dòng/đơn, tạo cùng lúc tạo đơn (sau khi giữ lượt thành công); `email` (lowercase) để áp `perUserLimit` cho guest; `releasedAt` đặt khi đơn `CANCELLED` (hủy, hết hạn, giao thất bại rồi hủy), đồng thời giảm `usedCount`; đếm lượt đã dùng = dòng có `releasedAt IS NULL` |

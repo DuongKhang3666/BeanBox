@@ -10,6 +10,7 @@ export const inventoryItemSelect = {
   lowStockThreshold: true,
   isActive: true,
   updatedAt: true,
+  avgCost: true, // chỉ đưa vào DTO khi includeCost (Admin, D-078)
   product: {
     select: {
       id: true,
@@ -41,6 +42,8 @@ export interface InventoryItemDto {
   stockStatus: StockStatus;
   isActive: boolean;
   updatedAt: string;
+  /** D-078, CHỈ Admin: giá vốn bình quân (null = chưa có). Không có khóa này với Staff. */
+  avgCost?: number | null;
 }
 
 export function stockStatusOf(stock: number, lowStockThreshold: number): StockStatus {
@@ -48,7 +51,7 @@ export function stockStatusOf(stock: number, lowStockThreshold: number): StockSt
   return stock <= lowStockThreshold ? 'LOW_STOCK' : 'IN_STOCK';
 }
 
-export function toInventoryItem(r: InventoryItemRow): InventoryItemDto {
+export function toInventoryItem(r: InventoryItemRow, includeCost = false): InventoryItemDto {
   return {
     variantId: r.id,
     sku: r.sku,
@@ -62,6 +65,7 @@ export function toInventoryItem(r: InventoryItemRow): InventoryItemDto {
     stockStatus: stockStatusOf(r.stock, r.lowStockThreshold),
     isActive: r.isActive,
     updatedAt: r.updatedAt.toISOString(),
+    ...(includeCost ? { avgCost: r.avgCost } : {}),
   };
 }
 
@@ -72,6 +76,7 @@ export const movementSelect = {
   stockAfter: true,
   reason: true,
   note: true,
+  unitCost: true, // chỉ đưa vào DTO khi includeCost (Admin, D-078)
   createdAt: true,
   variant: { select: { sku: true, name: true, product: { select: { name: true } } } },
   order: { select: { code: true } },
@@ -93,9 +98,11 @@ export interface InventoryMovementDto {
   actor: { id: string; fullName: string } | null;
   note: string | null;
   createdAt: string;
+  /** D-078, CHỈ Admin: đơn giá nhập của dòng RESTOCK (null = không có). */
+  unitCost?: number | null;
 }
 
-export function toMovementDto(r: MovementRow): InventoryMovementDto {
+export function toMovementDto(r: MovementRow, includeCost = false): InventoryMovementDto {
   return {
     id: r.id,
     variantId: r.variantId,
@@ -109,5 +116,6 @@ export function toMovementDto(r: MovementRow): InventoryMovementDto {
     actor: r.actor ? { id: r.actor.id, fullName: r.actor.fullName } : null,
     note: r.note,
     createdAt: r.createdAt.toISOString(),
+    ...(includeCost ? { unitCost: r.unitCost } : {}),
   };
 }

@@ -14,15 +14,22 @@ import type {
 import * as products from './products.service.js';
 import type { Actor } from './products.shared.js';
 import * as variants from './variants.service.js';
+import * as csv from './productsCsv.service.js';
+import { AppError } from '../../../lib/errors.js';
+import { safeCsvFilename, toCsv } from '../../../lib/csv.js';
 
-const actor = (req: Request): Actor => ({ actorId: req.auth!.userId, ip: req.ip ?? null });
+const actor = (req: Request): Actor => ({
+  actorId: req.auth!.userId,
+  ip: req.ip ?? null,
+  isAdmin: req.auth!.role === 'ADMIN',
+});
 const param = (req: Request, name: string) => String(req.params[name] ?? '');
 
 export const listProducts = asyncHandler(async (req, res) => {
   res.json(await products.listProducts(req.query as unknown as ProductListQuery));
 });
 export const getProduct = asyncHandler(async (req, res) => {
-  res.json({ data: await products.getProduct(param(req, 'id')) });
+  res.json({ data: await products.getProduct(param(req, 'id'), actor(req).isAdmin === true) });
 });
 export const createProduct = asyncHandler(async (req, res) => {
   const data = await products.createProduct(req.body as CreateProductInput, actor(req));
@@ -89,5 +96,58 @@ export const reorderImages = asyncHandler(async (req, res) => {
 });
 export const deleteImage = asyncHandler(async (req, res) => {
   const data = await images.deleteImage(param(req, 'id'), param(req, 'imageId'), actor(req));
+  res.json({ data });
+});
+
+// D-073: xuất/nhập CSV (chỉ Admin, đã chặn ở router).
+const vnToday = () => new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 10);
+
+export const exportProducts = asyncHandler(async (req, res) => {
+  const file = await csv.buildProductsExport();
+  await csv.auditExport(actor(req), file.rowCount);
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader(
+    'Content-Disposition',
+    `attachment; filename="${safeCsvFilename({ report: 'products', dates: vnToday() })}"`,
+  );
+  res.send(toCsv(file.rows));
+});
+
+/** Tên file từ query chỉ để hiển thị/audit: bỏ mọi ký tự ngoài [a-z0-9_.-], tối đa 60 ký tự. */
+export function safeUploadName(raw: unknown): string {
+  const base = typeof raw === 'string' ? raw.toLowerCase() : '';
+  const cleaned = base
+    .replace(/[^a-z0-9_.-]+/g, '-')
+    .replace(/^[-.]+/, '')
+    .slice(0, 60);
+  return cleaned.length > 0 ? cleaned : 'import.csv';
+}
+
+function csvBuffer(req: Request): Buffer {
+  const body: unknown = req.body;
+  if (!Buffer.isBuffer(body) || body.length === 0) {
+    throw new AppError(400, 'INVALID_CSV', 'Vui lòng gửi file CSV (Content-Type: text/csv)');
+  }
+  return body;
+}
+
+export const previewImport = asyncHandler(async (req, res) => {
+  const data = await csv.previewImport(csvBuffer(req), safeUploadName(req.query.filename));
+  res.json({ data });
+});
+
+export const commitImport = asyncHandler(async (req, res) => {
+  const fingerprint = String(req.query.fingerprint ?? '');
+  if (!/^[a-f0-9]{64}$/.test(fingerprint)) {
+    throw new AppError(400, 'VALIDATION_ERROR', 'Dữ liệu không hợp lệ', [
+      { field: 'fingerprint', message: 'fingerprint phải là SHA-256 dạng hex (64 ký tự)' },
+    ]);
+  }
+  const data = await csv.commitImport(
+    csvBuffer(req),
+    safeUploadName(req.query.filename),
+    fingerprint,
+    actor(req),
+  );
   res.json({ data });
 });

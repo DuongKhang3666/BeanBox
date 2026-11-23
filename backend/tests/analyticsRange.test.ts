@@ -158,6 +158,7 @@ describe('changePct / buildOverview (hàm thuần)', () => {
         created: [{ d: '2031-06-10', n: 4, cancelled: 1 }],
         refunds: [],
         customers: [],
+        profit: [],
       },
       range,
       new Date('2031-06-15T10:00:00Z'),

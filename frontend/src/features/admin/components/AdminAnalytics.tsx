@@ -101,7 +101,7 @@ function AnalyticsSkeleton() {
   return (
     <div aria-busy="true" aria-label="Đang tải phân tích" role="status" className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {Array.from({ length: 9 }, (_, i) => (
+        {Array.from({ length: 12 }, (_, i) => (
           <Skeleton key={i} className="h-24 w-full" />
         ))}
       </div>
@@ -169,6 +169,28 @@ function KpiGrid({ kpis, prevLabel }: { kpis: AnalyticsKpis; prevLabel: string }
         label="Khách mới"
         value={formatInt(kpis.newCustomers.current)}
         delta={deltaPct(kpis.newCustomers)}
+        prevLabel={prevLabel}
+      />
+      <Kpi
+        label="Lợi nhuận gộp"
+        value={formatVND(kpis.grossProfit.current)}
+        delta={deltaPct(kpis.grossProfit)}
+        note="Chỉ tính dòng có giá vốn; chưa trừ phí ship và phí cổng thanh toán"
+        prevLabel={prevLabel}
+      />
+      <Kpi
+        label="Biên lợi nhuận gộp"
+        value={formatRate(kpis.grossMargin.current)}
+        delta={deltaPts(kpis.grossMargin)}
+        note="Lợi nhuận gộp / doanh thu hàng hóa sau giảm giá (phần có giá vốn)"
+        prevLabel={prevLabel}
+      />
+      <Kpi
+        label="Độ phủ giá vốn"
+        value={formatRate(kpis.costCoverage.current)}
+        delta={deltaPts(kpis.costCoverage)}
+        neutral
+        note="Tỷ lệ doanh thu hàng hóa có giá vốn; đơn cũ chưa có giá vốn không được tính"
         prevLabel={prevLabel}
       />
     </div>

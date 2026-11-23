@@ -126,6 +126,7 @@ function Editor({ loaded }: { loaded: Loaded }) {
       <VariantsSection
         product={product}
         readOnly={deleted}
+        canSetCost={isAdmin}
         onChange={(variants) => setProduct((cur) => ({ ...cur, variants }))}
       />
 

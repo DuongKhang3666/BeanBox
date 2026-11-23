@@ -1,14 +1,61 @@
+import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
-import { createGuestCodOrder, findStockedProduct, login, seedPassword } from "./helpers";
+import { API, createGuestCodOrder, findStockedProduct, login, seedPassword } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
-test("customer: xem đơn hàng, bị chặn ở khu quản trị, đăng xuất", async ({ page }) => {
+test("customer: xem đơn hàng, Mua lại, bị chặn ở khu quản trị, đăng xuất", async ({
+  page,
+  request,
+}) => {
   // Gộp để tiết kiệm lượt đăng nhập (rate limit 5/phút/IP)
   await login(page, "customer@beanbox.local", seedPassword("CUSTOMER"));
   await page.goto("/tai-khoan/don-hang");
   await expect(page).toHaveURL(/\/tai-khoan\/don-hang/);
   await expect(page.getByRole("heading", { name: /Đơn hàng/ }).first()).toBeVisible();
+
+  // D-077: tạo một đơn COD của khách này qua API (giỏ trống sau khi đặt), rồi "Mua lại" ở giao diện.
+  const product = await findStockedProduct(request);
+  const loginRes = await request.post(`${API}/auth/login`, {
+    data: { email: "customer@beanbox.local", password: seedPassword("CUSTOMER") },
+  });
+  expect(loginRes.status(), "đăng nhập API").toBe(200);
+  const auth = {
+    Authorization: `Bearer ${((await loginRes.json()) as { data: { accessToken: string } }).data.accessToken}`,
+  };
+  const addrRes = await request.get(`${API}/me/addresses`, { headers: auth });
+  const addresses = ((await addrRes.json()) as { data: { id: string }[] }).data;
+  expect(addresses.length, "seed có địa chỉ cho customer").toBeGreaterThan(0);
+  expect(
+    (
+      await request.post(`${API}/cart/items`, {
+        headers: auth,
+        data: { variantId: product.variantId, quantity: 1 },
+      })
+    ).status(),
+  ).toBe(201);
+  const orderRes = await request.post(`${API}/orders`, {
+    headers: { ...auth, "Idempotency-Key": randomUUID() },
+    data: {
+      addressId: addresses[0]!.id,
+      shippingMethod: "STANDARD",
+      paymentMethod: "COD",
+      acceptTerms: true,
+    },
+  });
+  expect(orderRes.status(), "POST /orders").toBe(201);
+  const orderCode = ((await orderRes.json()) as { data: { code: string } }).data.code;
+
+  await page.goto(`/tai-khoan/don-hang/${orderCode}`);
+  await expect(page.getByRole("heading", { name: `Đơn hàng ${orderCode}` })).toBeVisible();
+  await page.getByRole("button", { name: "Mua lại" }).click();
+  const summary = page.getByRole("status", { name: "Kết quả mua lại" });
+  await expect(summary).toContainText("Đã thêm 1 sản phẩm vào giỏ hàng.");
+  await summary.getByRole("link", { name: "Xem giỏ hàng" }).click();
+  await expect(page).toHaveURL(/\/gio-hang/);
+  await expect(page.getByRole("link", { name: product.name }).first()).toBeVisible();
+  // Dọn giỏ của tài khoản seed để không ảnh hưởng spec khác
+  expect((await request.delete(`${API}/cart`, { headers: auth })).status()).toBe(200);
 
   await page.goto("/admin");
   await expect(page.getByText("Bạn không có quyền truy cập khu quản trị")).toBeVisible();

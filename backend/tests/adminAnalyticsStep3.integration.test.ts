@@ -772,9 +772,11 @@ describe('inventory - tồn kho', () => {
         'outOfStock',
         'slowMovers',
         'slowMoversValue',
+        'stockCostValue',
         'stockUnits',
         'stockValue',
         'variants',
+        'variantsWithoutCost',
       ].sort(),
     );
     for (const list of [d.outOfStock, d.lowStock, d.slowMovers]) {

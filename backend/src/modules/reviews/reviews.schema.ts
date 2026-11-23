@@ -1,9 +1,9 @@
 import { z } from 'zod';
+import { NO_NUL } from '../../lib/validation.js';
 import { csvEnum, paginationShape } from '../admin/admin.schema.js';
 
-/** Postgres không lưu được byte NUL trong text: chặn sớm để trả 400 thay vì 500. */
-// eslint-disable-next-line no-control-regex
-export const NO_NUL = /^[^\u0000]*$/;
+// Giữ export để schema admin đã import từ đây vẫn dùng được.
+export { NO_NUL };
 
 const ratingSchema = z
   .number({ error: 'Điểm đánh giá phải là số nguyên từ 1 đến 5' })

@@ -1,4 +1,4 @@
-import type { CartCoupon, CartItem } from "./cart";
+import type { Cart, CartCoupon, CartItem } from "./cart";
 
 /** Theo docs/api-contract.md §9, §11. Tiền là số nguyên VND. */
 export type OrderStatus =
@@ -213,4 +213,18 @@ export interface PlaceOrderRequest {
   expectedTotal?: number;
   /** Token Turnstile (D-057): chỉ khách vãng lai khi cửa hàng bật captcha. */
   captchaToken?: string;
+}
+
+/** POST /me/orders/:code/reorder (D-077). */
+export type ReorderSkipReason = "DISCONTINUED" | "OUT_OF_STOCK" | "UNAVAILABLE";
+interface ReorderLineRef {
+  variantId: string;
+  productName: string;
+  variantName: string;
+}
+export interface ReorderResult {
+  added: Array<ReorderLineRef & { quantity: number }>;
+  adjusted: Array<ReorderLineRef & { requested: number; added: number }>;
+  skipped: Array<ReorderLineRef & { quantity: number; reason: ReorderSkipReason }>;
+  cart: Cart;
 }

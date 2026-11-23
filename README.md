@@ -108,6 +108,9 @@ Mở <http://localhost:3300> sau khi chạy demo. Mỗi bước ghi tài khoản
 ### Quản trị và phân tích
 
 - Dashboard, quản lý đơn theo máy trạng thái (xác nhận, giao, hủy, ghi nhận hoàn tiền thủ công, xác nhận chuyển khoản), sản phẩm/biến thể/ảnh, danh mục, thương hiệu, tồn kho kèm lịch sử, mã giảm giá, đánh giá, liên hệ, nhật ký thao tác, cài đặt cửa hàng, quản lý người dùng.
+- Công cụ vận hành (D-071..D-073): ghi chú nội bộ trên đơn (khách không thấy), chọn nhiều đơn để in phiếu giao hàng loạt, xuất/nhập CSV sản phẩm (xem trước từng dòng, áp dụng trong một transaction, không bao giờ đổi slug/SKU).
+- Nhóm 3 Đợt 4 (D-075..D-077): cache HTTP ngắn cho catalog và ảnh bất biến, khóa tạm theo mã đơn khi khách vãng lai nhập sai SĐT 5 lần, nút "Mua lại" ở chi tiết đơn.
+- Giá vốn và lợi nhuận gộp (D-078): nhập hàng kèm đơn giá tính giá vốn bình quân gia quyền di động theo biến thể, chụp vào dòng đơn lúc đặt, `/admin/phan-tich` có lợi nhuận gộp, biên và độ phủ giá vốn (chỉ Admin; đơn cũ chưa có giá vốn).
 - Phân tích kinh doanh (chỉ Admin, `/admin/phan-tich`; kế hoạch ở [docs/admin-dashboard-plan.md](docs/admin-dashboard-plan.md), API ở [api-contract §16](docs/api-contract.md)): KPI so với kỳ trước, doanh thu theo ngày/tuần/tháng (có bảng thay thế cho trình đọc màn hình), cơ cấu theo danh mục, thương hiệu, thanh toán, giao hàng, tỉnh; top sản phẩm, top khách, khách mới/quay lại; vận hành, tồn kho, hiệu quả mã giảm giá; xuất CSV (chống CSV injection, có audit và rate limit) và bản in.
 
 | Phân tích kinh doanh                                                                                              | Cơ cấu doanh thu                                                                  |

@@ -137,6 +137,8 @@ const MUST_BE_AUTH = [
   `DELETE ${A}/me/addresses/:id`,
   `POST ${A}/me/addresses/:id/default`,
   `GET ${A}/me/orders`,
+  // D-077: mua lại chỉ đơn của chính mình (đơn người khác -> 404).
+  `POST ${A}/me/orders/:code/reorder`,
   `GET ${A}/orders/:code`,
   `POST ${A}/cart/merge`,
   `PATCH ${A}/reviews/:id`,
@@ -162,6 +164,11 @@ const ADMIN_ONLY = new Set<string>([
   `DELETE ${A}/admin/coupons/:id`,
   `POST ${A}/admin/products/:id/restore`,
   `POST ${A}/admin/orders/:code/refunds`,
+  // D-071: Staff+ đọc/thêm ghi chú, chỉ Admin xóa. D-073: xuất/nhập CSV sản phẩm chỉ Admin.
+  `DELETE ${A}/admin/orders/:code/notes/:noteId`,
+  `GET ${A}/admin/products/export`,
+  `POST ${A}/admin/products/import/preview`,
+  `POST ${A}/admin/products/import/commit`,
   `GET ${A}/admin/analytics/overview`,
   `GET ${A}/admin/analytics/breakdown`,
   `GET ${A}/admin/analytics/top-products`,
@@ -427,6 +434,10 @@ describe('IDOR: user B truy cập tài nguyên của user A', () => {
         phone: '0912345678', // dù biết SĐT đơn, user đăng nhập khác vẫn chỉ hủy đơn của chính mình
       });
       expect(cancel.status).toBe(404);
+      // D-077: không mua lại được đơn người khác, giỏ của người đó không đổi
+      const again = await fx.call('post', `/me/orders/${order.code}/reorder`, who);
+      expect(again.status).toBe(404);
+      expect(errOf(again).code).toBe('NOT_FOUND');
     }
     const row = await prisma.order.findUniqueOrThrow({ where: { code: order.code as string } });
     expect(row.status).not.toBe('CANCELLED');

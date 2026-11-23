@@ -46,12 +46,19 @@ export interface CartContextValue {
   clearCart: () => Promise<Cart>;
   applyCoupon: (code: string) => Promise<Cart>;
   removeCoupon: () => Promise<Cart>;
+  /** Thay giỏ hiện tại bằng giỏ server vừa trả (ví dụ sau "Mua lại"), không gọi lại API. */
+  replaceCart: (cart: Cart) => void;
   /** Tải lại giỏ (hoặc thử lại merge nếu còn token guest). */
   reload: () => void;
   dismissNotice: () => void;
   miniCartOpen: boolean;
-  openMiniCart: () => void;
+  /**
+   * Mở mini-cart. `opener` = nút đã kích hoạt (ghi nhận TRƯỚC khi nút bị disable lúc đang thêm) để trả focus về khi đóng.
+   */
+  openMiniCart: (opener?: HTMLElement | null) => void;
   closeMiniCart: () => void;
+  /** Phần tử nên nhận focus khi đóng mini-cart: nút đã kích hoạt nếu còn trong DOM và enabled, ngược lại nút giỏ ở header. */
+  getMiniCartFocusTarget: () => HTMLElement | null;
 }
 
 const CartContext = createContext<CartContextValue | null>(null);
@@ -225,8 +232,18 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   );
   const removeCoupon = useCallback(() => track("coupon", () => cartApi.removeCoupon()), [track]);
 
+  const replaceCart = applyCart;
   const dismissNotice = useCallback(() => setNotice(null), []);
-  const openMiniCart = useCallback(() => setMiniCartOpen(true), []);
+  const openerRef = useRef<HTMLElement | null>(null);
+  const openMiniCart = useCallback((opener?: HTMLElement | null) => {
+    openerRef.current = opener ?? null;
+    setMiniCartOpen(true);
+  }, []);
+  const getMiniCartFocusTarget = useCallback((): HTMLElement | null => {
+    const el = openerRef.current;
+    if (el && el.isConnected && !(el as HTMLButtonElement).disabled) return el;
+    return document.querySelector<HTMLElement>("[data-cart-trigger]");
+  }, []);
   const closeMiniCart = useCallback(() => setMiniCartOpen(false), []);
 
   const pending = useMemo<CartPending>(() => {
@@ -253,11 +270,13 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       clearCart,
       applyCoupon,
       removeCoupon,
+      replaceCart,
       reload,
       dismissNotice,
       miniCartOpen,
       openMiniCart,
       closeMiniCart,
+      getMiniCartFocusTarget,
     }),
     [
       cart,
@@ -271,11 +290,13 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       clearCart,
       applyCoupon,
       removeCoupon,
+      replaceCart,
       reload,
       dismissNotice,
       miniCartOpen,
       openMiniCart,
       closeMiniCart,
+      getMiniCartFocusTarget,
     ],
   );
 

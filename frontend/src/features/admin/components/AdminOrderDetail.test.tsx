@@ -11,9 +11,12 @@ vi.mock("@/features/auth/AuthProvider", () => ({
 }));
 
 function stubFetch(handler: (path: string, init: RequestInit) => Response) {
-  const mock = vi.fn(async (input: string, init: RequestInit = {}) =>
-    handler(input.replace("/api/v1", ""), init),
-  );
+  const mock = vi.fn(async (input: string, init: RequestInit = {}) => {
+    const path = input.replace("/api/v1", "");
+    // D-071: khối ghi chú nội bộ tải riêng; các test này không quan tâm đến nó.
+    if (path.endsWith("/notes")) return jsonRes(200, { data: [] });
+    return handler(path, init);
+  });
   vi.stubGlobal("fetch", mock);
   return mock;
 }

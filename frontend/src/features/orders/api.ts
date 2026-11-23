@@ -7,6 +7,7 @@ import type {
   PlaceOrderRequest,
   Quote,
   QuoteRequest,
+  ReorderResult,
   TrackedOrder,
 } from "@/types/order";
 
@@ -70,5 +71,11 @@ export async function cancelGuestOrder(
       skipAuth: true,
     },
   );
+  return data;
+}
+
+/** D-077: đưa các dòng còn bán của đơn cũ vào giỏ (giá/tồn hiện hành). */
+export async function reorderOrder(code: string): Promise<ReorderResult> {
+  const { data } = await api.post<ReorderResult>(`/me/orders/${encodeURIComponent(code)}/reorder`);
   return data;
 }

@@ -101,3 +101,40 @@ export const refundPaymentSchema = z.object({
     .max(500, 'Ghi chú hoàn tiền tối đa 500 ký tự'),
 });
 export type RefundPaymentInput = z.infer<typeof refundPaymentSchema>;
+
+// D-071: ghi chú nội bộ. Cho phép \t, \n, \r; chặn NUL và ký tự điều khiển khác.
+// eslint-disable-next-line no-control-regex
+const NOTE_FORBIDDEN = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/;
+export const ORDER_NOTE_MAX = 2000;
+
+export const addOrderNoteSchema = z.object({
+  body: z
+    .string({ error: 'Nội dung ghi chú không hợp lệ' })
+    .trim()
+    .min(1, 'Vui lòng nhập nội dung ghi chú')
+    .max(ORDER_NOTE_MAX, `Ghi chú tối đa ${ORDER_NOTE_MAX} ký tự`)
+    .refine((v) => !NOTE_FORBIDDEN.test(v), 'Ghi chú chứa ký tự không hợp lệ'),
+});
+export type AddOrderNoteInput = z.infer<typeof addOrderNoteSchema>;
+
+// D-072: in hàng loạt, tối đa 50 mã (phân cách phẩy).
+export const PRINT_MAX_CODES = 50;
+export const printOrdersQuerySchema = z.object({
+  codes: z
+    .string({ error: 'Danh sách mã đơn không hợp lệ' })
+    .transform((s) => [
+      ...new Set(
+        s
+          .split(',')
+          .map((x) => x.trim())
+          .filter((x) => x.length > 0),
+      ),
+    ])
+    .pipe(
+      z
+        .array(z.string().max(30, 'Mã đơn không hợp lệ'))
+        .min(1, 'Vui lòng chọn ít nhất 1 đơn hàng')
+        .max(PRINT_MAX_CODES, `Chỉ in tối đa ${PRINT_MAX_CODES} đơn mỗi lần`),
+    ),
+});
+export type PrintOrdersQuery = z.infer<typeof printOrdersQuerySchema>;

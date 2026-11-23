@@ -1,11 +1,6 @@
 import { z } from 'zod';
 import { phoneSchema } from '../../lib/phone.js';
-
-const emailSchema = z
-  .string()
-  .trim()
-  .toLowerCase()
-  .pipe(z.email('Email không đúng định dạng').max(254, 'Email tối đa 254 ký tự'));
+import { emailSchema, intParam } from '../../lib/validation.js';
 
 const shippingAddressSchema = z.object({
   fullName: z
@@ -128,20 +123,6 @@ export const trackOrderQuerySchema = z.object({
   phone: z.string({ error: 'Vui lòng nhập số điện thoại' }).pipe(phoneSchema),
 });
 export type TrackOrderQuery = z.infer<typeof trackOrderQuerySchema>;
-
-const intParam = (min: number, max: number, label: string) =>
-  z
-    .string({ error: `${label} không hợp lệ` })
-    .trim()
-    .regex(/^\d+$/, `${label} phải là số nguyên không âm`)
-    .transform(Number)
-    .pipe(
-      z
-        .number()
-        .int()
-        .min(min, `${label} phải từ ${min} đến ${max}`)
-        .max(max, `${label} phải từ ${min} đến ${max}`),
-    );
 
 export const myOrdersQuerySchema = z.object({
   status: z

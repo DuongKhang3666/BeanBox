@@ -1,19 +1,9 @@
 import { z } from 'zod';
 
-/** Số nguyên không âm từ query string. */
-export const intParam = (min: number, max: number, label: string) =>
-  z
-    .string({ error: `${label} không hợp lệ` })
-    .trim()
-    .regex(/^\d+$/, `${label} phải là số nguyên không âm`)
-    .transform(Number)
-    .pipe(
-      z
-        .number()
-        .int()
-        .min(min, `${label} phải từ ${min} đến ${max}`)
-        .max(max, `${label} phải từ ${min} đến ${max}`),
-    );
+import { intParam } from '../../lib/validation.js';
+
+// Giữ export để các schema admin đã import từ đây vẫn dùng được.
+export { intParam };
 
 export const paginationShape = {
   page: intParam(1, 1_000_000, 'page').default(1),

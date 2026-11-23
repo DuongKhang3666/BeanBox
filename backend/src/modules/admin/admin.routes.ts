@@ -9,7 +9,7 @@ import { adminCouponsRouter } from './coupons/coupons.routes.js';
 import { adminDashboardRouter } from './dashboard/dashboard.routes.js';
 import { inventoryRouter } from './inventory/inventory.routes.js';
 import { adminOrdersRouter } from './orders/orders.routes.js';
-import { adminProductsRouter } from './products/products.routes.js';
+import { createAdminProductsRouter } from './products/products.routes.js';
 import { adminReviewsRouter } from './reviews/reviews.routes.js';
 import { adminSettingsRouter } from './settings/settings.routes.js';
 import { adminUsersRouter } from './users/users.routes.js';
@@ -20,6 +20,8 @@ export interface AdminRouterOptions {
   uploadLimiter: RequestHandler;
   /** 10/phút/IP (env EXPORT_RATE_LIMIT_PER_MIN), chỉ áp cho `/analytics/export` (store riêng). */
   exportLimiter: RequestHandler;
+  /** D-073: nhập CSV sản phẩm (20/phút/IP), chỉ áp cho `/products/import/*` (store riêng). */
+  importLimiter: RequestHandler;
   /** Thư mục lưu ảnh upload (mặc định backend/uploads). */
   uploadsDir?: string;
 }
@@ -33,6 +35,7 @@ const noStore: RequestHandler = (_req, res, next) => {
 export function createAdminRouter({
   uploadLimiter,
   exportLimiter,
+  importLimiter,
   uploadsDir,
 }: AdminRouterOptions): Router {
   const router = Router();
@@ -51,7 +54,7 @@ export function createAdminRouter({
   // Các router dưới đây mount ở gốc vì route tự khai báo đường dẫn đầy đủ (inventory, catalog, products).
   router.use(inventoryRouter);
   router.use(adminCatalogRouter);
-  router.use(adminProductsRouter);
+  router.use(createAdminProductsRouter({ exportLimiter, importLimiter }));
   // Router upload dùng `router.use(limiter)` nên PHẢI mount tại path riêng.
   router.use(
     '/uploads',

@@ -51,20 +51,71 @@ describe('Cache-Control: no-store cho response riêng tư', () => {
   });
 });
 
-describe('GET công khai không bị ép no-store', () => {
+const PUBLIC_CATALOG = 'public, max-age=30, s-maxage=60, stale-while-revalidate=120';
+
+describe('D-075: catalog công khai có Cache-Control ngắn khi thành công', () => {
+  it('GET /products, /categories, /brands -> 200 và đúng header', async () => {
+    for (const path of ['/products', '/categories', '/brands', '/search/suggest?q=ca']) {
+      const res = await request(app).get(`${API}${path}`);
+      expect(res.status, path).toBe(200);
+      expect(res.headers['cache-control'], path).toBe(PUBLIC_CATALOG);
+    }
+  });
+
+  it('HEAD /products cũng có header cache', async () => {
+    const res = await request(app).head(`${API}/products`);
+    expect(res.headers['cache-control']).toBe(PUBLIC_CATALOG);
+  });
+
   it.each([
-    '/products',
-    '/products/khong-ton-tai',
-    '/products/khong-ton-tai/reviews',
     '/products/khong-ton-tai/bought-together',
-    '/products/compare?slugs=khong-co-a,khong-co-b',
     '/products/compare',
-    '/categories',
-    '/brands',
-    '/search/suggest?q=ca',
-  ])('GET %s', async (path) => {
+    '/categories/khong-ton-tai',
+    '/search/suggest',
+  ])('GET %s lỗi 4xx -> no-store, không bao giờ public', async (path) => {
     const res = await request(app).get(`${API}${path}`);
-    expect(res.headers['cache-control']).toBeUndefined();
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(res.headers['cache-control']).toBe('no-store');
+  });
+
+  it('GET /products/khong-ton-tai -> 404 + no-store', async () => {
+    const res = await request(app).get(`${API}/products/khong-ton-tai`);
+    expect(res.status).toBe(404);
+    expect(res.headers['cache-control']).toBe('no-store');
+  });
+
+  it('GET /products?page=abc -> 400 + no-store', async () => {
+    const res = await request(app).get(`${API}/products?page=abc`);
+    expect(res.status).toBe(400);
+    expect(res.headers['cache-control']).toBe('no-store');
+  });
+
+  it('request kèm Authorization vẫn nhận cùng header (catalog không phụ thuộc người gọi)', async () => {
+    const res = await request(app).get(`${API}/products`).set('Authorization', 'Bearer x');
+    expect(res.status).toBe(200);
+    expect(res.headers['cache-control']).toBe(PUBLIC_CATALOG);
+  });
+
+  it('route riêng tư đứng cạnh catalog vẫn no-store (hồi quy: router catalog mount ở gốc API)', async () => {
+    for (const p of [
+      '/cart',
+      '/me',
+      '/me/orders',
+      '/wishlist',
+      '/admin/orders',
+      '/checkout/quote',
+    ]) {
+      const res = await request(app).get(`${API}${p}`);
+      expect(res.headers['cache-control'], p).toBe('no-store');
+    }
+    const post = await request(app).post(`${API}/cart/items`).send({});
+    expect(post.headers['cache-control']).toBe('no-store');
+  });
+
+  it('GET /products/:slug/reviews lỗi 404 -> no-store', async () => {
+    const res = await request(app).get(`${API}/products/khong-ton-tai/reviews`);
+    expect(res.status).toBe(404);
+    expect(res.headers['cache-control']).toBe('no-store');
   });
 
   it('GET /settings/public và /locations giữ Cache-Control do route tự đặt', async () => {

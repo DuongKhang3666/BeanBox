@@ -1,10 +1,13 @@
 import type { Prisma } from '../src/generated/prisma/client.js';
 import type { Express } from 'express';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../src/app.js';
 import { prisma } from '../src/lib/prisma.js';
-import { getShopSettings } from '../src/modules/settings/settings.service.js';
+import {
+  getShopSettings,
+  setShopSettingsCacheTtl,
+} from '../src/modules/settings/settings.service.js';
 import { API, ORIGIN } from './authHelpers.js';
 import { createFixtures, dataOf, errOf, type Who } from './checkoutHelpers.js';
 
@@ -297,5 +300,24 @@ describe('GET /settings/public', () => {
     expect(dataOf(p).order.paymentExpiryMinutes).toBe(15);
     expect(dataOf(p).home.banners).toEqual([]);
     expect(dataOf(p).shipping.innerCityProvinces).toHaveLength(2);
+  });
+});
+
+describe('D-075: cache getShopSettings bị xóa khi admin lưu', () => {
+  it('PUT /admin/settings -> lần đọc kế tiếp thấy giá trị mới ngay (không chờ TTL)', async () => {
+    setShopSettingsCacheTtl(30_000);
+    try {
+      const before = (await getShopSettings()).freeShippingThreshold;
+      const next = before === 123_000 ? 124_000 : 123_000;
+      const spy = vi.spyOn(prisma.setting, 'findMany');
+      await getShopSettings();
+      expect(spy).not.toHaveBeenCalled(); // còn trong TTL: không truy vấn
+      const res = await put({ 'shipping.freeShippingThreshold': next });
+      expect(res.status).toBe(200);
+      expect((await getShopSettings()).freeShippingThreshold).toBe(next);
+      spy.mockRestore();
+    } finally {
+      setShopSettingsCacheTtl(0);
+    }
   });
 });

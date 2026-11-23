@@ -249,9 +249,11 @@ describe('GET /products/compare', () => {
     expect(res.body.error.details[0].field).toBe('slugs');
   });
 
-  it('không bị route /products/:slug che và không bị ép no-store', async () => {
+  it('không bị route /products/:slug che, có cache công khai ngắn (D-075)', async () => {
     const res = await cmp('?slugs=tcmp-a,tcmp-b');
     expect(res.status).toBe(200);
-    expect(res.headers['cache-control']).toBeUndefined();
+    expect(res.headers['cache-control']).toBe(
+      'public, max-age=30, s-maxage=60, stale-while-revalidate=120',
+    );
   });
 });

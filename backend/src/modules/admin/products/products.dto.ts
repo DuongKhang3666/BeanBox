@@ -36,9 +36,15 @@ export interface AdminVariantDto {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+  /** D-078, CHỈ Admin: giá vốn bình quân (null = chưa có). Không có khóa này với Staff. */
+  avgCost?: number | null;
 }
 
-export function toAdminVariant(v: VariantRow, now: Date = new Date()): AdminVariantDto {
+export function toAdminVariant(
+  v: VariantRow,
+  now: Date = new Date(),
+  includeCost = false,
+): AdminVariantDto {
   return {
     id: v.id,
     sku: v.sku,
@@ -59,6 +65,7 @@ export function toAdminVariant(v: VariantRow, now: Date = new Date()): AdminVari
     isActive: v.isActive,
     createdAt: v.createdAt.toISOString(),
     updatedAt: v.updatedAt.toISOString(),
+    ...(includeCost ? { avgCost: v.avgCost } : {}),
   };
 }
 
@@ -120,7 +127,11 @@ export interface AdminProductDto {
   updatedAt: string;
 }
 
-export function toAdminProduct(p: ProductDetailRow, now: Date = new Date()): AdminProductDto {
+export function toAdminProduct(
+  p: ProductDetailRow,
+  now: Date = new Date(),
+  includeCost = false,
+): AdminProductDto {
   return {
     id: p.id,
     slug: p.slug,
@@ -136,7 +147,7 @@ export function toAdminProduct(p: ProductDetailRow, now: Date = new Date()): Adm
     brandId: p.brandId,
     coffee: toAdminCoffee(p.coffee),
     images: p.images.map(toAdminImage),
-    variants: p.variants.map((v) => toAdminVariant(v, now)),
+    variants: p.variants.map((v) => toAdminVariant(v, now, includeCost)),
     minPrice: p.minPrice,
     inStock: p.inStock,
     soldCount: p.soldCount,

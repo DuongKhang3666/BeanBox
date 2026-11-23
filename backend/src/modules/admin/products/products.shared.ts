@@ -7,6 +7,8 @@ export const TX_OPTIONS = { timeout: 20_000, maxWait: 10_000 } as const;
 export interface Actor {
   actorId: string;
   ip: string | null;
+  /** D-078: Admin mới được xem/sửa giá vốn (`avgCost`). */
+  isAdmin?: boolean;
 }
 
 export const fieldError = (field: string, message: string) =>

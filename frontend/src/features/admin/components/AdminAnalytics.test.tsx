@@ -59,6 +59,9 @@ function makeOverview(over: Partial<AnalyticsOverview> = {}): AnalyticsOverview 
       discountTotal: c(150000, 0, null),
       refundedAmount: c(40000, 0, null),
       newCustomers: c(3, 2, 50),
+      grossProfit: c(1200000, 1000000, 20),
+      grossMargin: { current: 0.3214, previous: 0.3, changePts: 2.1 },
+      costCoverage: { current: 0.8571, previous: 1, changePts: -14.3 },
     },
     series: days("2026-10-22", 30, { 29: 5000000, 10: 1000000 }),
     previousSeries: days("2026-09-22", 30, { 5: 4444444 }),
@@ -144,7 +147,7 @@ describe("AdminAnalytics - quyền", () => {
 });
 
 describe("AdminAnalytics - trạng thái", () => {
-  it("skeleton khi tải, rồi 9 thẻ KPI với số liệu và so sánh kỳ trước", async () => {
+  it("skeleton khi tải, rồi các thẻ KPI với số liệu và so sánh kỳ trước", async () => {
     const fetchFn = stub(() => jsonRes(200, { data: makeOverview() }));
     render(<AdminAnalytics />);
     expect(screen.getByLabelText("Đang tải phân tích")).toBeInTheDocument();
@@ -176,6 +179,24 @@ describe("AdminAnalytics - trạng thái", () => {
     expect(within(aov).getByText("Giảm 10%")).toBeInTheDocument();
     const same = screen.getByRole("region", { name: "Đơn đã đặt" });
     expect(within(same).getByText("Không đổi")).toBeInTheDocument();
+  });
+
+  it("KPI lợi nhuận gộp, biên lợi nhuận, độ phủ giá vốn (D-078)", async () => {
+    stub(() => jsonRes(200, { data: makeOverview() }));
+    render(<AdminAnalytics />);
+    const profit = await screen.findByRole("region", { name: "Lợi nhuận gộp" });
+    expect(within(profit).getByText("1.200.000₫")).toBeInTheDocument();
+    expect(within(profit).getByText(/▲ 20%/)).toBeInTheDocument();
+    expect(within(profit).getByText(/Chỉ tính dòng có giá vốn/)).toBeInTheDocument();
+    const margin = screen.getByRole("region", { name: "Biên lợi nhuận gộp" });
+    expect(within(margin).getByText("32,1%")).toBeInTheDocument();
+    expect(within(margin).getByText(/▲ 2,1 điểm %/)).toBeInTheDocument();
+    const coverage = screen.getByRole("region", { name: "Độ phủ giá vốn" });
+    expect(within(coverage).getByText("85,7%")).toBeInTheDocument();
+    expect(within(coverage).getByText(/▼ 14,3 điểm %/)).toBeInTheDocument();
+    expect(
+      within(coverage).getByText(/đơn cũ chưa có giá vốn không được tính/),
+    ).toBeInTheDocument();
   });
 
   it("changePct null -> 'Không có dữ liệu kỳ trước'", async () => {
@@ -234,6 +255,9 @@ describe("AdminAnalytics - trạng thái", () => {
             discountTotal: zero,
             refundedAmount: zero,
             newCustomers: zero,
+            grossProfit: zero,
+            grossMargin: { current: 0, previous: 0, changePts: null },
+            costCoverage: { current: 0, previous: 0, changePts: null },
           },
           series: days("2026-10-22", 30),
           previousSeries: days("2026-09-22", 30),

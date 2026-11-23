@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { NO_NUL } from '../../../lib/validation.js';
 import { dateOnly, paginationShape, refineDateRange } from '../admin.schema.js';
 
 const text = (label: string, max = 100) =>
@@ -6,8 +7,7 @@ const text = (label: string, max = 100) =>
     .string({ error: `${label} không hợp lệ` })
     .trim()
     .max(max, `${label} tối đa ${max} ký tự`)
-    // eslint-disable-next-line no-control-regex
-    .regex(/^[^\u0000]*$/, `${label} chứa ký tự không hợp lệ`)
+    .regex(NO_NUL, `${label} chứa ký tự không hợp lệ`)
     .transform((v) => (v === '' ? undefined : v))
     .optional();
 
@@ -18,8 +18,7 @@ const actionList = z
     z
       .string({ error: 'action không hợp lệ' })
       .max(1000, 'action quá dài')
-      // eslint-disable-next-line no-control-regex
-      .regex(/^[^\u0000]*$/, 'action chứa ký tự không hợp lệ')
+      .regex(NO_NUL, 'action chứa ký tự không hợp lệ')
       .transform((s) =>
         [
           ...new Set(

@@ -13,6 +13,8 @@ export const INVENTORY_REASONS = [
 export const ADJUST_REASONS = ['RESTOCK', 'DAMAGE', 'STOCKTAKE', 'ADJUSTMENT'] as const;
 
 const MAX_QTY = 100_000;
+/** Đơn giá nhập tối đa = giá niêm yết tối đa của biến thể (100 triệu VND). */
+export const MAX_UNIT_COST = 100_000_000;
 
 export const inventoryQuerySchema = z.object({
   q: z
@@ -63,6 +65,8 @@ export const adjustSchema = z
       .nullish()
       .transform((v) => (v === '' || v == null ? undefined : v)),
     expectedStock: nullishInt('expectedStock', 0, 2_147_483_647),
+    // D-078: đơn giá nhập (VND/đơn vị). Admin bắt buộc khi RESTOCK (service kiểm theo vai trò).
+    unitCost: nullishInt('Đơn giá nhập', 0, MAX_UNIT_COST),
   })
   .superRefine((v, ctx) => {
     const add = (path: string, message: string) =>
@@ -87,5 +91,8 @@ export const adjustSchema = z
         break;
     }
     if (v.newStock !== undefined) add('newStock', 'Chỉ dùng tồn kho mới khi kiểm kê');
+    if (v.unitCost !== undefined && v.reason !== 'RESTOCK') {
+      add('unitCost', 'Đơn giá nhập chỉ dùng khi nhập hàng');
+    }
   });
 export type AdjustInput = z.infer<typeof adjustSchema>;

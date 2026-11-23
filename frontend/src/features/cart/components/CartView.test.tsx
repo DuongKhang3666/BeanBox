@@ -26,6 +26,8 @@ function base(over: Partial<CartContextValue> = {}): CartContextValue {
     dismissNotice: vi.fn(),
     miniCartOpen: false,
     openMiniCart: vi.fn(),
+    getMiniCartFocusTarget: () => null,
+    replaceCart: vi.fn(),
     closeMiniCart: vi.fn(),
     ...over,
   };

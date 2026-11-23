@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CsvParseError,
+  parseCsv,
+  unneutralizeFormula,
   CSV_BOM,
   csvCell,
   kebab,
@@ -114,5 +117,48 @@ describe('csv - tên file an toàn', () => {
     expect(() => safeCsvFilename({ report: 'a', dates: '../../etc' })).toThrow();
     expect(() => safeCsvFilename({ report: 'a b', dates: '2034-03-10' })).toThrow();
     expect(() => safeCsvFilename({ report: 'a\r\nSet-Cookie: x', dates: '2034-03-10' })).toThrow();
+  });
+});
+
+describe('csv - đọc (parseCsv, D-073)', () => {
+  it('bỏ BOM, hỗ trợ CRLF/LF/CR và bỏ dòng trống', () => {
+    expect(parseCsv('﻿a,b\r\n1,2\r\n')).toEqual([
+      ['a', 'b'],
+      ['1', '2'],
+    ]);
+    expect(parseCsv('a,b\n1,2\n\n3,4')).toEqual([
+      ['a', 'b'],
+      ['1', '2'],
+      ['3', '4'],
+    ]);
+    expect(parseCsv('a\r1')).toEqual([['a'], ['1']]);
+  });
+
+  it('ô bọc ngoặc kép: dấu phẩy, nháy kép nhân đôi, xuống dòng trong ô', () => {
+    expect(parseCsv('"a,b","c ""q"" d","x\r\ny"\r\n')).toEqual([['a,b', 'c "q" d', 'x\r\ny']]);
+  });
+
+  it('ô rỗng, ô rỗng có ngoặc kép, ô cuối rỗng', () => {
+    expect(parseCsv('a,,"",\n')).toEqual([['a', '', '', '']]);
+  });
+
+  it('lỗi định dạng ném CsvParseError', () => {
+    expect(() => parseCsv('"abc')).toThrow(CsvParseError);
+    expect(() => parseCsv('a"b,c')).toThrow(CsvParseError);
+    expect(() => parseCsv('"a"b,c')).toThrow(CsvParseError);
+  });
+
+  it('toCsv -> parseCsv + unneutralize là khứ hồi cho chuỗi nguy hiểm', () => {
+    const cells = ['=1+1', "'=x", "'Cà phê", '+84', '-5', '@a', '\t=1', 'a,"b"\r\nc', 'x'];
+    const parsed = parseCsv(toCsv([cells]))[0]!.map(unneutralizeFormula);
+    expect(parsed).toEqual(cells);
+  });
+
+  it('unneutralizeFormula chỉ bỏ nháy khi theo sau là ký tự nguy hiểm', () => {
+    expect(unneutralizeFormula("'=a")).toBe('=a');
+    expect(unneutralizeFormula("'Cà phê")).toBe("'Cà phê");
+    expect(unneutralizeFormula("'")).toBe("'");
+    expect(unneutralizeFormula('')).toBe('');
+    expect(unneutralizeFormula("''=a")).toBe("'=a");
   });
 });

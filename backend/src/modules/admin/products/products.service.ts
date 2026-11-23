@@ -190,11 +190,11 @@ export async function listProducts(
   };
 }
 
-export async function getProduct(id: string): Promise<AdminProductDto> {
+export async function getProduct(id: string, includeCost = false): Promise<AdminProductDto> {
   checkId(id, productNotFound);
   const row = await prisma.product.findUnique({ where: { id }, include: productDetailInclude });
   if (!row) throw productNotFound();
-  return toAdminProduct(row);
+  return toAdminProduct(row, new Date(), includeCost);
 }
 
 // ---------------------------------------------------------------------------
@@ -202,7 +202,7 @@ export async function getProduct(id: string): Promise<AdminProductDto> {
 
 export async function createProduct(
   input: CreateProductInput,
-  { actorId, ip }: Actor,
+  { actorId, ip, isAdmin }: Actor,
 ): Promise<AdminProductDto> {
   const slug = resolveSlug(input.name, input.slug);
   // Mới tạo chưa có biến thể nên ACTIVE luôn vi phạm quy tắc hiển thị.
@@ -244,7 +244,7 @@ export async function createProduct(
         diff,
         ip,
       });
-      return toAdminProduct(full);
+      return toAdminProduct(full, new Date(), isAdmin === true);
     }, TX_OPTIONS);
   } catch (e) {
     throw mapForeignKey(mapUniqueViolation(e));
@@ -254,7 +254,7 @@ export async function createProduct(
 export async function updateProduct(
   id: string,
   input: UpdateProductInput,
-  { actorId, ip }: Actor,
+  { actorId, ip, isAdmin }: Actor,
 ): Promise<AdminProductDto> {
   checkId(id, productNotFound);
   try {
@@ -318,7 +318,7 @@ export async function updateProduct(
           ip,
         });
       }
-      return toAdminProduct(full);
+      return toAdminProduct(full, new Date(), isAdmin === true);
     }, TX_OPTIONS);
   } catch (e) {
     throw mapForeignKey(mapUniqueViolation(e));
@@ -347,7 +347,10 @@ export async function deleteProduct(id: string, { actorId, ip }: Actor): Promise
 }
 
 /** Khôi phục sản phẩm xóa mềm (api-contract §14.6): DRAFT, biến thể đã xóa giữ nguyên. */
-export async function restoreProduct(id: string, { actorId, ip }: Actor): Promise<AdminProductDto> {
+export async function restoreProduct(
+  id: string,
+  { actorId, ip, isAdmin }: Actor,
+): Promise<AdminProductDto> {
   checkId(id, productNotFound);
   return prisma.$transaction(async (tx) => {
     const rows = await tx.$queryRaw<Array<{ status: ProductStatus; deletedAt: Date | null }>>`
@@ -370,6 +373,6 @@ export async function restoreProduct(id: string, { actorId, ip }: Actor): Promis
       },
       ip,
     });
-    return toAdminProduct(await loadDetail(tx, id));
+    return toAdminProduct(await loadDetail(tx, id), new Date(), isAdmin === true);
   }, TX_OPTIONS);
 }

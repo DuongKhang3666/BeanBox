@@ -30,6 +30,8 @@ export interface AdminOrderListItem {
   needsRefund?: boolean;
   /** D-061: khách báo đã chuyển khoản (đơn BANK_TRANSFER). */
   transferClaimedAt?: string | null;
+  /** D-071: số ghi chú nội bộ (server luôn trả; tùy chọn để tương thích dữ liệu cũ). */
+  noteCount?: number;
 }
 
 export type OrderStatusCounts = Record<OrderStatus, number>;
@@ -145,6 +147,8 @@ export interface InventoryItem {
   /** false = biến thể ngừng bán */
   isActive: boolean;
   updatedAt: string;
+  /** D-078, CHỈ Admin: giá vốn bình quân (null = chưa có). Staff không nhận khóa này. */
+  avgCost?: number | null;
 }
 
 export type InventorySort = "stock_asc" | "name" | "updated";
@@ -172,6 +176,8 @@ export interface InventoryMovement {
   actor: { id: string; fullName: string } | null;
   note: string | null;
   createdAt: string;
+  /** D-078, CHỈ Admin: đơn giá nhập của dòng nhập hàng. */
+  unitCost?: number | null;
 }
 
 export interface MovementQuery {
@@ -191,6 +197,8 @@ export interface AdjustInventoryInput {
   newStock?: number;
   note?: string;
   expectedStock?: number;
+  /** D-078: đơn giá nhập (VND); bắt buộc với RESTOCK khi là Admin. */
+  unitCost?: number;
 }
 
 export interface AdjustInventoryResult {
@@ -296,6 +304,8 @@ export interface AdminVariant {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+  /** D-078, CHỈ Admin: giá vốn bình quân (null = chưa có). Staff không nhận khóa này. */
+  avgCost?: number | null;
 }
 
 export interface AdminImage {
@@ -376,6 +386,8 @@ export interface VariantInput {
   roastDate?: string | null;
   sortOrder?: number;
   isActive?: boolean;
+  /** D-078, chỉ Admin: đặt tay giá vốn bình quân (null = xóa). */
+  avgCost?: number | null;
 }
 
 export interface ImageInput {
@@ -587,6 +599,10 @@ export interface AnalyticsKpis {
   discountTotal: AnalyticsCompared;
   refundedAmount: AnalyticsCompared;
   newCustomers: AnalyticsCompared;
+  /** D-078: lợi nhuận gộp hàng hóa, chỉ tính dòng có giá vốn. */
+  grossProfit: AnalyticsCompared;
+  grossMargin: AnalyticsComparedRate;
+  costCoverage: AnalyticsComparedRate;
 }
 
 export interface AnalyticsOverview {
@@ -660,6 +676,11 @@ export interface AnalyticsTopProduct {
   revenue: number;
   quantity: number;
   orders: number;
+  /** D-078: null khi không dòng nào có giá vốn. */
+  cogs: number | null;
+  grossProfit: number | null;
+  margin: number | null;
+  costCoverage: number;
 }
 
 export interface AnalyticsTopProducts {
@@ -758,6 +779,9 @@ export interface AnalyticsInventoryItem {
   lowStockThreshold: number;
   price: number;
   stockValue: number;
+  /** D-078 */
+  avgCost: number | null;
+  stockCostValue: number | null;
   lastSoldAt: string | null;
 }
 
@@ -770,6 +794,10 @@ export interface AnalyticsInventory {
     lowStock: number;
     stockUnits: number;
     stockValue: number;
+    /** D-078: Σ tồn x giá vốn (biến thể còn tồn và có giá vốn). */
+    stockCostValue: number;
+    /** D-078: số biến thể còn tồn nhưng chưa có giá vốn. */
+    variantsWithoutCost: number;
     slowMovers: number;
     slowMoversValue: number;
   };
@@ -827,3 +855,56 @@ export type AnalyticsExportReport =
   | "customers"
   | "operations"
   | "inventory";
+
+/** D-071: ghi chú nội bộ trên đơn (chỉ nhân viên thấy). */
+export interface AdminOrderNote {
+  id: string;
+  body: string;
+  createdAt: string;
+  author: { id: string; fullName: string; role: "STAFF" | "ADMIN" | "CUSTOMER" } | null;
+}
+
+/** D-072: GET /admin/orders/print. */
+export interface AdminOrdersPrintResult {
+  orders: AdminOrder[];
+  missing: string[];
+}
+
+/** D-073: nhập CSV sản phẩm (api-contract §12.4b). */
+export type ImportAction =
+  "create_product" | "create_variant" | "update_variant" | "update_product" | "unchanged" | "error";
+
+export interface ImportEntry {
+  line: number;
+  action: ImportAction;
+  productSlug: string | null;
+  sku: string | null;
+  changes?: string[];
+  errors?: Array<{ field: string; message: string }>;
+}
+
+export interface ImportSummary extends Record<ImportAction, number> {
+  rows: number;
+}
+
+export interface ImportPreview {
+  fingerprint: string;
+  fileName: string;
+  canApply: boolean;
+  summary: ImportSummary;
+  entries: ImportEntry[];
+}
+
+export interface ImportResult {
+  fingerprint: string;
+  fileName: string;
+  summary: ImportSummary;
+  applied: {
+    productsCreated: number;
+    productsUpdated: number;
+    variantsCreated: number;
+    variantsUpdated: number;
+    stockMovements: number;
+    unchanged: number;
+  };
+}

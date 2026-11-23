@@ -26,6 +26,17 @@ export function dateOnlyDaysAgo(now: Date, daysAgo: number): Date {
   return d;
 }
 
+/**
+ * D-078: giá vốn bình quân mẫu, TẤT ĐỊNH theo SKU: 55-65% giá niêm yết (không dùng salePrice), làm
+ * tròn 100 VND. Cùng SKU + giá luôn ra cùng số, nên demo/E2E lặp lại được.
+ */
+export function seedAvgCost(sku: string, price: number): number {
+  let h = 0;
+  for (const ch of sku) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const percent = 55 + (h % 11);
+  return Math.max(100, Math.round((price * percent) / 100 / 100) * 100);
+}
+
 const ALT_BY_ROOT: Record<string, (name: string) => string> = {
   'ca-phe-hat': (name) => `Túi cà phê hạt ${name}`,
   'dung-cu-pha-che': (name) => `${name} - dụng cụ pha chế cà phê`,
@@ -90,6 +101,7 @@ async function seedOne(
         lowStockThreshold: v.lowStockThreshold ?? 5,
         weightGram: v.weightGram,
         roastDate,
+        avgCost: seedAvgCost(v.sku, v.price),
         sortOrder: order,
         isActive: true,
         deletedAt: null,

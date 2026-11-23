@@ -2,6 +2,7 @@ import type { Request } from 'express';
 import type { PaymentConfig } from '../../config/payments.js';
 import { asyncHandler } from '../../lib/asyncHandler.js';
 import { AppError } from '../../lib/errors.js';
+import { guardGuestLookup } from '../../lib/orderLookupLock.js';
 import { applyPaymentResult } from './payments.apply.js';
 import { handleMomoIpn, handleVnpayIpn, loadPaymentApplied, momoIpnError } from './payments.ipn.js';
 import { MOMO_RESULT_KEYS, pickMomoParams, verifyMomo } from './momo.js';
@@ -17,11 +18,13 @@ const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 
 export const createVnpay = asyncHandler(async (req, res) => {
   const body = req.body as CreatePaymentBody;
-  const data = await service.createPaymentForOrder(
-    'VNPAY',
-    { code: body.code, phone: body.phone, userId: req.auth?.userId ?? null },
-    req.ip ?? '',
-    { paymentConfig: configOf(req) },
+  const data = await guardGuestLookup(req, body.code, () =>
+    service.createPaymentForOrder(
+      'VNPAY',
+      { code: body.code, phone: body.phone, userId: req.auth?.userId ?? null },
+      req.ip ?? '',
+      { paymentConfig: configOf(req) },
+    ),
   );
   res.json({ data });
 });
@@ -29,22 +32,26 @@ export const createVnpay = asyncHandler(async (req, res) => {
 export const createStripe = asyncHandler(async (req, res) => {
   const body = req.body as CreatePaymentBody;
   const config = configOf(req);
-  const data = await service.createPaymentForOrder(
-    'STRIPE',
-    { code: body.code, phone: body.phone, userId: req.auth?.userId ?? null },
-    req.ip ?? '',
-    { paymentConfig: config, stripeHttp: stripeHttpOf(req, config) ?? undefined },
+  const data = await guardGuestLookup(req, body.code, () =>
+    service.createPaymentForOrder(
+      'STRIPE',
+      { code: body.code, phone: body.phone, userId: req.auth?.userId ?? null },
+      req.ip ?? '',
+      { paymentConfig: config, stripeHttp: stripeHttpOf(req, config) ?? undefined },
+    ),
   );
   res.json({ data });
 });
 
 export const createMomo = asyncHandler(async (req, res) => {
   const body = req.body as CreatePaymentBody;
-  const data = await service.createPaymentForOrder(
-    'MOMO',
-    { code: body.code, phone: body.phone, userId: req.auth?.userId ?? null },
-    req.ip ?? '',
-    { paymentConfig: configOf(req) },
+  const data = await guardGuestLookup(req, body.code, () =>
+    service.createPaymentForOrder(
+      'MOMO',
+      { code: body.code, phone: body.phone, userId: req.auth?.userId ?? null },
+      req.ip ?? '',
+      { paymentConfig: configOf(req) },
+    ),
   );
   res.json({ data });
 });

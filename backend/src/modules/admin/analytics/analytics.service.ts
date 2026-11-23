@@ -1,3 +1,4 @@
+import { profitFigures, type ProfitInputs } from '../../../lib/cost.js';
 import { analyticsPrisma } from '../../../lib/prisma.js';
 import { vnDayStart } from '../admin.schema.js';
 import { vnDateKey } from '../dashboard/dashboard.service.js';
@@ -46,6 +47,12 @@ export interface OverviewDto {
     discountTotal: Compared;
     refundedAmount: Compared;
     newCustomers: Compared;
+    /** D-078: lợi nhuận gộp hàng hóa (chỉ dòng có giá vốn); không tính phí ship/phí cổng thanh toán. */
+    grossProfit: Compared;
+    /** grossProfit / doanh thu hàng hóa thuần (phần có giá vốn), 0..1. */
+    grossMargin: ComparedRate;
+    /** Σ lineTotal dòng có giá vốn / Σ lineTotal, 0..1. */
+    costCoverage: ComparedRate;
   };
   series: SeriesPoint[];
   previousSeries: SeriesPoint[];
@@ -58,6 +65,8 @@ export interface DayRows {
   created: Array<{ d: string; n: number; cancelled: number }>;
   refunds: Array<{ d: string; amount: number }>;
   customers: Array<{ d: string; n: number }>;
+  /** D-078: cộng theo ngày thanh toán (cùng tập đơn với `paid`), đã phân bổ giảm giá theo đơn. */
+  profit: Array<{ d: string } & ProfitInputs>;
 }
 
 interface Totals {
@@ -68,6 +77,7 @@ interface Totals {
   cancelled: number;
   refunded: number;
   newCustomers: number;
+  profit: ProfitInputs;
 }
 
 export const round = (v: number, digits: number) => {
@@ -98,7 +108,15 @@ function totalsFor(rows: DayRows, from: string, to: string): Totals {
     cancelled: 0,
     refunded: 0,
     newCustomers: 0,
+    profit: { lineTotal: 0, costedLineTotal: 0, allocatedDiscount: 0, cogs: 0 },
   };
+  for (const r of rows.profit) {
+    if (!inRange(r.d)) continue;
+    t.profit.lineTotal += r.lineTotal;
+    t.profit.costedLineTotal += r.costedLineTotal;
+    t.profit.allocatedDiscount += r.allocatedDiscount;
+    t.profit.cogs += r.cogs;
+  }
   for (const r of rows.paid) {
     if (!inRange(r.d)) continue;
     t.revenue += r.revenue;
@@ -144,6 +162,10 @@ export function buildOverview(rows: DayRows, range: ResolvedRange, now: Date): O
   const prev = totalsFor(rows, range.previousFrom, range.previousTo);
   const curRate = rate(cur.cancelled, cur.placed);
   const prevRate = rate(prev.cancelled, prev.placed);
+  const curProfit = profitFigures(cur.profit);
+  const prevProfit = profitFigures(prev.profit);
+  const pts = (c: number, p: number, hasPrev: boolean) =>
+    hasPrev ? round((c - p) * 100, 1) : null;
   return {
     range: {
       from: range.from,
@@ -167,6 +189,21 @@ export function buildOverview(rows: DayRows, range: ResolvedRange, now: Date): O
       discountTotal: compared(cur.discount, prev.discount),
       refundedAmount: compared(cur.refunded, prev.refunded),
       newCustomers: compared(cur.newCustomers, prev.newCustomers),
+      grossProfit: compared(curProfit.grossProfit, prevProfit.grossProfit),
+      grossMargin: {
+        current: curProfit.grossMargin,
+        previous: prevProfit.grossMargin,
+        changePts: pts(
+          curProfit.grossMargin,
+          prevProfit.grossMargin,
+          prevProfit.netGoodsRevenue > 0,
+        ),
+      },
+      costCoverage: {
+        current: curProfit.costCoverage,
+        previous: prevProfit.costCoverage,
+        changePts: pts(curProfit.costCoverage, prevProfit.costCoverage, prev.profit.lineTotal > 0),
+      },
     },
     series: seriesFor(rows, buildBuckets(range.from, range.to, range.granularity)),
     previousSeries: seriesFor(
@@ -189,7 +226,7 @@ export async function getOverview(
   const end = vnDayStart(ymdOf(dayNum(range.to) + 1)); // loại trừ
 
   // Một truy vấn mỗi nguồn trên [kỳ trước + kỳ này], GROUP BY ngày VN; tham số hóa, không N+1.
-  const [paid, created, refunds, customers] = await Promise.all([
+  const [paid, created, refunds, customers, profit] = await Promise.all([
     // Doanh thu theo paidAt, định nghĩa D-019.
     analyticsPrisma.$queryRaw<Array<{ d: string; revenue: Raw; n: Raw; discount: Raw }>>`
       SELECT to_char("paidAt" + interval '7 hours', 'YYYY-MM-DD') AS d,
@@ -218,6 +255,31 @@ export async function getOverview(
       FROM "User"
       WHERE "role" = 'CUSTOMER' AND "createdAt" >= ${start} AND "createdAt" < ${end}
       GROUP BY d`,
+    // D-078: gộp dòng hàng theo đơn (MỘT truy vấn, không N+1) rồi theo ngày thanh toán. Giảm giá cấp
+    // đơn phân bổ cho phần dòng có giá vốn theo tỷ lệ lineTotal, làm tròn nửa lên: công thức của
+    // `allocateDiscount` (lib/cost.ts); mọi dòng có giá vốn -> đúng discountTotal.
+    analyticsPrisma.$queryRaw<
+      Array<{ d: string; line_total: Raw; costed_total: Raw; alloc: Raw; cogs: Raw }>
+    >`
+      WITH per_order AS (
+        SELECT o."id", o."paidAt", o."discountTotal"::bigint AS disc,
+          SUM(oi."lineTotal")::bigint AS s,
+          COALESCE(SUM(oi."lineTotal") FILTER (WHERE oi."unitCost" IS NOT NULL), 0)::bigint AS c,
+          COALESCE(SUM(oi."unitCost"::bigint * oi."quantity")
+            FILTER (WHERE oi."unitCost" IS NOT NULL), 0)::bigint AS cogs
+        FROM "Order" o
+        JOIN "OrderItem" oi ON oi."orderId" = o."id"
+        WHERE o."paymentStatus" = 'PAID'
+          AND o."status" NOT IN ('CANCELLED', 'RETURNED')
+          AND o."paidAt" >= ${start} AND o."paidAt" < ${end}
+        GROUP BY o."id"
+      )
+      SELECT to_char("paidAt" + interval '7 hours', 'YYYY-MM-DD') AS d,
+        SUM(s)::bigint AS line_total, SUM(c)::bigint AS costed_total,
+        SUM(CASE WHEN s > 0 THEN (2 * disc * c + s) / (2 * s) ELSE 0 END)::bigint AS alloc,
+        SUM(cogs)::bigint AS cogs
+      FROM per_order
+      GROUP BY d`,
   ]);
 
   return buildOverview(
@@ -231,6 +293,13 @@ export async function getOverview(
       created: created.map((r) => ({ d: r.d, n: num(r.n), cancelled: num(r.cancelled) })),
       refunds: refunds.map((r) => ({ d: r.d, amount: num(r.amount) })),
       customers: customers.map((r) => ({ d: r.d, n: num(r.n) })),
+      profit: profit.map((r) => ({
+        d: r.d,
+        lineTotal: num(r.line_total),
+        costedLineTotal: num(r.costed_total),
+        allocatedDiscount: num(r.alloc),
+        cogs: num(r.cogs),
+      })),
     },
     range,
     now,

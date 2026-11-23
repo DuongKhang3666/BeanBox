@@ -2,6 +2,8 @@ import { api } from "@/lib/api/client";
 import type {
   AdminOrder,
   AdminOrderListItem,
+  AdminOrderNote,
+  AdminOrdersPrintResult,
   AdminOrderListMeta,
   AdminOrderQuery,
   OrderStatusCounts,
@@ -92,4 +94,38 @@ export async function confirmBankTransfer(code: string): Promise<AdminOrder> {
     `/admin/orders/${encodeURIComponent(code)}/bank-transfer/confirm`,
   );
   return data;
+}
+
+/** D-071: ghi chú nội bộ (Staff+ đọc/thêm, Admin xóa). Không có API sửa. */
+export async function listOrderNotes(code: string): Promise<AdminOrderNote[]> {
+  const { data } = await api.get<AdminOrderNote[]>(
+    `/admin/orders/${encodeURIComponent(code)}/notes`,
+  );
+  return data;
+}
+
+export async function addOrderNote(code: string, body: string): Promise<AdminOrderNote> {
+  const { data } = await api.post<AdminOrderNote>(
+    `/admin/orders/${encodeURIComponent(code)}/notes`,
+    { body },
+  );
+  return data;
+}
+
+export async function deleteOrderNote(code: string, noteId: string): Promise<void> {
+  await api.delete<void>(
+    `/admin/orders/${encodeURIComponent(code)}/notes/${encodeURIComponent(noteId)}`,
+  );
+}
+
+/** Tối đa mã đơn mỗi lần in hàng loạt (D-072); khớp server. */
+export const PRINT_MAX_CODES = 50;
+
+/** D-072: dữ liệu phiếu in nhiều đơn trong 1 request; mã không tồn tại nằm ở `missing`. */
+export async function printAdminOrders(codes: string[]): Promise<AdminOrdersPrintResult> {
+  const { data, meta } = await api.get<AdminOrder[], { missing?: string[] }>(
+    "/admin/orders/print",
+    { query: { codes: codes.join(",") } },
+  );
+  return { orders: data, missing: meta?.missing ?? [] };
 }

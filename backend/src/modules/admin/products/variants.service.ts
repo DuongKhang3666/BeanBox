@@ -35,6 +35,11 @@ const VARIANT_AUDIT_KEYS = [
   'isActive',
 ] as const;
 
+/** Staff không được ghi giá vốn (D-078). */
+function assertCanSetCost(isAdmin: boolean | undefined): void {
+  if (!isAdmin) throw new AppError(403, 'FORBIDDEN', 'Chỉ Admin được sửa giá vốn');
+}
+
 const LAST_ACTIVE_MSG = 'Hãy chuyển sản phẩm sang Nháp trước khi ngừng bán biến thể cuối cùng';
 
 function mapSkuViolation(e: unknown): unknown {
@@ -44,12 +49,32 @@ function mapSkuViolation(e: unknown): unknown {
   return e;
 }
 
+/** Audit `variant.cost_set`: giá vốn đặt tay (giá trị cũ/mới); chỉ Admin đọc được audit. */
+async function writeCostAudit(
+  tx: Prisma.TransactionClient,
+  actorId: string,
+  variantId: string,
+  from: number | null,
+  to: number | null,
+  ip: string | null,
+): Promise<void> {
+  await writeAudit(tx, {
+    actorId,
+    action: 'variant.cost_set',
+    entity: 'ProductVariant',
+    entityId: variantId,
+    diff: { avgCost: [from, to] },
+    ip,
+  });
+}
+
 export async function createVariant(
   productId: string,
   input: CreateVariantInput,
-  { actorId, ip }: Actor,
+  { actorId, ip, isAdmin }: Actor,
 ): Promise<AdminVariantDto> {
   checkId(productId, productNotFound);
+  if (input.avgCost !== undefined) assertCanSetCost(isAdmin);
   try {
     return await prisma.$transaction(async (tx) => {
       await lockLiveProduct(tx, productId, 'NO KEY UPDATE');
@@ -69,6 +94,7 @@ export async function createVariant(
           roastDate: input.roastDate,
           sortOrder: input.sortOrder,
           isActive: input.isActive,
+          avgCost: input.avgCost ?? null,
         },
       });
       if (input.stock > 0) {
@@ -93,7 +119,8 @@ export async function createVariant(
         diff: diffFields(nulls, row, VARIANT_AUDIT_KEYS),
         ip,
       });
-      return toAdminVariant(row);
+      if (row.avgCost !== null) await writeCostAudit(tx, actorId, row.id, null, row.avgCost, ip);
+      return toAdminVariant(row, new Date(), isAdmin === true);
     }, TX_OPTIONS);
   } catch (e) {
     throw mapSkuViolation(e);
@@ -137,9 +164,10 @@ async function assertNotLastActive(
 export async function updateVariant(
   id: string,
   input: UpdateVariantInput,
-  { actorId, ip }: Actor,
+  { actorId, ip, isAdmin }: Actor,
 ): Promise<AdminVariantDto> {
   checkId(id, variantNotFound);
+  if (input.avgCost !== undefined) assertCanSetCost(isAdmin);
   try {
     return await prisma.$transaction(async (tx) => {
       const { productId, productStatus } = await lockVariantAndProduct(tx, id);
@@ -171,6 +199,7 @@ export async function updateVariant(
       if (input.roastDate !== undefined) data.roastDate = input.roastDate;
       if (input.sortOrder !== undefined) data.sortOrder = input.sortOrder;
       if (input.isActive !== undefined) data.isActive = input.isActive;
+      if (input.avgCost !== undefined) data.avgCost = input.avgCost;
 
       const row = await tx.productVariant.update({ where: { id }, data });
       await refreshProductDenorm(tx, productId);
@@ -185,7 +214,10 @@ export async function updateVariant(
           ip,
         });
       }
-      return toAdminVariant(row);
+      if (input.avgCost !== undefined && row.avgCost !== before.avgCost) {
+        await writeCostAudit(tx, actorId, id, before.avgCost, row.avgCost, ip);
+      }
+      return toAdminVariant(row, new Date(), isAdmin === true);
     }, TX_OPTIONS);
   } catch (e) {
     throw mapSkuViolation(e);

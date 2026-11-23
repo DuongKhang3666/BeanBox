@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useMemo, useState } from "react";
-import { buttonClasses } from "@/components/ui/Button";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Button, buttonClasses } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { FieldError, Input, Label } from "@/components/ui/Input";
@@ -21,7 +21,7 @@ import { cn } from "@/lib/cn";
 import { formatVND } from "@/lib/format";
 import type { AdminOrderListItem, AdminOrderQuery, OrderStatusCounts } from "@/types/admin";
 import type { OrderStatus, PaymentMethod } from "@/types/order";
-import { ALL_ORDER_STATUSES, listAdminOrders } from "../api/orders";
+import { ALL_ORDER_STATUSES, PRINT_MAX_CODES, listAdminOrders } from "../api/orders";
 import { adminErrorMessage } from "../errors";
 import { formatVnDateTime } from "../format";
 import {
@@ -68,13 +68,49 @@ function ListSkeleton() {
 
 const th = "px-3 py-3 font-medium";
 
-function OrdersTable({ orders }: { orders: AdminOrderListItem[] }) {
+const checkboxClass =
+  "h-5 w-5 rounded border-coffee-500 text-moss-700 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-moss-600";
+
+/** D-071: chỉ báo số ghi chú nội bộ của đơn. */
+function NoteCount({ n }: { n?: number }) {
+  if (!n) return null;
+  return (
+    <span className="ml-2 inline-flex items-center rounded-full bg-cream-200 px-2 py-0.5 text-xs font-medium text-coffee-900">
+      {n} ghi chú
+    </span>
+  );
+}
+
+interface Selection {
+  selected: ReadonlySet<string>;
+  toggle: (code: string) => void;
+  togglePage: (codes: string[], on: boolean) => void;
+}
+
+function OrdersTable({ orders, sel }: { orders: AdminOrderListItem[]; sel: Selection }) {
+  const pageCodes = orders.map((o) => o.code);
+  const chosen = pageCodes.filter((c) => sel.selected.has(c)).length;
+  const allOnPage = chosen === pageCodes.length;
+  const headRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (headRef.current) headRef.current.indeterminate = chosen > 0 && !allOnPage;
+  }, [chosen, allOnPage]);
   return (
     <div className="relative hidden overflow-x-auto rounded-2xl border border-coffee-200 bg-white md:block">
       <table className="w-full text-left text-sm text-coffee-900">
         <caption className="sr-only">Danh sách đơn hàng</caption>
         <thead className="bg-cream-50 text-coffee-700">
           <tr>
+            <th scope="col" className="w-10 px-3 py-3">
+              <input
+                ref={headRef}
+                type="checkbox"
+                className={checkboxClass}
+                aria-label="Chọn tất cả đơn trên trang này"
+                checked={allOnPage}
+                onChange={(e) => sel.togglePage(pageCodes, e.target.checked)}
+              />
+            </th>
             <th scope="col" className={th}>
               Mã đơn
             </th>
@@ -105,12 +141,22 @@ function OrdersTable({ orders }: { orders: AdminOrderListItem[] }) {
           {orders.map((o) => (
             <tr key={o.code}>
               <td className="px-3 py-3">
+                <input
+                  type="checkbox"
+                  className={checkboxClass}
+                  aria-label={`Chọn đơn ${o.code}`}
+                  checked={sel.selected.has(o.code)}
+                  onChange={() => sel.toggle(o.code)}
+                />
+              </td>
+              <td className="px-3 py-3">
                 <Link
                   href={`/admin/don-hang/${encodeURIComponent(o.code)}`}
                   className="font-mono font-bold text-moss-800 underline"
                 >
                   {o.code}
                 </Link>
+                <NoteCount n={o.noteCount} />
               </td>
               <td className="whitespace-nowrap px-3 py-3">{formatVnDateTime(o.createdAt)}</td>
               <td className="px-3 py-3">
@@ -141,18 +187,31 @@ function OrdersTable({ orders }: { orders: AdminOrderListItem[] }) {
   );
 }
 
-function OrderCards({ orders }: { orders: AdminOrderListItem[] }) {
+function OrderCards({ orders, sel }: { orders: AdminOrderListItem[]; sel: Selection }) {
   return (
     <ul className="space-y-3 md:hidden">
       {orders.map((o) => (
-        <li key={o.code}>
+        <li key={o.code} className="space-y-2">
+          <label className="flex min-h-11 items-center gap-3 rounded-lg border border-coffee-200 bg-white px-4 text-sm text-coffee-900">
+            <input
+              type="checkbox"
+              className={checkboxClass}
+              aria-label={`Chọn đơn ${o.code}`}
+              checked={sel.selected.has(o.code)}
+              onChange={() => sel.toggle(o.code)}
+            />
+            Chọn để in phiếu
+          </label>
           <Link
             href={`/admin/don-hang/${encodeURIComponent(o.code)}`}
             className="block space-y-2 rounded-2xl border border-coffee-200 bg-white p-4 hover:border-coffee-400 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-moss-600"
           >
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
-                <p className="font-mono font-bold text-coffee-900">{o.code}</p>
+                <p className="font-mono font-bold text-coffee-900">
+                  {o.code}
+                  <NoteCount n={o.noteCount} />
+                </p>
                 <p className="text-sm text-coffee-700">{formatVnDateTime(o.createdAt)}</p>
               </div>
               <div className="flex flex-col items-end gap-1">
@@ -177,6 +236,45 @@ function OrderCards({ orders }: { orders: AdminOrderListItem[] }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+function PrintBar({ codes, onClear }: { codes: string[]; onClear: () => void }) {
+  if (codes.length === 0) return null;
+  const tooMany = codes.length > PRINT_MAX_CODES;
+  return (
+    <div
+      role="region"
+      aria-label="Thao tác với đơn đã chọn"
+      className="sticky top-2 z-10 mb-3 flex flex-wrap items-center gap-3 rounded-2xl border border-moss-600/40 bg-moss-50 px-4 py-3"
+    >
+      <span aria-live="polite" className="text-sm font-medium text-coffee-900">
+        Đã chọn {codes.length} đơn
+      </span>
+      {tooMany ? (
+        <span role="alert" className="text-sm text-danger-600">
+          Chỉ in tối đa {PRINT_MAX_CODES} đơn mỗi lần, hãy bỏ bớt {codes.length - PRINT_MAX_CODES}{" "}
+          đơn.
+        </span>
+      ) : null}
+      <div className="ml-auto flex items-center gap-2">
+        {tooMany ? (
+          <Button size="sm" disabled>
+            {`In phiếu (${codes.length})`}
+          </Button>
+        ) : (
+          <Link
+            href={`/admin/don-hang/in-hang-loat?codes=${codes.map(encodeURIComponent).join(",")}`}
+            className={buttonClasses("primary", "sm")}
+          >
+            {`In phiếu (${codes.length})`}
+          </Link>
+        )}
+        <Button size="sm" variant="outline" onClick={onClear}>
+          Bỏ chọn
+        </Button>
+      </div>
+    </div>
   );
 }
 
@@ -311,6 +409,21 @@ export function AdminOrders() {
   const [fromInput, setFromInput] = useState(filters.from ?? "");
   const [toInput, setToInput] = useState(filters.to ?? "");
   const [dateError, setDateError] = useState<string | null>(null);
+  // D-072: mã đơn đã chọn để in hàng loạt, giữ khi đổi trang/bộ lọc (in tối đa PRINT_MAX_CODES).
+  const [selectedCodes, setSelectedCodes] = useState<string[]>([]);
+  const sel: Selection = {
+    selected: new Set(selectedCodes),
+    toggle: (code) =>
+      setSelectedCodes((cur) =>
+        cur.includes(code) ? cur.filter((c) => c !== code) : [...cur, code],
+      ),
+    togglePage: (codes, on) =>
+      setSelectedCodes((cur) =>
+        on
+          ? [...cur, ...codes.filter((c) => !cur.includes(c))]
+          : cur.filter((c) => !codes.includes(c)),
+      ),
+  };
 
   // Debounce ô tìm: chỉ cập nhật URL khi rỗng (xóa lọc) hoặc >= 2 ký tự.
   useDebouncedUrlInput(
@@ -374,8 +487,9 @@ export function AdminOrders() {
     body = (
       <>
         <p className="mb-3 text-sm text-coffee-700">{meta.total} đơn hàng</p>
-        <OrdersTable orders={data} />
-        <OrderCards orders={data} />
+        <PrintBar codes={selectedCodes} onClear={() => setSelectedCodes([])} />
+        <OrdersTable orders={data} sel={sel} />
+        <OrderCards orders={data} sel={sel} />
         <Pager filters={filters} page={meta.page} totalPages={meta.totalPages} />
       </>
     );

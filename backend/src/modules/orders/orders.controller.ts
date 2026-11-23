@@ -1,6 +1,7 @@
 import type { Request, RequestHandler } from 'express';
 import type { PaymentConfig } from '../../config/payments.js';
 import { asyncHandler } from '../../lib/asyncHandler.js';
+import { guardGuestLookup } from '../../lib/orderLookupLock.js';
 import type { CaptchaConfig, TurnstileVerifier } from '../../lib/turnstile.js';
 import type { StripeHttp } from '../payments/stripe.js';
 import { identityOf } from '../cart/cart.controller.js';
@@ -60,21 +61,30 @@ export const getOrder = asyncHandler(async (req, res) => {
   res.json({ data: order });
 });
 
+export const reorder = asyncHandler(async (req, res) => {
+  res.json({ data: await service.reorderForUser(String(req.params.code ?? ''), req.auth!.userId) });
+});
+
 export const trackOrder = asyncHandler(async (req, res) => {
   const q = req.query as unknown as TrackOrderQuery;
   res.json({
-    data: await service.trackOrder(q.code, q.phone, { paymentConfig: paymentConfigOf(req) }),
+    data: await guardGuestLookup(req, q.code, () =>
+      service.trackOrder(q.code, q.phone, { paymentConfig: paymentConfigOf(req) }),
+    ),
   });
 });
 
 export const cancelOrder = asyncHandler(async (req, res) => {
-  const order = await service.cancelOrderForCustomer({
-    rawCode: String(req.params.code ?? ''),
-    userId: req.auth?.userId ?? null,
-    input: req.body as CancelOrderInput,
-    paymentConfig: paymentConfigOf(req),
-    stripeHttp: req.app.locals.stripeHttp as StripeHttp | undefined,
-  });
+  const rawCode = String(req.params.code ?? '');
+  const order = await guardGuestLookup(req, rawCode, () =>
+    service.cancelOrderForCustomer({
+      rawCode,
+      userId: req.auth?.userId ?? null,
+      input: req.body as CancelOrderInput,
+      paymentConfig: paymentConfigOf(req),
+      stripeHttp: req.app.locals.stripeHttp as StripeHttp | undefined,
+    }),
+  );
   res.json({ data: order });
 });
 
@@ -88,18 +98,24 @@ export const listMyOrders = asyncHandler(async (req, res) => {
 
 export const getBankTransfer = asyncHandler(async (req, res) => {
   const q = req.query as BankTransferOwnerInput;
-  const data = await bankTransfer.getBankTransferInstructions(
-    { code: String(req.params.code ?? ''), phone: q.phone, userId: req.auth?.userId ?? null },
-    paymentConfigOf(req),
+  const code = String(req.params.code ?? '');
+  const data = await guardGuestLookup(req, code, () =>
+    bankTransfer.getBankTransferInstructions(
+      { code, phone: q.phone, userId: req.auth?.userId ?? null },
+      paymentConfigOf(req),
+    ),
   );
   res.json({ data });
 });
 
 export const claimBankTransfer = asyncHandler(async (req, res) => {
   const body = req.body as BankTransferOwnerInput;
-  const data = await bankTransfer.claimBankTransfer(
-    { code: String(req.params.code ?? ''), phone: body.phone, userId: req.auth?.userId ?? null },
-    paymentConfigOf(req),
+  const code = String(req.params.code ?? '');
+  const data = await guardGuestLookup(req, code, () =>
+    bankTransfer.claimBankTransfer(
+      { code, phone: body.phone, userId: req.auth?.userId ?? null },
+      paymentConfigOf(req),
+    ),
   );
   res.json({ data });
 });

@@ -303,4 +303,30 @@ describe("TrackOrder", () => {
     ).toBeInTheDocument();
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
+
+  it("429 ORDER_LOOKUP_LOCKED khi tra cứu -> thông báo khóa kèm thời gian chờ theo phút", async () => {
+    stubFetch({
+      "GET /orders/track": () => errRes(429, "ORDER_LOOKUP_LOCKED", "x", { retryAfterSec: 840 }),
+    });
+    const u = userEvent.setup();
+    render(<TrackOrder />);
+    await search_(u);
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Bạn đã nhập sai thông tin đơn hàng quá nhiều lần.");
+    expect(alert).toHaveTextContent("thử lại sau khoảng 14 phút");
+  });
+
+  it("hủy bị khóa ORDER_LOOKUP_LOCKED -> báo khóa trong hộp thoại hủy", async () => {
+    stubFetch({
+      "GET /orders/track": () => jsonRes(200, { data: makeTrackedOrder() }),
+      [`POST /orders/${CODE}/cancel`]: () =>
+        errRes(429, "ORDER_LOOKUP_LOCKED", "x", { retryAfterSec: 30 }),
+    });
+    const u = userEvent.setup();
+    render(<TrackOrder />);
+    await search_(u);
+    await u.click(await screen.findByRole("button", { name: "Hủy đơn" }));
+    await u.click(screen.getByRole("button", { name: "Xác nhận hủy đơn" }));
+    expect(await screen.findByText(/thử lại sau khoảng 1 phút/)).toBeInTheDocument();
+  });
 });

@@ -1,6 +1,9 @@
 # BeanBox – API Contract
 
-> Phiên bản 0.25 · 2026-11-23 · **Nguồn sự thật cho FE và BE.** Đổi contract phải sửa file này trước và nêu trong báo cáo.
+> Phiên bản 0.28 · 2026-11-23 · **Nguồn sự thật cho FE và BE.** Đổi contract phải sửa file này trước và nêu trong báo cáo.
+> Thay đổi 0.28 (D-078; Đợt 4 nhóm 4, R-23 giá vốn bình quân gia quyền di động và lợi nhuận gộp): (1) §12.2 `POST /admin/inventory/adjust` nhận `unitCost` (đơn giá nhập, VND, số nguyên 0..100.000.000): Admin BẮT BUỘC khi `reason = RESTOCK` (thiếu -> 400 field `unitCost`), chỉ dùng với `RESTOCK` (lý do khác -> 400), Staff gửi `unitCost` -> 403 `FORBIDDEN` (Staff vẫn nhập hàng được, không đơn giá, giá vốn giữ nguyên). Mục "Giá vốn bình quân" mới ở §12.2 mô tả công thức. (2) CHỈ ADMIN nhận thêm: `InventoryItem.avgCost`, `InventoryMovementDto.unitCost`, `AdminVariant.avgCost` (`number|null`); với Staff các khóa này KHÔNG xuất hiện. `POST /admin/products/:id/variants` và `PATCH /admin/variants/:id` nhận `avgCost` (Admin; Staff gửi -> 403) + audit `variant.cost_set`. (3) §12.4b CSV sản phẩm thêm cột cuối `avg_cost` (xuất luôn có; nhập: cột có thể vắng, vắng = không đụng giá vốn). (4) §16.1 `kpis` thêm `grossProfit` (Compared), `grossMargin` và `costCoverage` (ComparedRate); §16.2.2 top-products thêm `cogs`, `grossProfit`, `margin`, `costCoverage`; §16.3 inventory `summary` thêm `stockCostValue`, `variantsWithoutCost`, mỗi item thêm `avgCost`, `stockCostValue`; §16.4 CSV `overview`, `top-products`, `inventory` thêm dòng/cột tương ứng (cột mới nằm CUỐI). (5) Không route mới; không đổi DTO đơn hàng (khách, Staff, Admin không thấy `unitCost` ở bất kỳ API đơn nào, chỉ analytics Admin dùng). Migration `d078_avg_cost` (3 cột nullable, không backfill). Thay đổi CỘNG THÊM.
+> Thay đổi 0.27 (D-075, D-076, D-077; Đợt 4 nhóm 3, R-09/R-05/"Mua lại"): (1) §1 Cache: catalog công khai (`GET/HEAD` `/products`, `/products/:slug`, `/products/compare`, `/products/:slug/bought-together`, `/categories`, `/categories/:slug`, `/brands`, `/search/suggest`) trả `Cache-Control: public, max-age=30, s-maxage=60, stale-while-revalidate=120` CHỈ khi thành công; mọi lỗi 4xx/5xx (kể cả 404, 400) là `no-store`; `/uploads` tên file ngẫu nhiên do server sinh -> `public, max-age=31536000, immutable`, tên khác (ảnh seed) -> `public, max-age=86400`. (2) §2 mã lỗi mới `429 ORDER_LOOKUP_LOCKED` + §9.4 (mục "Khóa tạm theo mã đơn"): khóa tạm theo mã đơn cho thao tác khách vãng lai (5 lần sai trong 15 phút -> khóa 15 phút), có `details.retryAfterSec` và header `Retry-After`. (3) §6.7 mới `POST /me/orders/:code/reorder` ("Mua lại", Auth). Thay đổi CỘNG THÊM: không đổi trường hiện có; hành vi cache của catalog thành công đổi từ "không đặt header" sang header công khai ở trên. Không cần migration.
+> Thay đổi 0.26 (D-071, D-072, D-073; Đợt 4 nhóm 1, R-21 công cụ vận hành): (1) §12.1b mới: ghi chú nội bộ trên đơn `GET/POST /admin/orders/:code/notes`, `DELETE /admin/orders/:code/notes/:noteId` (chỉ Admin), và `GET /admin/orders/print?codes=` (dữ liệu in hàng loạt, tối đa 50 mã). `AdminOrderListItem` thêm `noteCount: number`. (2) §12.4b mới: `GET /admin/products/export` và nhập CSV 2 bước `POST /admin/products/import/preview` / `commit` (chỉ Admin). (3) §2 mã lỗi mới: `INVALID_CSV` (400), `FINGERPRINT_MISMATCH` (409), `IMPORT_HAS_ERRORS` (422). Thay đổi CỘNG THÊM, không đổi trường/endpoint hiện có.
 > Thay đổi 0.25 (D-068, D-070; Đợt 3 mục 3B): (1) §5 `User` (mọi response cấp phiên, `GET/PATCH /me`) thêm `twoFactorRequired: boolean` = `REQUIRE_ADMIN_2FA` bật VÀ role `ADMIN` VÀ chưa bật 2FA (FE dùng để hiện màn hình "Cần bật xác thực 2 lớp"). (2) §2 mã lỗi mới `403 ADMIN_TWO_FACTOR_REQUIRED`: khi `REQUIRE_ADMIN_2FA=true`, ADMIN chưa bật 2FA gọi BẤT KỲ route `/admin/*` nhận 403 mã này (kiểm sau xác thực và phân quyền Staff+, nên không có token vẫn 401, CUSTOMER vẫn 403 `FORBIDDEN`); `/me`, `/me/2fa/*`, `/auth/*` không bị ảnh hưởng; STAFF không bị áp; đăng nhập không đổi. Mã `TWO_FACTOR_SETUP_REQUIRED` của D-063 (409, "chưa gọi setup") KHÁC nghĩa nên không dùng lại. (3) §2 mã lỗi mới `409 TRACKING_NUMBER_TAKEN`; §12.1 `trackingNumber` được chuẩn hóa (trim; chuỗi rỗng hoặc `null` = không nhập, KHÔNG còn 400 như 0.24) và mã vận đơn là duy nhất toàn bảng đơn. (4) Migration `d068_tracking_number_unique`. Env mới `REQUIRE_ADMIN_2FA` (mặc định false). Không thêm route.
 > Thay đổi 0.24 (D-065; Đợt 2 mục 5, quyền dữ liệu cá nhân): (1) §6.6 mới: `DELETE /me` (CUSTOMER tự xóa/ẩn danh hóa tài khoản, body `{ password, confirmText }`, 204) và `GET /me/export` (mọi role, tải file JSON, limiter riêng 5 lần/giờ/người dùng). (2) §2 mã lỗi mới `409 ACTIVE_ORDERS_EXIST` và `409 ACCOUNT_DELETED`; dùng lại `INVALID_PASSWORD`, `ACCOUNT_LOCKED`, `FORBIDDEN`, `VALIDATION_ERROR`, `RATE_LIMITED`. (3) §14.4 action audit mới `user.self_delete`, `user.export`. (4) §14.10 item người dùng admin thêm `deleted: boolean`; PATCH status/role và reset 2FA trên tài khoản đã xóa -> 409 `ACCOUNT_DELETED`. (5) Tên tác giả đánh giá của tài khoản đã xóa là "Người dùng đã xóa" (§14.1). (6) Migration `d065_user_deleted_at` thêm `User.deletedAt` (nullable). Không đổi route hiện có.
 > Thay đổi 0.23 (D-064; Đợt 2 mục 4, SEO): `ProductListItem` (§4, trả bởi `GET /products` §4.3 và mọi endpoint dùng chung kiểu này: bought-together, wishlist, ...) thêm `updatedAt` (ISO 8601 UTC, = `Product.updatedAt`). Thay đổi CỘNG THÊM, không đổi trường hiện có, không cần migration. FE dùng làm `lastmod` của sitemap. Lưu ý: `Product.updatedAt` đổi khi sửa sản phẩm, không nhất thiết khi đổi biến thể/tồn kho.
@@ -43,15 +46,15 @@
 5. [Auth](#5-auth)
     - 5.2 Đăng nhập (kể cả bước 1 khi bật 2FA) · 5.9 Đăng nhập bước 2 (2FA)
 6. [Me (hồ sơ & địa chỉ)](#6-me-hồ-sơ--địa-chỉ)
-    - 6.5 Xác thực 2 lớp (2FA) của chính mình · 6.6 Dữ liệu cá nhân: xóa tài khoản và xuất dữ liệu
+    - 6.5 Xác thực 2 lớp (2FA) của chính mình · 6.6 Dữ liệu cá nhân: xóa tài khoản và xuất dữ liệu · 6.7 Mua lại
 7. [Locations](#7-locations)
 8. [Cart](#8-cart)
 9. [Checkout & Orders](#9-checkout--orders)
-    - 9.6 Chuyển khoản / VietQR · 9.7 Vận chuyển giả lập và hành trình mô phỏng
+    - 9.4 Khóa tạm theo mã đơn (D-076) · 9.6 Chuyển khoản / VietQR · 9.7 Vận chuyển giả lập và hành trình mô phỏng
 10. [Quy tắc tính giá](#10-quy-tắc-tính-giá)
 11. [Máy trạng thái đơn hàng](#11-máy-trạng-thái-đơn-hàng)
 12. [Admin (M4)](#12-admin-m4)
-    - 12.0 Quy ước chung (kể cả bắt buộc 2FA cho Admin) · 12.1 Đơn hàng (mã vận đơn duy nhất)
+    - 12.0 Quy ước chung (kể cả bắt buộc 2FA cho Admin) · 12.1 Đơn hàng (mã vận đơn duy nhất) · 12.1b Ghi chú nội bộ và in hàng loạt · 12.2 Tồn kho (kể cả giá vốn bình quân, D-078) · 12.4b Xuất/nhập CSV sản phẩm
 13. [Thanh toán online, mã giảm giá admin, hoàn tiền (M5)](#13-thanh-toán-online-mã-giảm-giá-admin-hoàn-tiền-m5)
     - 13.10 Cổng giả (VNPay giả, `/mock-gateway`) · 13.11 MoMo giả
 14. [Hoàn thiện v1 (M6, M6b)](#14-hoàn-thiện-v1-m6-m6b)
@@ -109,7 +112,7 @@ Phân trang: query `page` (>= 1, mặc định 1), `pageSize` (1–100, mặc đ
 
 **Rate limit.** Chung 100 req/phút/IP (mặc định; chỉnh được bằng env `GENERAL_RATE_LIMIT_PER_MIN`, số nguyên dương; E2E/CI đặt 1000, production giữ mặc định). Nhóm nhạy cảm 5 req/phút/IP (chỉnh được bằng env `AUTH_RATE_LIMIT_PER_MIN`, số nguyên dương, mặc định 5; E2E/CI đặt 30, production giữ 5): `POST /auth/login`, `/auth/register`, `/auth/forgot-password`, `/auth/reset-password`, `/auth/change-password`, `POST /orders/:code/cancel` (guest), `GET /orders/track` (10/phút). Ba limiter riêng cho mã giảm giá và đặt đơn (D-011): `POST /cart/apply-coupon` 10/phút, `POST /checkout/quote` 30/phút, `POST /orders` 10/phút (từ 0.6 cấu hình được qua env `COUPON_RATE_LIMIT_PER_MIN`, `QUOTE_RATE_LIMIT_PER_MIN`, `ORDER_RATE_LIMIT_PER_MIN`, mặc định giữ nguyên, D-016); endpoint thanh toán có limiter riêng (§13); `GET /admin/analytics/export` có limiter riêng 10/phút/IP (env `EXPORT_RATE_LIMIT_PER_MIN`, đặt sau bước xác thực admin, §16.4); mỗi limiter có store riêng, theo IP, kể cả request có Bearer (và không miễn `X-Internal-Secret`), đặt trước bước xác thực. Vượt -> 429 `RATE_LIMITED` + header `Retry-After` (giây) và `error.details: { "retryAfterSec": <int> }` (cùng giá trị với header). Response có `RateLimit-Limit/Remaining/Reset`. IP client xác định theo `TRUST_PROXY` (D-009); request SSR nội bộ có `X-Internal-Secret` hợp lệ được miễn rate limit chung, không miễn nhóm nhạy cảm (xem `architecture.md` §3).
 
-**Cache.** Mọi response dưới `/api/v1` mặc định có `Cache-Control: no-store` (kể cả lỗi 4xx/5xx), để dữ liệu riêng tư (`/auth/*`, `/me*`, `/cart*`, `/checkout/*`, `/orders*`, `/payments/*`, `/contact`, `/admin/*`, `GET /products/:slug/reviews/me`, wishlist...) không bị cache trung gian/trình duyệt. Ngoại lệ: các GET/HEAD công khai không phụ thuộc người dùng không bị ép header: `/categories`, `/categories/:slug`, `/brands`, `/products`, `/products/:slug`, `GET /products/compare`, `GET /products/:slug/reviews` (danh sách công khai), `/search/suggest`, `/locations/*`, `/settings/public`, `/health*`; các route này tự quyết `Cache-Control` (ví dụ `public, max-age=300` ở `/settings/public`), và Next.js ISR của storefront dựa vào đó. `/uploads` (ảnh tĩnh) không thuộc nhóm này (`max-age` 1 giờ).
+**Cache.** Mọi response dưới `/api/v1` mặc định có `Cache-Control: no-store` (kể cả lỗi 4xx/5xx), để dữ liệu riêng tư (`/auth/*`, `/me*`, `/cart*`, `/checkout/*`, `/orders*`, `/payments/*`, `/contact`, `/admin/*`, `GET /products/:slug/reviews/me`, wishlist...) không bị cache trung gian/trình duyệt. Ngoại lệ: các GET/HEAD công khai không phụ thuộc người dùng: `/categories`, `/categories/:slug`, `/brands`, `/products`, `/products/:slug`, `GET /products/compare`, `GET /products/:slug/bought-together`, `GET /products/:slug/reviews` (danh sách công khai), `/search/suggest`, `/locations/*`, `/settings/public`, `/health*`. **Catalog (D-075):** các route catalog (trừ reviews/locations/settings/health) trả `Cache-Control: public, max-age=30, s-maxage=60, stale-while-revalidate=120` khi thành công; chúng không đọc người gọi (không `optionalAuth`, không giá/wishlist theo người dùng) nên một bản cache dùng chung là đúng, và request kèm `Authorization` vẫn nhận cùng header. Response lỗi (4xx/5xx, kể cả 404 slug không tồn tại và 400 query sai) luôn `no-store` (errorHandler ghi đè) nên lỗi không bao giờ bị cache công khai. Dữ liệu catalog có thể cũ tối đa khoảng 30 giây ở trình duyệt, 60 giây ở CDN (+120 giây khi revalidate nền); giỏ/checkout/đặt hàng luôn tính lại giá và tồn ở server. `/settings/public` và `/locations/*` tự đặt header riêng (ví dụ `public, max-age=300`), `/health*` không bị ép `no-store`; Next.js ISR của storefront dựa vào đó. **`/uploads` (D-075):** ảnh do server sinh tên ngẫu nhiên (32 ký tự hex + `.jpg|.png|.webp`, nội dung không bao giờ đổi) -> `public, max-age=31536000, immutable`; tên khác (ví dụ ảnh seed `/uploads/seed/*.svg`) -> `public, max-age=86400`; vẫn `X-Content-Type-Options: nosniff`, dotfile bị từ chối. Cài đặt cửa hàng đọc trong tiến trình được cache 30 giây và xóa ngay khi admin lưu (`PUT /admin/settings`); đường tạo đơn (trong transaction) đọc trực tiếp DB, không dùng cache.
 
 Ở production có thêm rate limit ở edge (Caddy, D-026) theo IP, độc lập với các limiter trên (mặc định `POST /auth/*` 30/phút, `/api/v1/*` 300/phút). Lỗi do chính edge sinh ra ở `/api/v1/*` cũng theo format lỗi ở trên: 429 `RATE_LIMITED` (giữ `Retry-After`), 413 `PAYLOAD_TOO_LARGE` ở `/api/v1/admin/uploads*` và `VALIDATION_ERROR` ở các path khác khi thân request quá lớn, 502/503/504 `SERVICE_UNAVAILABLE` khi backend không phản hồi. Chi tiết: `deployment.md`.
 
@@ -128,6 +131,7 @@ Phân trang: query `page` (>= 1, mặc định 1), `pageSize` (1–100, mặc đ
 | 400  | `INVALID_PASSWORD`           | Mật khẩu hiện tại không đúng (đổi mật khẩu)                                                                                                                                                  |
 | 400  | `PAYMENT_SIGNATURE_INVALID`  | Chữ ký VNPay return / Stripe webhook sai hoặc quá hạn (§13.3, §13.4)                                                                                                                         |
 | 400  | `CAPTCHA_FAILED`             | Captcha form liên hệ (§14.11, D-028) hoặc captcha đặt đơn của khách vãng lai (§9.2, D-057) thiếu hoặc không hợp lệ                                                                           |
+| 400  | `INVALID_CSV`                | File CSV nhập sản phẩm sai ở cấp file: không phải UTF-8, thiếu/thừa/lặp cột tiêu đề, quá 2000 dòng, ngoặc kép hỏng, thiếu body hoặc sai `Content-Type` (§12.4b, D-073); `message` tiếng Việt nêu lý do |
 | 400  | `TWO_FACTOR_INVALID`         | Mã 2FA/mã dự phòng sai hoặc đã dùng ở `/me/2fa/*` (status 400; ở đăng nhập bước 2 là 401, §5.9); tính vào `failedLoginCount` (D-063)                                                           |
 | 401  | `UNAUTHORIZED`               | Thiếu/hết hạn/sai access token                                                                                                                                                               |
 | 401  | `INVALID_CREDENTIALS`        | Sai email hoặc mật khẩu (thông báo chung, không nói cái nào sai)                                                                                                                             |
@@ -135,6 +139,8 @@ Phân trang: query `page` (>= 1, mặc định 1), `pageSize` (1–100, mặc đ
 | 401  | `TWO_FACTOR_INVALID`         | Đăng nhập bước 2: mã TOTP/mã dự phòng sai, hoặc bước đã dùng (chống dùng lại); thông báo chung; tính vào `failedLoginCount`/khóa tạm (§5.9)                                                  |
 | 401  | `TWO_FACTOR_CHALLENGE_INVALID` | Thử thách đăng nhập 2 bước không tồn tại, hết hạn (5 phút), đã dùng, hoặc hết 5 lượt thử; phải đăng nhập lại (§5.9)                                                                        |
 | 403  | `ADMIN_TWO_FACTOR_REQUIRED`  | `REQUIRE_ADMIN_2FA=true` và ADMIN chưa bật 2FA gọi `/admin/*`; bật 2FA ở `/me/2fa/*` (§6.5) rồi gọi lại (D-070)                                                                  |
+| 409  | `FINGERPRINT_MISMATCH`       | Nhập CSV bước áp dụng: SHA-256 của file khác `fingerprint` đã xem trước (§12.4b, D-073); phải xem trước lại |
+| 422  | `IMPORT_HAS_ERRORS`          | Nhập CSV bước áp dụng: file còn dòng lỗi, không ghi gì; `details: { summary, errors[] }` (tối đa 20 dòng lỗi đầu, §12.4b, D-073) |
 | 409  | `TRACKING_NUMBER_TAKEN`      | Mã vận đơn đã dùng cho đơn khác (`PATCH /admin/orders/:code/status`, §12.1); `details.field = "trackingNumber"` (D-068)                                                          |
 | 409  | `TWO_FACTOR_SETUP_REQUIRED`  | Chưa gọi `setup` hoặc secret chờ đã quá 10 phút khi `enable` (§6.5)                                                                                                                         |
 | 409  | `TWO_FACTOR_NOT_ENABLED`     | Thao tác cần 2FA đang bật (`disable`, `backup-codes`, admin reset) nhưng chưa bật (§6.5, §14.10)                                                                                            |
@@ -169,6 +175,7 @@ Phân trang: query `page` (>= 1, mặc định 1), `pageSize` (1–100, mặc đ
 | 409  | `CANNOT_MODIFY_SELF`         | Admin không được khóa hoặc đổi vai trò của chính mình (§14.10)                                                                                                                               |
 | 409  | `LAST_ADMIN`                 | Thao tác sẽ làm hệ thống không còn ADMIN `ACTIVE` nào (§14.10)                                                                                                                               |
 | 413  | `PAYLOAD_TOO_LARGE`          | Body vượt giới hạn (upload ảnh > 5 MB)                                                                                                                                                       |
+| 429  | `ORDER_LOOKUP_LOCKED`        | Mã đơn bị khóa tạm do nhập sai SĐT quá nhiều lần (§9.4); `details.retryAfterSec`, header `Retry-After` |
 | 429  | `RATE_LIMITED`               | Vượt giới hạn tần suất                                                                                                                                                                       |
 | 500  | `INTERNAL_ERROR`             | Lỗi hệ thống                                                                                                                                                                                 |
 | 503  | `SERVICE_UNAVAILABLE`        | DB/dịch vụ phụ thuộc không sẵn sàng                                                                                                                                                          |
@@ -761,6 +768,25 @@ Mã dự phòng: 10 mã/lần, dạng `XXXXX-XXXXX` (bảng chữ cái 31 ký t�
 
   Tối đa 1000 đơn mới nhất (`truncated: true` khi còn nhiều hơn) và 200 tin nhắn liên hệ. KHÔNG có `passwordHash`, cột/secret 2FA, mã dự phòng, token, `Payment.rawPayload`, mã giao dịch cổng thanh toán. Ghi audit `user.export` (`actorId` = `entityId` = user, `ip`, không lưu nội dung). FE tải bằng `ApiClient.download` (Bearer qua header, không đặt token vào URL).
 
+### 6.7 `POST /me/orders/:code/reorder` – Auth ("Mua lại", D-077)
+
+Đưa các dòng của một đơn cũ vào **giỏ của user** (giá và tồn kho hiện hành, không dùng giá cũ). Không body. Đơn không tồn tại hoặc không thuộc user -> `404 NOT_FOUND` (cùng thông báo); `401` khi không đăng nhập. Mọi trạng thái đơn đều mua lại được (kể cả `CANCELLED`, `DELIVERED`). Một transaction, khóa giỏ như `POST /cart/items`. `200`:
+
+```json
+{
+  "data": {
+    "added": [{ "variantId": "ckv1", "productName": "Robusta Buôn Ma Thuột", "variantName": "500 g", "quantity": 2 }],
+    "adjusted": [{ "variantId": "ckv2", "productName": "Phin nhôm 8 cm", "variantName": "Bạc", "requested": 3, "added": 1 }],
+    "skipped": [{ "variantId": "ckv3", "productName": "Cà phê A", "variantName": "250 g", "quantity": 1, "reason": "OUT_OF_STOCK" }],
+    "cart": { "...": "Cart (§8)" }
+  }
+}
+```
+
+- Mỗi dòng: biến thể phải tồn tại, `isActive`, chưa xóa, sản phẩm `ACTIVE` chưa xóa, còn tồn. Số thêm = `min(số lượng cũ, min(20, tồn kho) - số đã có trong giỏ)`. Thêm đủ -> `added`; thêm được một phần (0 < thêm < cũ) -> `adjusted` (`requested` = số cũ, `added` = số thực thêm); không thêm được -> `skipped`.
+- `reason`: `DISCONTINUED` (biến thể/sản phẩm đã ngừng bán hoặc bị xóa), `OUT_OF_STOCK` (tồn 0), `UNAVAILABLE` (còn hàng nhưng giỏ đã đạt giới hạn mua của biến thể: 20 hoặc toàn bộ tồn kho).
+- Gọi lặp cộng dồn nhưng không bao giờ vượt `min(20, tồn kho)` mỗi biến thể; gọi đồng thời được tuần tự hóa bằng khóa giỏ. `cart` là giỏ sau khi thêm (`cartToken` = null); mã giảm giá của giỏ giữ nguyên. Không có limiter riêng (chỉ limiter chung 100 req/phút/IP).
+
 ## 7. Locations
 
 **Public**, dữ liệu tĩnh 2 cấp (hành chính từ 01/07/2025), nạp từ `backend/data/provinces-wards.json` (nguồn: `backend/data/README.md`, D-006). Mọi response thành công có `Cache-Control: public, max-age=86400` (và ETag mặc định của Express); response lỗi không gắn Cache-Control public. Vẫn chịu rate limit chung.
@@ -1127,6 +1153,15 @@ Cho phép khi `status ∈ {PENDING_PAYMENT, PENDING, CONFIRMED}` (§11). Hoàn k
 Lỗi: 400; 404 (không tìm thấy hoặc không phải chủ / SĐT không khớp); 409 `INVALID_STATUS_TRANSITION` (`details: { from, to: "CANCELLED", allowed: [...] }`, `allowed` = danh sách trạng thái CUSTOMER được chuyển tới từ trạng thái hiện tại, thường `[]`); 429. Hủy lại đơn đã `CANCELLED` -> 409 `INVALID_STATUS_TRANSITION`: hoàn kho/hoàn lượt chỉ xảy ra đúng 1 lần nhờ `UPDATE ... WHERE status = from`.
 Đơn đã `PAID` online bị hủy: `paymentStatus` giữ `PAID` cho tới khi admin ghi nhận hoàn tiền thủ công (§13.7).
 
+#### Khóa tạm theo mã đơn (D-076)
+
+Áp cho MỌI thao tác của **khách vãng lai** xác thực bằng cặp mã đơn + SĐT: `GET /orders/track` (§9.5), `POST /orders/:code/cancel` (không đăng nhập), `GET /orders/:code/bank-transfer` và `POST /orders/:code/bank-transfer/claim` (§9.6), `POST /payments/{vnpay|momo}/create` và `POST /payments/stripe/create-session` (§13). Request có đăng nhập (xác thực bằng token) không bị đếm hay chặn.
+
+- Đếm lần **sai** theo mã đơn đã chuẩn hóa (hoa, bỏ khoảng trắng), dùng chung giữa các endpoint trên: mỗi phản hồi `404 NOT_FOUND` (sai SĐT, đơn của tài khoản, hoặc mã không tồn tại; ba trường hợp không phân biệt được) là 1 lần sai. Lỗi `400` (SĐT sai định dạng) không tính. Phản hồi khác 404 (kể cả `409 PAYMENT_NOT_ALLOWED`, vì đã xác thực đúng) xóa bộ đếm.
+- 5 lần sai trong 15 phút -> khóa mã đơn đó 15 phút: mọi request guest kế tiếp có mã này nhận `429 ORDER_LOOKUP_LOCKED` **kể cả khi SĐT đúng**, `error.details = { "retryAfterSec": 900 }` (số giây còn lại, làm tròn lên) và header `Retry-After` cùng giá trị. Thông báo: "Bạn đã nhập sai thông tin đơn hàng quá nhiều lần. Vui lòng thử lại sau ít phút." Mã không tồn tại bị khóa y hệt nên không lộ đơn nào có thật. Sai thêm khi đang khóa không kéo dài thời gian khóa.
+- Hết 15 phút tự mở khóa. Đúng SĐT (hoặc kết quả 409) trước khi khóa xóa bộ đếm của mã đó. Khóa của mã này không ảnh hưởng mã khác.
+- Lưu trong bộ nhớ tiến trình (1 instance, D-027): tối đa 10.000 mã đang theo dõi (dọn mục hết hạn, rồi mục chưa khóa cũ nhất), mất khi khởi động lại. Bổ sung cho limiter theo IP hiện có (không thay). Hạn chế đã biết: người biết mã đơn có thể cố ý làm chủ đơn guest bị khóa 15 phút; chấp nhận cho dự án demo.
+
 ### 9.5 `GET /orders/track` – Public (10/phút/IP)
 
 Query: `code` (bắt buộc) và `phone` (bắt buộc; chuẩn hóa theo §1, sai định dạng -> 400 `VALIDATION_ERROR`). Chỉ trả khi `phone` khớp `contactPhone` (dạng chuẩn hóa); sai/không thấy -> 404 `NOT_FOUND` (cùng thông báo, D-005). Khai báo route này **trước** `/orders/:code`.
@@ -1342,6 +1377,7 @@ Item `AdminOrderListItem`:
   "provinceName": "Thành phố Hồ Chí Minh",
   "grandTotal": 317000,
   "itemCount": 3,
+  "noteCount": 0,
   "createdAt": "2026-11-10T08:30:00.000Z",
   "needsRefund": false
 }
@@ -1392,7 +1428,40 @@ Tác dụng phụ (cùng transaction):
 
 #### Phiếu giao hàng
 
-Không có endpoint `/print`. Phiếu giao là trang FE `/admin/don-hang/[code]/in`, dùng dữ liệu `GET /admin/orders/:code` và `window.print()`.
+Phiếu giao một đơn là trang FE `/admin/don-hang/[code]/in`, dùng dữ liệu `GET /admin/orders/:code` và `window.print()`. In nhiều đơn: xem `GET /admin/orders/print` ở §12.1b.
+
+### 12.1b Ghi chú nội bộ và in hàng loạt (0.26, D-071, D-072)
+
+`AdminOrderListItem.noteCount` (số nguyên >= 0) là số ghi chú nội bộ của đơn (đếm một lần cho cả trang, không N+1).
+
+#### Ghi chú nội bộ (D-071)
+
+Ghi chú của nhân viên, **khách/guest không bao giờ thấy** (không nằm trong `AdminOrder`, mọi DTO của khách và `GET /me/export`). Append-only: không có API sửa.
+
+- `GET /admin/orders/:code/notes` (Staff+): `{ "data": OrderNote[] }` cũ trước, mới sau.
+- `POST /admin/orders/:code/notes` (Staff+): body `{ "body": string }`; `body` trim, 1..2000 ký tự, không chứa NUL/ký tự điều khiển (cho phép tab, xuống dòng). 201 `{ "data": OrderNote }`; sai -> 400 `VALIDATION_ERROR` (`details[].field = "body"`).
+- `DELETE /admin/orders/:code/notes/:noteId` (**chỉ Admin**; Staff -> 403): 204. Ghi chú không thuộc đơn hoặc không tồn tại -> 404.
+- Mã đơn sai định dạng hoặc không tồn tại -> 404 `NOT_FOUND` ở cả ba endpoint.
+- Audit (`entity = Order`, `entityId` = id đơn): `order.note.create` và `order.note.delete`, `diff = { noteId, length }`, KHÔNG ghi nội dung.
+
+```json
+{
+  "id": "clx9k2n1a0001",
+  "body": "Đã gọi khách xác nhận địa chỉ",
+  "createdAt": "2026-11-24T08:30:00.000Z",
+  "author": { "id": "clx8u1", "fullName": "Trần Thu", "role": "STAFF" }
+}
+```
+
+`author` là `null` khi tài khoản tác giả đã bị xóa.
+
+#### `GET /admin/orders/print?codes=A,B,...` (D-072)
+
+Staff+. Dữ liệu cho phiếu giao nhiều đơn trong MỘT request (không N+1). Chỉ đọc: không đổi trạng thái hay `updatedAt` của đơn.
+
+- `codes` bắt buộc, phân cách phẩy; mỗi mã được trim và chuẩn hóa như `:code`; bỏ trùng; tối đa **50** mã (sau khi bỏ trùng), vượt hoặc rỗng -> 400 `VALIDATION_ERROR`.
+- 200 `{ "data": AdminOrder[], "meta": { "missing": string[] } }`: `data` theo đúng thứ tự yêu cầu, mỗi phần tử có hình dạng như `GET /admin/orders/:code` (không có ghi chú nội bộ); `meta.missing` là các mã sai định dạng hoặc không tồn tại (chữ hoa).
+- Khai báo trước `/:code` nên `print` không bị coi là mã đơn.
 
 ### 12.2 Tồn kho (Staff)
 
@@ -1421,22 +1490,30 @@ Item `InventoryItem`:
 }
 ```
 
-`imageUrl` là ảnh chính của sản phẩm (hoặc `null`).
+`imageUrl` là ảnh chính của sản phẩm (hoặc `null`). **Chỉ Admin** (0.28, D-078): thêm `avgCost` (`number | null`, giá vốn bình quân của biến thể, `null` = chưa có); với Staff khóa này không xuất hiện.
 
 #### `POST /admin/inventory/adjust`
 
-Body: `{ variantId, reason, change?, newStock?, note?, expectedStock? }`.
+Body: `{ variantId, reason, change?, newStock?, note?, expectedStock?, unitCost? }`.
 
 | `reason`     | Yêu cầu                                                                    |
 | ------------ | -------------------------------------------------------------------------- |
-| `RESTOCK`    | `change` > 0                                                               |
+| `RESTOCK`    | `change` > 0; `unitCost` (0.28): Admin bắt buộc, Staff không được gửi      |
 | `DAMAGE`     | `change` < 0, `note` bắt buộc                                              |
 | `ADJUSTMENT` | `change` != 0, `note` bắt buộc                                             |
 | `STOCKTAKE`  | `newStock` >= 0 bắt buộc (kiểm kê, đặt tồn tuyệt đối), không dùng `change` |
 
-`change` là int, `|change| <= 100000`; `newStock` 0–100000; `note` <= 255. `reason = ORDER_RESERVE` hoặc `ORDER_RELEASE` -> 400 `VALIDATION_ERROR`. `expectedStock` (tùy chọn) khác tồn hiện tại -> 409 `CONFLICT`, `details: { currentStock }`.
+`change` là int, `|change| <= 100000`; `newStock` 0–100000; `note` <= 255; `unitCost` int 0–100.000.000 (VND/đơn vị, 0 cho hàng tặng). `unitCost` với lý do khác `RESTOCK` -> 400 field `unitCost`; Admin `RESTOCK` thiếu `unitCost` -> 400 field `unitCost` "Vui lòng nhập đơn giá nhập"; Staff gửi `unitCost` -> 403 `FORBIDDEN` (Staff `RESTOCK` không đơn giá vẫn 200, `avgCost` giữ nguyên). `reason = ORDER_RESERVE` hoặc `ORDER_RELEASE` -> 400 `VALIDATION_ERROR`. `expectedStock` (tùy chọn) khác tồn hiện tại -> 409 `CONFLICT`, `details: { currentStock }`.
 
-Thực thi trong transaction: khóa biến thể (`SELECT ... FOR UPDATE`); biến thể không tồn tại/đã xóa mềm -> 404; tồn sau điều chỉnh < 0 -> 409 `CONFLICT` "Tồn kho không đủ để giảm", `details: { currentStock }`; `STOCKTAKE` không đổi số -> 200 với `movement: null` (không ghi movement/audit). Ngược lại: ghi `InventoryMovement` (`change`, `stockAfter`, `reason`, `actorId`, `note`), cập nhật denormalize `Product.inStock` (khóa Product SAU Variant – cùng thứ tự với đặt/hủy đơn), ghi AuditLog `inventory.adjust` với diff `{ "stock": [old, new], "reason": [null, reason] }`.
+Thực thi trong transaction: khóa biến thể (`SELECT ... FOR UPDATE`); biến thể không tồn tại/đã xóa mềm -> 404; tồn sau điều chỉnh < 0 -> 409 `CONFLICT` "Tồn kho không đủ để giảm", `details: { currentStock }`; `STOCKTAKE` không đổi số -> 200 với `movement: null` (không ghi movement/audit). Ngược lại: ghi `InventoryMovement` (`change`, `stockAfter`, `reason`, `actorId`, `note`), cập nhật denormalize `Product.inStock` (khóa Product SAU Variant – cùng thứ tự với đặt/hủy đơn), ghi AuditLog `inventory.adjust` với diff `{ "stock": [old, new], "reason": [null, reason] }`; khi Admin nhập hàng có giá vốn, diff có thêm `avgCost: [cũ, mới]` và `unitCost: [null, đơn giá]` và movement lưu `unitCost`.
+
+#### Giá vốn bình quân (0.28, D-078)
+
+Giá vốn bình quân gia quyền di động **theo biến thể**: `ProductVariant.avgCost` (VND, `null` = chưa có). Chỉ **nhập hàng của Admin có `unitCost`** đổi `avgCost`, trong cùng transaction đã khóa biến thể (`FOR UPDATE`):
+
+`avgCost mới = round((max(tồn cũ, 0) x avgCost cũ + change x unitCost) / (max(tồn cũ, 0) + change))` (nửa lên); `avgCost cũ` null hoặc tồn cũ <= 0 -> `avgCost mới = unitCost`.
+
+Ví dụ: tồn 10 @ 60.000, nhập 30 @ 80.000 -> `(10 x 60.000 + 30 x 80.000) / 40 = 75.000`. Bán/đặt đơn, hủy/hoàn kho, `DAMAGE`, `STOCKTAKE`, `ADJUSTMENT` KHÔNG đổi `avgCost`. Admin đặt tay `avgCost` ở §12.4 (audit `variant.cost_set`).
 
 200 `{ data: { item: InventoryItem, movement: InventoryMovementDto | null } }`.
 
@@ -1463,7 +1540,7 @@ Query: `variantId`, `reason` (InventoryReason[]), `from`, `to`, `page`, `pageSiz
 }
 ```
 
-`orderCode` và `actor` là `null` khi không áp dụng (điều chỉnh tay không có đơn; hệ thống không có actor).
+`orderCode` và `actor` là `null` khi không áp dụng (điều chỉnh tay không có đơn; hệ thống không có actor). **Chỉ Admin** (0.28): thêm `unitCost` (`number | null`, đơn giá nhập của dòng `RESTOCK` có giá nhập); Staff không nhận khóa này.
 
 ### 12.3 Danh mục & thương hiệu
 
@@ -1555,7 +1632,7 @@ Staff làm được mọi thao tác dưới đây, trừ `DELETE /admin/products
 `brand` có thể `null`; `variantCount` chỉ đếm biến thể chưa xóa; `totalStock` = tổng tồn các biến thể chưa xóa.
 
 - `GET /admin/products/:id` (Staff) – `AdminProduct`: `{ id, slug, name, shortDesc, description, status, isFeatured, tags, seoTitle, seoDesc, categoryId, brandId, coffee, images, variants, minPrice, inStock, soldCount, ratingAvg, ratingCount, deletedAt, createdAt, updatedAt }`, trong đó `coffee` = `CoffeeProfile` đủ trường hoặc `null`; `images` = `[{ id, url, alt, sortOrder, isPrimary }]` sắp `sortOrder`; `variants` = `AdminVariant[]` chưa xóa mềm, sắp `sortOrder`. Trả cả sản phẩm đã xóa mềm (để xem).
-- `AdminVariant`: `{ id, sku, name, attributes, price, salePrice, saleStart, saleEnd, effectivePrice, isOnSale, stock, lowStockThreshold, stockStatus, weightGram, roastDate, sortOrder, isActive, createdAt, updatedAt }`.
+- `AdminVariant`: `{ id, sku, name, attributes, price, salePrice, saleStart, saleEnd, effectivePrice, isOnSale, stock, lowStockThreshold, stockStatus, weightGram, roastDate, sortOrder, isActive, createdAt, updatedAt }`; **chỉ Admin** thêm `avgCost` (`number | null`, 0.28, D-078). Mọi response chứa `AdminVariant` (chi tiết/tạo/sửa/khôi phục sản phẩm, tạo/sửa biến thể) theo quy tắc này; Staff không nhận khóa `avgCost`.
 - `POST /admin/products` (Staff) – `name` 2–200; `slug` (như §12.3; từ 0.13 không được là slug dành riêng `compare`, kể cả khi sinh từ tên, vi phạm -> 400 `VALIDATION_ERROR` field `slug` "Slug này được hệ thống dành riêng, vui lòng chọn slug khác", vì `GET /products/compare` che `GET /products/:slug`, §4.7); `categoryId` (phải tồn tại, không thì 400 field `categoryId`); `brandId` hoặc `null`; `shortDesc` <= 300; `description` <= 20000 (Markdown; storefront render không cho HTML thô); `status` (mặc định `DRAFT`); `isFeatured`; `tags` (<= 20 phần tử, mỗi tag 1–30 ký tự, trim, lowercase, bỏ trùng); `seoTitle` <= 120 hoặc `null`; `seoDesc` <= 300 hoặc `null`; `coffee` hoặc `null`: `{ originCountry? (<= 60), originRegion? (<= 60), variety? (<= 60), process?, roastLevel?, altitude? (0–3000), tastingNotes (<= 10 phần tử, mỗi 1–40), brewMethods (BrewMethod[]) }`. 201 `AdminProduct`. Cập nhật denormalize `searchText`, `minPrice`, `inStock`.
 - **Quy tắc hiển thị.** `status = ACTIVE` yêu cầu có >= 1 biến thể `isActive` chưa xóa; vi phạm -> 400 field `status` "Cần ít nhất 1 biến thể đang bán để hiển thị sản phẩm". Vì vậy tạo mới nên luôn là `DRAFT`/`ARCHIVED` (tạo mới với `ACTIVE` luôn vi phạm vì chưa có biến thể).
 - `PATCH /admin/products/:id` (Staff) – mọi trường của POST đều tùy chọn (>= 1 trường); đổi `slug` sang `compare` bị từ chối như POST; `coffee: null` xóa hồ sơ cà phê. Sản phẩm đã xóa mềm -> 404. Ghi AuditLog với diff. 200 `AdminProduct`.
@@ -1563,8 +1640,8 @@ Staff làm được mọi thao tác dưới đây, trừ `DELETE /admin/products
 
 #### Biến thể
 
-- `POST /admin/products/:id/variants` (Staff) – `sku` (trim, uppercase, `^[A-Z0-9][A-Z0-9-]{1,39}$`, duy nhất kể cả biến thể đã xóa -> 409 `SKU_TAKEN`); `name` 1–100; `attributes` object string->string (<= 10 key, key 1–30, value 1–50); `price` 1–100.000.000; `salePrice` hoặc `null` (> 0 và < `price`); `saleStart`, `saleEnd` ISO datetime hoặc `null` (`saleStart < saleEnd`); `stock` 0–100000 (mặc định 0; tồn ban đầu: nếu > 0 ghi `InventoryMovement` `reason = STOCKTAKE`, `note = "Tồn kho ban đầu"`); `lowStockThreshold` 0–1000 (mặc định 5); `weightGram` 0–100000; `roastDate` `YYYY-MM-DD` hoặc `null`; `sortOrder` 0–9999; `isActive` (mặc định true). 201 `AdminVariant`. Cập nhật denormalize của sản phẩm.
-- `PATCH /admin/variants/:id` (Staff) – các trường như trên TRỪ `stock` (bị bỏ qua; đổi tồn dùng §12.2); kiểm `salePrice < price` theo giá trị SAU cập nhật. Biến thể đã xóa -> 404. 200 `AdminVariant`.
+- `POST /admin/products/:id/variants` (Staff) – `sku` (trim, uppercase, `^[A-Z0-9][A-Z0-9-]{1,39}$`, duy nhất kể cả biến thể đã xóa -> 409 `SKU_TAKEN`); `name` 1–100; `attributes` object string->string (<= 10 key, key 1–30, value 1–50); `price` 1–100.000.000; `salePrice` hoặc `null` (> 0 và < `price`); `saleStart`, `saleEnd` ISO datetime hoặc `null` (`saleStart < saleEnd`); `stock` 0–100000 (mặc định 0; tồn ban đầu: nếu > 0 ghi `InventoryMovement` `reason = STOCKTAKE`, `note = "Tồn kho ban đầu"`); `lowStockThreshold` 0–1000 (mặc định 5); `weightGram` 0–100000; `roastDate` `YYYY-MM-DD` hoặc `null`; `sortOrder` 0–9999; `isActive` (mặc định true); `avgCost` (0.28, tùy chọn, int 0–100.000.000: giá vốn ban đầu, **chỉ Admin**, Staff gửi -> 403 `FORBIDDEN`; ghi audit `variant.cost_set` với diff `{ avgCost: [null, giá trị] }`). 201 `AdminVariant`. Cập nhật denormalize của sản phẩm.
+- `PATCH /admin/variants/:id` (Staff) – các trường như trên TRỪ `stock` (bị bỏ qua; đổi tồn dùng §12.2); kiểm `salePrice < price` theo giá trị SAU cập nhật. `avgCost` (0.28, int 0–100.000.000 hoặc `null` = xóa giá vốn): sửa giá vốn thủ công, **chỉ Admin** (Staff gửi -> 403), đổi giá trị thì ghi audit `variant.cost_set` với diff `{ avgCost: [cũ, mới] }`; không đổi thì không ghi. Biến thể đã xóa -> 404. 200 `AdminVariant`.
 - `DELETE /admin/variants/:id` (Staff) – xóa mềm (`deletedAt = now`, `isActive = false`). 204.
 - **Chặn biến thể đang bán cuối cùng.** Nếu sản phẩm đang `ACTIVE` và thao tác (DELETE hoặc PATCH `isActive: false`) làm sản phẩm không còn biến thể active nào -> 409 `CONFLICT` "Hãy chuyển sản phẩm sang Nháp trước khi ngừng bán biến thể cuối cùng".
 
@@ -1592,6 +1669,63 @@ Body là file nhị phân thô; header `Content-Type` ∈ `image/jpeg`, `image/p
 ```
 
 Ghi AuditLog `upload.create`. Upload xong chưa gắn vào sản phẩm nào; gắn qua `POST /admin/products/:id/images`.
+
+### 12.4b Xuất và nhập CSV sản phẩm (0.26, D-073)
+
+Chỉ **Admin** (Staff -> 403). Tái dùng khuôn CSV an toàn của §16.4 (UTF-8 có BOM, phân tách dấu phẩy, CRLF, RFC 4180, chống CSV injection).
+
+**Cột cố định** (tên và thứ tự; mỗi dòng là một biến thể): `product_slug`, `product_name`, `category_slug`, `brand_slug` (rỗng = không có), `status` (`DRAFT|ACTIVE|ARCHIVED`), `is_featured` (`true|false`), `variant_sku`, `variant_name`, `price`, `sale_price` (rỗng = không KM), `sale_start`, `sale_end` (rỗng hoặc ISO 8601 UTC khi xuất; khi nhập nhận thêm `YYYY-MM-DD` = đầu/cuối ngày giờ VN), `stock`, `low_stock_threshold`, `weight_gram`, `is_active` (`true|false`), `avg_cost` (0.28, D-078: giá vốn bình quân, số nguyên 0..100.000.000, rỗng = chưa có; luôn là cột CUỐI khi xuất). KHÔNG có mô tả, ảnh, hồ sơ cà phê, SEO, thuộc tính, ngày rang, thứ tự (sửa ở form). Sản phẩm xóa mềm và biến thể xóa mềm không xuất; sản phẩm chưa có biến thể không có dòng nào.
+
+#### `GET /admin/products/export`
+
+Admin. Limiter xuất của §16.4 (`EXPORT_RATE_LIMIT_PER_MIN`, đặt sau `requireAdmin`). 200 `text/csv; charset=utf-8`, `Content-Disposition: attachment; filename="beanbox-products-YYYY-MM-DD.csv"` (ngày VN). Audit `product.export` (`diff: { rows }`).
+
+**Nhập `avg_cost`** (0.28): cột có thể **vắng** trong file nhập (file xuất trước 0.28 chỉ 16 cột vẫn hợp lệ, không đụng giá vốn). Khi có cột: ô rỗng = chưa có (`null`); giá trị khác giá vốn hiện tại là một thay đổi `update_variant` với `changes` chứa `avg_cost`, và là "sửa giá vốn thủ công": áp dụng ghi audit `variant.cost_set` (cũ/mới) cho từng biến thể. Biến thể mới tạo qua CSV có `avg_cost` thì ghi giá vốn đó (audit `variant.cost_set`). Giá trị không phải số nguyên 0..100.000.000 -> lỗi dòng. Khứ hồi xuất -> nhập vẫn là `unchanged`.
+
+#### Nhập 2 bước
+
+Body là chính file CSV (không multipart): `Content-Type: text/csv` (hoặc `text/plain`), tối đa **1 MB** (413 `PAYLOAD_TOO_LARGE`), tối đa **2000 dòng dữ liệu**, UTF-8 (BOM được bỏ). Query `filename` (tùy chọn, chỉ để hiển thị/audit; server làm sạch về `[a-z0-9_.-]`, tối đa 60 ký tự). Limiter riêng 20 lần/phút/IP (store riêng, đặt sau `requireAdmin`; vượt -> 429 `RATE_LIMITED`). Lỗi cấp file (không phải UTF-8, tiêu đề sai, quá 2000 dòng, ngoặc kép hỏng, thiếu body, `Content-Type` khác) -> 400 `INVALID_CSV`.
+
+Quy tắc đọc: ô bắt đầu bằng `'` (một hay nhiều) rồi tới `=`, `+`, `-`, `@`, tab hoặc CR được bỏ MỘT `'` đầu (nghịch đảo của chống injection khi xuất); ô khác giữ nguyên. Khớp sản phẩm theo `product_slug`, biến thể theo `variant_sku` (chữ hoa). **Không bao giờ** đổi slug hay SKU, không xóa gì, không tạo redirect slug.
+
+**`POST /admin/products/import/preview`** - KHÔNG ghi DB. 200:
+
+```json
+{
+  "data": {
+    "fingerprint": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+    "fileName": "san-pham.csv",
+    "canApply": false,
+    "summary": { "rows": 3, "create_product": 1, "create_variant": 0, "update_variant": 1, "update_product": 0, "unchanged": 0, "error": 1 },
+    "entries": [
+      { "line": 2, "action": "create_product", "productSlug": "ca-phe-moi", "sku": "CPM-1" },
+      { "line": 3, "action": "update_variant", "productSlug": "ca-phe-a", "sku": "CPA-1", "changes": ["price", "stock"] },
+      { "line": 4, "action": "error", "productSlug": "ca-phe-b", "sku": "CPB-1", "errors": [{ "field": "price", "message": "Giá phải là số nguyên không âm" }] }
+    ]
+  }
+}
+```
+
+- `fingerprint` = SHA-256 hex của byte file. `line` = số bản ghi kể cả tiêu đề (tiêu đề = 1, như Excel). `canApply = (summary.error === 0)`.
+- `action`: `create_product` (dòng đầu của sản phẩm mới, tạo kèm biến thể của dòng đó), `create_variant`, `update_variant` (`changes` = cột đổi), `update_product` (đổi `product_name`, `category_slug`, `brand_slug`, `status`, `is_featured`; một lần cho mỗi sản phẩm, gắn dòng đầu của nó), `unchanged`, `error`. Một dòng có thể có hai mục (vd. `update_product` + `update_variant`).
+- Kiểm từng dòng: số nguyên không âm (giá 1..100.000.000, tồn 0..100.000, ngưỡng 0..1000, khối lượng 0..100.000), `sale_price` > 0 và < `price`, `sale_end` sau `sale_start`, ngày hợp lệ, `status`/booleans đúng giá trị, slug đúng định dạng và KHÔNG thuộc slug dành riêng (`compare`), danh mục/thương hiệu phải tồn tại, `variant_sku` đúng định dạng và duy nhất trong file, các dòng cùng `product_slug` phải cùng `product_name/category_slug/brand_slug/status/is_featured`, SKU không thuộc sản phẩm khác (hay biến thể đã xóa), sản phẩm đã xóa mềm là lỗi, sản phẩm `ACTIVE` phải còn ít nhất một biến thể `is_active` (tính cả biến thể không có trong file).
+
+**`POST /admin/products/import/commit`** - cùng file, query `fingerprint` (64 hex; sai định dạng -> 400 `VALIDATION_ERROR`). Server tính lại `fingerprint`: khác -> 409 `FINGERPRINT_MISMATCH`. Khóa các biến thể/sản phẩm liên quan, TÍNH LẠI kế hoạch, có lỗi -> 422 `IMPORT_HAS_ERRORS` (không ghi gì). Áp dụng trong MỘT transaction rồi `refreshProductDenorm`; va chạm unique do tạo song song -> 409 `SLUG_TAKEN`/`SKU_TAKEN`. 200:
+
+```json
+{
+  "data": {
+    "fingerprint": "9f86d081...",
+    "fileName": "san-pham.csv",
+    "summary": { "rows": 2, "create_product": 1, "create_variant": 0, "update_variant": 1, "update_product": 0, "unchanged": 0, "error": 0 },
+    "applied": { "productsCreated": 1, "productsUpdated": 0, "variantsCreated": 1, "variantsUpdated": 1, "stockMovements": 2, "unchanged": 0 }
+  }
+}
+```
+
+- Sản phẩm mới: mô tả rỗng, `coffee`/ảnh bổ sung ở form. Biến thể mới: `sortOrder` nối tiếp.
+- Tồn kho: `stock` đổi ở biến thể có sẵn -> `InventoryMovement` (`ADJUSTMENT`, `change` = chênh lệch, `note = "Nhập CSV"`, `actorId` = admin); biến thể mới có tồn > 0 -> `STOCKTAKE`, `note = "Nhập CSV"`.
+- Audit `product.import`: `diff` gồm `fileName`, `fingerprint`, `rows`, đếm theo loại (`create_product`, `create_variant`, `update_variant`, `update_product`, `unchanged`).
 
 ### Làm rõ sau khi triển khai M4 (0.5.1)
 
@@ -2288,7 +2422,10 @@ Kiểm tra (400 `VALIDATION_ERROR`, `details: [{ field, message }]`, định d�
       "cancelRate": { "current": 0.1429, "previous": 0.0714, "changePts": 7.1 },
       "discountTotal": { "current": 150000, "previous": 0, "changePct": null },
       "refundedAmount": { "current": 40000, "previous": 0, "changePct": null },
-      "newCustomers": { "current": 3, "previous": 2, "changePct": 50 }
+      "newCustomers": { "current": 3, "previous": 2, "changePct": 50 },
+      "grossProfit": { "current": 90000, "previous": 50000, "changePct": 80 },
+      "grossMargin": { "current": 0.3214, "previous": 0.5, "changePts": -17.9 },
+      "costCoverage": { "current": 0.8571, "previous": 1, "changePts": -14.3 }
     },
     "series": [{ "start": "2026-10-22", "end": "2026-10-22", "revenue": 0, "paidOrders": 0, "ordersPlaced": 0 }],
     "previousSeries": [{ "start": "2026-09-22", "end": "2026-09-22", "revenue": 0, "paidOrders": 0, "ordersPlaced": 0 }],
@@ -2299,6 +2436,7 @@ Kiểm tra (400 `VALIDATION_ERROR`, `details: [{ field, message }]`, định d�
 
 - `range.days` = số ngày của khoảng; `previousRange` = kỳ liền trước cùng độ dài (`to = from - 1 ngày`, `from = to - (days - 1)`).
 - Định nghĩa (D-049): `revenue` = Σ `grandTotal` đơn `paymentStatus = PAID`, `status` không thuộc {`CANCELLED`, `RETURNED`}, theo `paidAt`; `paidOrders` = số đơn đó; `aov` = `round(revenue / paidOrders)`, 0 nếu `paidOrders = 0`; `ordersPlaced` = số đơn theo `createdAt`, mọi trạng thái (đơn COD chưa thu có ở đây nhưng không có ở `revenue`); `cancelledOrders` = số đơn tạo trong kỳ có `status = CANCELLED`; `cancelRate.current` = `cancelledOrders / ordersPlaced` (0..1, làm tròn 4 chữ số; 0 nếu không có đơn); `discountTotal` = Σ `discountTotal` của đơn tính doanh thu; `refundedAmount` = Σ `Payment.amount` có `refundedAt` trong kỳ; `newCustomers` = số `User` role `CUSTOMER` có `createdAt` trong kỳ.
+- **Lợi nhuận gộp hàng hóa (0.28, D-078)**, cùng tập đơn doanh thu (D-019, theo `paidAt`): với mỗi đơn, `S` = Σ `lineTotal` mọi dòng, `C` = Σ `lineTotal` các dòng CÓ `unitCost` (giá vốn chụp lúc đặt), `cogs` = Σ `unitCost x quantity` các dòng đó, giảm giá cấp đơn phân bổ cho phần có giá vốn theo tỷ lệ `lineTotal`: `phân bổ = round(discountTotal x C / S)` (nửa lên; mọi dòng có giá vốn -> đúng `discountTotal`). Cộng theo kỳ: `doanh thu hàng hóa thuần = Σ C - Σ phân bổ`; `grossProfit = doanh thu hàng hóa thuần - Σ cogs` (số nguyên, có thể âm); `grossMargin = grossProfit / doanh thu hàng hóa thuần` (0..1, làm tròn 4 chữ số; 0 khi không có doanh thu có giá vốn); `costCoverage = Σ C / Σ S` (0..1, 4 chữ số; 0 khi không có doanh thu). KHÔNG tính phí ship (`shippingFee`/`shippingDiscount`) và KHÔNG trừ phí cổng thanh toán. Dòng không có `unitCost` (đơn đặt trước 0.28, biến thể chưa có giá vốn lúc đặt) bị loại khỏi lợi nhuận và làm `costCoverage` < 1; không backfill, không đoán. `grossProfit.changePct` như các `Compared` khác; `grossMargin.changePts` null khi kỳ trước không có doanh thu có giá vốn; `costCoverage.changePts` null khi kỳ trước không có doanh thu. Không đổi định nghĩa `revenue`.
 - So sánh (D-050): `changePct = round((current - previous) / previous x 100, 1)`, `null` khi `previous = 0`. `cancelRate.changePts = round((current - previous) x 100, 1)` (điểm phần trăm), `null` khi kỳ trước không có đơn đã đặt.
 - `series`: liên tục theo `granularity`, điền 0 cho bucket không có dữ liệu, tăng dần theo `start`. `day`: một bucket mỗi ngày; `week`: bắt đầu thứ Hai theo ngày VN; `month`: tháng lịch VN. Bucket đầu và cuối bị cắt theo khoảng (`start >= from`, `end <= to`), tổng `revenue` của `series` luôn bằng `kpis.revenue.current`. `revenue` và `paidOrders` gom theo ngày `paidAt`, `ordersPlaced` theo ngày `createdAt`. `previousSeries` có cấu trúc giống `series` cho `previousRange` với cùng `granularity`; số phần tử có thể khác `series` (FE căn theo chỉ số bucket). Tối đa 366 phần tử mỗi chuỗi.
 - Biên ngày: 23:59:59.999 VN thuộc ngày đó, 00:00:00 VN thuộc ngày kế tiếp.
@@ -2369,7 +2507,11 @@ Từ 0.15 (D-051). Cả ba endpoint chỉ ADMIN, `no-store`, dùng **cùng `from
         "categoryName": "Phin pha cà phê",
         "revenue": 300000,
         "quantity": 3,
-        "orders": 2
+        "orders": 2,
+        "cogs": 190000,
+        "grossProfit": 90000,
+        "margin": 0.3214,
+        "costCoverage": 1
       }
     ],
     "generatedAt": "2026-11-20T05:00:00.000Z"
@@ -2377,6 +2519,7 @@ Từ 0.15 (D-051). Cả ba endpoint chỉ ADMIN, `no-store`, dùng **cùng `from
 }
 ```
 
+- (0.28, D-078) `cogs` = Σ `unitCost x quantity` các dòng có giá vốn; `grossProfit` = Σ (`lineTotal` - giảm giá cấp đơn phân bổ cho DÒNG theo tỷ lệ `lineTotal` của đơn, làm tròn nửa lên) của các dòng có giá vốn - `cogs`; `margin` = `grossProfit` / Σ (`lineTotal` - phân bổ) của các dòng có giá vốn (0..1, 4 chữ số); `costCoverage` = Σ `lineTotal` dòng có giá vốn / `revenue`. `cogs`, `grossProfit`, `margin` là `null` khi KHÔNG dòng nào của sản phẩm có giá vốn (và `margin` null khi mẫu số <= 0); `costCoverage` luôn là số. `revenue` giữ nguyên là Σ `lineTotal` (chưa trừ giảm giá cấp đơn). Phân bổ theo dòng ở đây có thể lệch vài đồng so với phân bổ theo đơn ở §16.1 do làm tròn.
 - `name` là tên hiện tại của sản phẩm (thiếu thì `OrderItem.productName` đã lưu); `slug` `null` nếu không còn sản phẩm; `deleted` = `true` khi sản phẩm xóa mềm (vẫn được tính); `categoryName` là danh mục hiện tại (`null` nếu không có); `revenue` = Σ `lineTotal` (hàng hóa, như `basis: "item"`); `quantity` = Σ `quantity`; `orders` = số đơn khác nhau.
 
 #### 16.2.3 `GET /admin/analytics/top-customers?from=&to=&sort=revenue|orders&limit=`
@@ -2508,12 +2651,13 @@ Từ 0.16 (D-052). Ba endpoint chỉ ADMIN, `no-store`, lỗi 400 theo §1 (`det
   "data": {
     "summary": {
       "variants": 30, "outOfStock": 2, "lowStock": 1, "stockUnits": 400,
-      "stockValue": 38000000, "slowMovers": 1, "slowMoversValue": 2000000
+      "stockValue": 38000000, "stockCostValue": 23000000, "variantsWithoutCost": 3,
+      "slowMovers": 1, "slowMoversValue": 2000000
     },
     "outOfStock": [
       {
         "variantId": "cm...", "productId": "cm...", "productName": "Phin nhôm số 1", "variantName": "Size M",
-        "sku": "PHIN-M", "stock": 0, "lowStockThreshold": 5, "price": 100000, "stockValue": 0, "lastSoldAt": null
+        "sku": "PHIN-M", "stock": 0, "lowStockThreshold": 5, "price": 100000, "stockValue": 0, "avgCost": 60000, "stockCostValue": null, "lastSoldAt": null
       }
     ],
     "lowStock": [],
@@ -2526,6 +2670,7 @@ Từ 0.16 (D-052). Ba endpoint chỉ ADMIN, `no-store`, lỗi 400 theo §1 (`det
 
 - **Phạm vi biến thể** như `lowStock` của §14.3: `isActive = true`, `deletedAt` null, sản phẩm chưa xóa mềm. `variants` = số biến thể trong phạm vi.
 - `outOfStock` = `stock <= 0`; `lowStock` = `0 < stock <= lowStockThreshold` (số đếm đủ ở `summary`); `stockUnits` = Σ `stock` của biến thể còn hàng; `stockValue` = Σ `stock x price` của biến thể còn hàng, **dùng giá niêm yết `price`, không dùng `salePrice`**.
+- (0.28, D-078) `summary.stockCostValue` = Σ `stock x avgCost` trên biến thể còn hàng VÀ có giá vốn; `summary.variantsWithoutCost` = số biến thể còn hàng nhưng `avgCost` null (không nằm trong `stockCostValue`, không đoán). Item thêm `avgCost` (`number | null`) và `stockCostValue` (= `stock x avgCost` khi `stock > 0` và có giá vốn, ngược lại `null`). `stockValue` (giá niêm yết) giữ nguyên.
 - `slowMovers` = biến thể còn hàng (`stock > 0`) **không bán được** trong `slowDays` ngày gần nhất và **không được tạo** trong khoảng đó (hàng mới). "Bán" = có `OrderItem` thuộc đơn tạo (`createdAt`) với `status` không phải `CANCELLED`/`PENDING_PAYMENT` (cùng quy ước top sản phẩm §14.3). `slowMovers`/`slowMoversValue` ở `summary` là tổng toàn bộ, không bị cắt ở 20.
 - Mỗi danh sách tối đa **20** phần tử. Sắp xếp: `outOfStock` theo tên sản phẩm rồi tên biến thể; `lowStock` theo `stock` tăng dần; `slowMovers` theo `stockValue` giảm dần.
 - Item: `stockValue` = `stock x price` khi `stock > 0`, ngược lại 0; `lastSoldAt` = `createdAt` của đơn bán gần nhất của biến thể (mọi thời điểm), `null` nếu chưa từng bán.
@@ -2599,10 +2744,10 @@ Trả file CSV thay vì JSON. `report` bắt buộc, một trong `overview | ser
 - **Audit**: mỗi lần xuất **thành công** ghi đúng 1 dòng `AuditLog`: `action = analytics.export`, `entity = analytics`, `entityId` = tên `report`, `actorId` = admin, `ip` = `req.ip`, `diff` = `{ "<tham số>": [null, <giá trị>] }` cho `report`, `from`/`to` (đã chuẩn hóa), `granularity` (series), `dimension`, `list`, `sort`, `limit`, `slowDays` (khi áp dụng) và `rows` (số dòng dữ liệu, không kể dòng tiêu đề). Không ghi tên/email khách. Audit được ghi **trước** khi gửi body và là fail-closed: ghi audit lỗi -> 500, không trả file. Không có dòng audit khi 400/401/403/429.
 - **Rate limit riêng**: 10 lần/phút/IP (env `EXPORT_RATE_LIMIT_PER_MIN`, số nguyên dương, mặc định 10), store riêng, chỉ áp cho `/admin/analytics/export`, đặt **sau** `requireAdmin` (request chưa xác thực hoặc không đủ quyền không tiêu hạn mức xuất; request 400 vẫn tính). Vượt -> 429 `RATE_LIMITED` + `Retry-After` và `details.retryAfterSec` như §1.
 - **Cột từng báo cáo** (tiêu đề tiếng Việt):
-  - `overview`, `customers`, `operations`: bảng chỉ số, cột `Chỉ số, Kỳ này, Kỳ trước, Thay đổi (%), Thay đổi (điểm %)` (mỗi dòng chỉ một trong hai cột thay đổi có giá trị; tỷ lệ ghi theo %, đổi theo điểm %). `overview`: Doanh thu (VND), Đơn đã thanh toán, Giá trị đơn trung bình (VND), Đơn đã đặt, Đơn hủy, Tỷ lệ hủy (%), Giảm giá (VND), Hoàn tiền (VND), Khách mới. `customers`: Khách mua hàng, Khách mua lần đầu, Khách quay lại, Tỷ lệ mua lại (%), Doanh thu khách mới (VND), Doanh thu khách quay lại (VND). `operations`: Đơn hủy (tổng), bốn dòng `Đơn hủy: <nhãn loại>`, Đơn đã giao, Đơn bị trả hàng, Tỷ lệ trả hàng (%), Số lần hoàn tiền, Số tiền hoàn (VND), và theo từng chặng (đặt đến xác nhận, xác nhận đến giao) ba dòng: trung bình (giờ, có kỳ trước), trung vị (giờ, chỉ kỳ này), số đơn (chỉ kỳ này). Không xuất khối "đơn cần xử lý" (ảnh chụp hiện tại, chứa mã đơn).
+  - `overview`, `customers`, `operations`: bảng chỉ số, cột `Chỉ số, Kỳ này, Kỳ trước, Thay đổi (%), Thay đổi (điểm %)` (mỗi dòng chỉ một trong hai cột thay đổi có giá trị; tỷ lệ ghi theo %, đổi theo điểm %). `overview`: Doanh thu (VND), Đơn đã thanh toán, Giá trị đơn trung bình (VND), Đơn đã đặt, Đơn hủy, Tỷ lệ hủy (%), Giảm giá (VND), Hoàn tiền (VND), Khách mới, Lợi nhuận gộp (VND), Biên lợi nhuận gộp (%), Độ phủ giá vốn (%) (3 dòng cuối từ 0.28). `customers`: Khách mua hàng, Khách mua lần đầu, Khách quay lại, Tỷ lệ mua lại (%), Doanh thu khách mới (VND), Doanh thu khách quay lại (VND). `operations`: Đơn hủy (tổng), bốn dòng `Đơn hủy: <nhãn loại>`, Đơn đã giao, Đơn bị trả hàng, Tỷ lệ trả hàng (%), Số lần hoàn tiền, Số tiền hoàn (VND), và theo từng chặng (đặt đến xác nhận, xác nhận đến giao) ba dòng: trung bình (giờ, có kỳ trước), trung vị (giờ, chỉ kỳ này), số đơn (chỉ kỳ này). Không xuất khối "đơn cần xử lý" (ảnh chụp hiện tại, chứa mã đơn).
   - `series`: `Bắt đầu, Kết thúc, Doanh thu (VND), Đơn đã thanh toán, Đơn đã đặt, Kỳ trước: bắt đầu, Kỳ trước: kết thúc, Kỳ trước: doanh thu (VND), Kỳ trước: đơn đã thanh toán, Kỳ trước: đơn đã đặt`; một dòng mỗi bucket, kỳ trước căn theo chỉ số bucket (ô trống nếu kỳ trước ngắn hơn).
   - `breakdown`: `<Danh mục|Thương hiệu|Phương thức thanh toán|Phương thức vận chuyển|Tỉnh/thành>, Doanh thu (VND), Số đơn, Số lượng (trống ở chiều cấp đơn), Tỷ trọng (%), Doanh thu kỳ trước (VND), Thay đổi doanh thu (%)`, dòng cuối `Tổng`.
-  - `top-products`: `Hạng, Sản phẩm, Danh mục, Doanh thu (VND), Số lượng, Số đơn, Ghi chú` (`Đã xóa` cho sản phẩm xóa mềm).
+  - `top-products`: `Hạng, Sản phẩm, Danh mục, Doanh thu (VND), Số lượng, Số đơn, Ghi chú, Giá vốn hàng bán (VND), Lợi nhuận gộp (VND), Biên lợi nhuận (%), Độ phủ giá vốn (%)` (`Đã xóa` cho sản phẩm xóa mềm; 4 cột cuối từ 0.28, ô trống khi thiếu giá vốn).
   - `top-customers`: `Hạng, Loại khách (Thành viên|Khách vãng lai), Tên, Email, Số đơn, Doanh thu (VND), Giá trị đơn trung bình (VND), Thanh toán gần nhất`. **Không có userId, SĐT, địa chỉ.** Email là dữ liệu cá nhân, vì vậy việc xuất được ghi audit.
   - `coupons`: `Mã giảm giá, Loại (Giảm theo phần trăm|Giảm số tiền cố định|Miễn phí vận chuyển|trống nếu mã đã xóa), Trạng thái (Đang bật|Đã tắt|Đã xóa), Lượt dùng, Tiền giảm (VND), Doanh thu (VND), Giá trị đơn trung bình (VND), Lượt dùng kỳ trước, Doanh thu kỳ trước (VND), Thay đổi doanh thu (%)`. Phần `summary` không có trong CSV.
-  - `inventory`: `Sản phẩm, Biến thể, SKU, Tồn kho, Ngưỡng sắp hết, Giá niêm yết (VND), Giá trị tồn (VND), Bán gần nhất`.
+  - `inventory`: `Sản phẩm, Biến thể, SKU, Tồn kho, Ngưỡng sắp hết, Giá niêm yết (VND), Giá trị tồn (VND), Bán gần nhất, Giá vốn bình quân (VND), Giá trị tồn theo giá vốn (VND)` (2 cột cuối từ 0.28, ô trống khi chưa có giá vốn).

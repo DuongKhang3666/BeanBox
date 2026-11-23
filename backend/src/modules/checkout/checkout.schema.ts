@@ -1,10 +1,5 @@
 import { z } from 'zod';
-
-const emailSchema = z
-  .string()
-  .trim()
-  .toLowerCase()
-  .pipe(z.email('Email không đúng định dạng').max(254, 'Email tối đa 254 ký tự'));
+import { emailSchema } from '../../lib/validation.js';
 
 export const quoteSchema = z.object({
   provinceCode: z

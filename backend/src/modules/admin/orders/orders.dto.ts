@@ -107,6 +107,8 @@ export interface AdminOrderListItemDto {
   createdAt: string;
   needsRefund: boolean;
   transferClaimedAt: string | null;
+  /** D-071: số ghi chú nội bộ. */
+  noteCount: number;
 }
 
 const iso = (d: Date | null): string | null => (d ? d.toISOString() : null);
@@ -206,6 +208,7 @@ export function toAdminOrderListItem(
   },
   itemCount: number,
   needsRefund = false,
+  noteCount = 0,
 ): AdminOrderListItemDto {
   const addr = toShippingAddress(o.shippingAddress);
   return {
@@ -224,5 +227,31 @@ export function toAdminOrderListItem(
     createdAt: o.createdAt.toISOString(),
     needsRefund,
     transferClaimedAt: iso(o.transferClaimedAt ?? null),
+    noteCount,
+  };
+}
+
+export interface OrderNoteDto {
+  id: string;
+  body: string;
+  createdAt: string;
+  author: { id: string; fullName: string; role: string } | null;
+}
+
+export const orderNoteSelect = {
+  id: true,
+  body: true,
+  createdAt: true,
+  author: { select: { id: true, fullName: true, role: true } },
+} satisfies Prisma.OrderNoteSelect;
+
+export function toOrderNoteDto(
+  n: Prisma.OrderNoteGetPayload<{ select: typeof orderNoteSelect }>,
+): OrderNoteDto {
+  return {
+    id: n.id,
+    body: n.body,
+    createdAt: n.createdAt.toISOString(),
+    author: n.author ? { id: n.author.id, fullName: n.author.fullName, role: n.author.role } : null,
   };
 }

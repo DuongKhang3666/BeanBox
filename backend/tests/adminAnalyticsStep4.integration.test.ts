@@ -485,7 +485,7 @@ describe('export CSV', () => {
       const t = body(r);
       expect(t.charCodeAt(0)).toBe(0xfeff);
       expect(t.split('\r\n')[0]).toBe(
-        '﻿Hạng,Sản phẩm,Danh mục,Doanh thu (VND),Số lượng,Số đơn,Ghi chú',
+        '﻿Hạng,Sản phẩm,Danh mục,Doanh thu (VND),Số lượng,Số đơn,Ghi chú,Giá vốn hàng bán (VND),Lợi nhuận gộp (VND),Biên lợi nhuận (%),Độ phủ giá vốn (%)',
       );
       expect(t.endsWith('\r\n')).toBe(true);
     });
@@ -633,6 +633,8 @@ describe('export CSV', () => {
         'Giá niêm yết (VND)',
         'Giá trị tồn (VND)',
         'Bán gần nhất',
+        'Giá vốn bình quân (VND)',
+        'Giá trị tồn theo giá vốn (VND)',
       ]);
       const mine = rows.find((x) => x[0]!.includes('Hết hàng, "đặc biệt"'))!;
       expect(mine[3]).toBe('0');
