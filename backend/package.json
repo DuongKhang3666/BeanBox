@@ -21,6 +21,7 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
     "prisma:seed": "tsx prisma/seed.ts",
+    "seed:rich": "tsx prisma/seed-rich.ts",
     "db:reset": "prisma migrate reset --force",
     "postprisma:migrate": "prisma generate",
     "postdb:reset": "prisma generate && prisma db seed"

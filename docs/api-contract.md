@@ -2391,7 +2391,7 @@ Chỉ khi chạy development thêm `'unsafe-eval'` vào `script-src` (cả hai p
 
 ## 16. Phân tích kinh doanh (Admin)
 
-Từ 0.14 (D-049, D-050; kế hoạch: [`admin-dashboard-plan.md`](admin-dashboard-plan.md)). Router `/admin/analytics/*` chỉ ADMIN: `requireAdmin` ở cấp router (chưa đăng nhập 401 `UNAUTHORIZED`, STAFF/CUSTOMER 403 `FORBIDDEN`), mọi response `Cache-Control: no-store` (§12.0). Không đổi §14.3 (`GET /admin/dashboard` vẫn dành cho Staff+). Tiền là `Int` VND. Mọi ngày là ngày lịch Việt Nam (UTC+7, không DST). Từ 0.19 (D-058) mọi truy vấn của router này chạy trên **pool kết nối riêng** (`ANALYTICS_POOL_MAX`, mặc định 4) với `statement_timeout` = `ANALYTICS_STATEMENT_TIMEOUT_MS` (mặc định 15000 ms); truy vấn bị Postgres hủy (mã `57014`) -> **503 `ANALYTICS_TIMEOUT`** ("Truy vấn phân tích quá lâu, hãy thu hẹp khoảng ngày"), áp cho cả `/export`. Không đổi kết quả khi truy vấn kịp giờ.
+Từ 0.14 (D-049, D-050; định nghĩa chỉ số: [D-049](decisions.md#d-049-khu-phân-tích-kinh-doanh-chỉ-admin)). Router `/admin/analytics/*` chỉ ADMIN: `requireAdmin` ở cấp router (chưa đăng nhập 401 `UNAUTHORIZED`, STAFF/CUSTOMER 403 `FORBIDDEN`), mọi response `Cache-Control: no-store` (§12.0). Không đổi §14.3 (`GET /admin/dashboard` vẫn dành cho Staff+). Tiền là `Int` VND. Mọi ngày là ngày lịch Việt Nam (UTC+7, không DST). Từ 0.19 (D-058) mọi truy vấn của router này chạy trên **pool kết nối riêng** (`ANALYTICS_POOL_MAX`, mặc định 4) với `statement_timeout` = `ANALYTICS_STATEMENT_TIMEOUT_MS` (mặc định 15000 ms); truy vấn bị Postgres hủy (mã `57014`) -> **503 `ANALYTICS_TIMEOUT`** ("Truy vấn phân tích quá lâu, hãy thu hẹp khoảng ngày"), áp cho cả `/export`. Không đổi kết quả khi truy vấn kịp giờ.
 
 ### 16.1 Tổng quan (Bước 1, đã triển khai)
 

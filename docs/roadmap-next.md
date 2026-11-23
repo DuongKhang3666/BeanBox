@@ -116,7 +116,7 @@ Nhãn "(chưa xác minh)" nghĩa là chưa kiểm chứng được trong lần r
 - **Trạng thái:** Đã làm (Đợt 1): các điểm nêu bên dưới đã được sửa trong docs (xem lịch sử git của `docs/`).
 - **Nhóm:** Tài liệu.
 - **Mô tả:** Sửa các điểm sau:
-  - `docs/admin-dashboard-plan.md:91` trỏ `progress-m10-step5.md` không còn trong repo; trạng thái "Chờ chủ dự án duyệt và commit" đã lỗi thời.
+  - Kế hoạch khu phân tích (đã xóa khi dọn tài liệu, còn trong lịch sử git) trỏ tới một file tiến độ không còn trong repo và ghi trạng thái chờ duyệt đã lỗi thời.
   - `docs/db-schema.md:3` ghi "Prisma 6.x" trong khi dùng Prisma 7 (`backend/package.json`, D-036).
   - Thân D-033 còn lệnh `--to-schema-datamodel`/`--shadow-database-url` khác `ci.yml` và chưa liệt kê job `ops-lint`.
   - `docs/architecture.md` chưa có mục thay đổi cho D-046..D-054.
@@ -339,7 +339,7 @@ Nhãn "(chưa xác minh)" nghĩa là chưa kiểm chứng được trong lần r
   - File lớn: frontend `AdminSettings.tsx` 923 dòng, `CheckoutForm.tsx` 737, `ProductForm.tsx` 677; backend `catalog.service.ts` 666, `orders.service.ts` 643, `cart.service.ts` 633.
   - Helper trùng: `escapeLike` ở `admin/orders/orders.service.ts` và `lib/text.ts`; `intParam` ở 3 schema; `emailSchema` ở 2 nơi; regex NUL lặp nhiều file.
   - `server.ts` không xử lý `unhandledRejection`/`uncaughtException`, shutdown không chờ job đang chạy.
-- **Trạng thái:** Đã làm (Đợt 4 nhóm 2 + Đợt 5 task 1). Phần `server.ts` xong ở Đợt 5 (D-079): `unhandledRejection`/`uncaughtException` log `fatal` rồi tắt êm `exit(1)`, `SIGTERM`/`SIGINT` tắt êm `exit(0)` có chờ job đang chạy (`stopBackgroundJobs()`), timeout `SHUTDOWN_TIMEOUT_MS`, `stop_grace_period: 30s`. Phần tách file còn lại KHÔNG làm (chốt dự án, `wave5-plan.md`). Đợt 4 nhóm 2, xem D-074: tách `AdminSettings.tsx` (1049 -> 97 dòng + `settings/`) và `CheckoutForm.tsx` (816 -> 194 dòng + component/hook); gom `escapeLike`, `emailSchema`, `intParam`, `NO_NUL` về `lib/text.ts`/`lib/validation.ts`. Không làm (chốt dự án): tách các file còn > 500 dòng (danh sách ở D-074), `intParam` của `catalog.schema.ts`, `CONTROL_CHARS`.
+- **Trạng thái:** Đã làm (Đợt 4 nhóm 2 + Đợt 5 task 1). Phần `server.ts` xong ở Đợt 5 (D-079): `unhandledRejection`/`uncaughtException` log `fatal` rồi tắt êm `exit(1)`, `SIGTERM`/`SIGINT` tắt êm `exit(0)` có chờ job đang chạy (`stopBackgroundJobs()`), timeout `SHUTDOWN_TIMEOUT_MS`, `stop_grace_period: 30s`. Phần tách file còn lại KHÔNG làm (chốt dự án, xem "Không làm" ở mục Trạng thái). Đợt 4 nhóm 2, xem D-074: tách `AdminSettings.tsx` (1049 -> 97 dòng + `settings/`) và `CheckoutForm.tsx` (816 -> 194 dòng + component/hook); gom `escapeLike`, `emailSchema`, `intParam`, `NO_NUL` về `lib/text.ts`/`lib/validation.ts`. Không làm (chốt dự án): tách các file còn > 500 dòng (danh sách ở D-074), `intParam` của `catalog.schema.ts`, `CONTROL_CHARS`.
 - **Ưu tiên:** P2.
 - **Độ khó:** M.
 - **Phụ thuộc:** Không.

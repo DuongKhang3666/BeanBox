@@ -87,6 +87,7 @@
 - [D-081 Allowlist ảnh đại diện](#d-081-allowlist-ảnh-đại-diện)
 - [D-082 Độ tươi hạt cà phê](#d-082-độ-tươi-hạt-cà-phê)
 - [D-083 E2E mobile 390 px, smoke WebKit, warm-up khởi động nguội, đo tải đặt hàng đồng thời](#d-083-e2e-mobile-390-px-smoke-webkit-warm-up-khởi-động-nguội-đo-tải-đặt-hàng-đồng-thời)
+- [D-084 Seed "nhiều" cho demo/dev (`seed:rich`)](#d-084-seed-nhiều-cho-demodev-seedrich)
 
 ---
 
@@ -764,7 +765,7 @@
 ## D-049 Khu phân tích kinh doanh chỉ Admin
 
 - **Ngày:** 2026-11-20 · **Người chốt:** Tech Lead theo ủy quyền chủ dự án
-- **Trạng thái:** Áp dụng (Bước 1-2 đã triển khai; Bước 3-5 chờ duyệt, xem [`admin-dashboard-plan.md`](admin-dashboard-plan.md)).
+- **Trạng thái:** Áp dụng (đã triển khai đủ 5 bước; D-050..D-054).
 - **Bối cảnh:** Dashboard `/admin` (§14.3, D-019) dành cho cả STAFF và ADMIN và chỉ trả số liệu vận hành 30 ngày cố định. Chủ cửa hàng cần phân tích theo khoảng ngày tùy chọn, so sánh kỳ trước, cơ cấu doanh thu và dữ liệu khách hàng; dữ liệu này nhạy cảm hơn mức nhân viên cần.
 - **Quyết định:**
   1. **Tách khu mới, không đổi dashboard:** giữ `/admin` và `GET /admin/dashboard` nguyên như cũ cho STAFF + ADMIN. Thêm trang FE `/admin/phan-tich` ("Phân tích kinh doanh") và router BE `/api/v1/admin/analytics/*`.
@@ -778,7 +779,7 @@
   - Hoàn tiền và doanh thu tính theo hai mốc khác nhau (`refundedAt` và `paidAt`), nên không cộng trừ trực tiếp để ra "doanh thu ròng".
   - Tỷ lệ hủy gồm cả đơn online hết hạn thanh toán, nên cao hơn tỷ lệ khách chủ động hủy.
   - Mỗi lần xem chạy 4 truy vấn tổng hợp trên Postgres thật (không cache); đủ cho quy mô hiện tại, đo lại ở Bước 5.
-- **Docs bị ảnh hưởng:** `api-contract.md` §16 (0.14), `db-schema.md` (0.9), `admin-dashboard-plan.md`, `testing.md`.
+- **Docs bị ảnh hưởng:** `api-contract.md` §16 (0.14), `db-schema.md` (0.9), `testing.md`.
 
 ## D-050 Khoảng ngày, kỳ so sánh và gom nhóm của phân tích kinh doanh
 
@@ -798,7 +799,7 @@
   - `changePct` rất lớn khi kỳ trước nhỏ; FE chỉ hiển thị, không cắt.
   - Ngày "hôm nay" tính theo đồng hồ server; khoảng kết thúc hôm nay là kỳ chưa trọn ngày nên so với kỳ trước đã trọn sẽ thấp hơn (đúng bản chất, không điều chỉnh).
   - Hai chỉ số so sánh theo hai mốc khác nhau (xem D-049) không nên cộng trừ với nhau.
-- **Docs bị ảnh hưởng:** `api-contract.md` §16.1, `db-schema.md`, `admin-dashboard-plan.md`.
+- **Docs bị ảnh hưởng:** `api-contract.md` §16.1, `db-schema.md`.
 
 ## D-051 Cơ cấu doanh thu, top sản phẩm, top khách hàng (Bước 2)
 
@@ -822,7 +823,7 @@
   - **Giới hạn 50 nhóm:** thực tế không chạm (danh mục, thương hiệu, tỉnh đều ít hơn); nếu chạm, `orders` của "Khác" ở chiều dòng hàng là tổng (có thể đếm trùng).
   - Tổng doanh thu chiều dòng hàng nhỏ hơn hoặc lớn hơn doanh thu overview tùy giảm giá và phí ship; UI ghi rõ cơ sở tính.
   - Mỗi lần xem chạy thêm 3 truy vấn nhóm/tổng trên Postgres thật (không cache); đo `EXPLAIN` ở Bước 5.
-- **Docs bị ảnh hưởng:** `api-contract.md` §16.2 (0.15), `admin-dashboard-plan.md`, `testing.md`.
+- **Docs bị ảnh hưởng:** `api-contract.md` §16.2 (0.15), `testing.md`.
 
 
 ## D-052 Khách hàng, vận hành, tồn kho (Bước 3)
@@ -848,7 +849,7 @@
   - Giá trị tồn dùng giá niêm yết nên có thể cao hơn giá trị bán thực tế khi đang giảm giá; không phải giá vốn.
   - "Bán" dùng ngày tạo đơn (không phải ngày thanh toán), nên đơn COD chưa giao vẫn tính là đã bán; đơn `PENDING_PAYMENT` chưa thanh toán không tính.
   - Thời gian xác nhận chỉ đo đơn COD; thời gian giao đo từ lúc xác nhận (không gồm thời gian chờ xác nhận).
-- **Docs bị ảnh hưởng:** `api-contract.md` §16.3 (0.16), `admin-dashboard-plan.md`, `testing.md`. Không đổi `db-schema.md` (không có migration).
+- **Docs bị ảnh hưởng:** `api-contract.md` §16.3 (0.16), `testing.md`. Không đổi `db-schema.md` (không có migration).
 
 
 ## D-053 Hiệu quả mã giảm giá và xuất CSV (Bước 4)
@@ -875,7 +876,7 @@
   - Xuất tới 1000 dòng tồn kho/200 dòng top nằm trọn trong bộ nhớ một request; chấp nhận ở quy mô cửa hàng này.
   - "Giảm" của mã FREESHIP có thể gồm cả miễn phí ship theo ngưỡng; mã FREESHIP đã xóa hiện giảm 0 (xem mục 2).
   - Hạn mức xuất tính theo IP (như các limiter khác); sau reverse proxy phụ thuộc `TRUST_PROXY` (D-009).
-- **Docs bị ảnh hưởng:** `api-contract.md` §16.4, §14.4, §12.0, §1 (0.17), `admin-dashboard-plan.md`, `testing.md`, `deployment.md`, `.env.example`, `.env.production.example`. Không đổi `db-schema.md` (không có migration).
+- **Docs bị ảnh hưởng:** `api-contract.md` §16.4, §14.4, §12.0, §1 (0.17), `testing.md`, `deployment.md`, `.env.example`, `.env.production.example`. Không đổi `db-schema.md` (không có migration).
 
 ## D-054 Hiệu năng, a11y và bản in khu phân tích (Bước 5, phần A)
 
@@ -891,7 +892,7 @@
   6. **Bản in** bằng biến thể `print:` và một khối `@media print`; không có nút "In".
   7. **Mã giảm giá không được bắt đầu bằng `-` khi tạo** (dễ bị hiểu nhầm là tùy chọn dòng lệnh/công thức bảng tính). `PATCH` vốn không nhận `code` (đổi mã luôn 400), nên mã cũ dạng `-...` vẫn hiển thị, sửa trường khác và áp dụng ở checkout như trước; không cần migrate dữ liệu, seed không có mã như vậy.
 - **Hệ quả/rủi ro:** số đo từ một máy cá nhân (nhiễu ~30%); breakdown danh mục/thương hiệu và top-products gần 1 s ở 100.000 đơn/365 ngày; dữ liệu demo không khớp sổ kho.
-- **Docs bị ảnh hưởng:** `api-contract.md` §13.8 (0.18), `testing.md`, `admin-dashboard-plan.md`. Không đổi `db-schema.md`.
+- **Docs bị ảnh hưởng:** `api-contract.md` §13.8 (0.18), `testing.md`. Không đổi `db-schema.md`.
 
 ## D-055 CI: coverage, kiểm định dạng và Dependabot
 
@@ -1047,7 +1048,7 @@
   - (Cập nhật D-068: nay đã có chỉ mục unique ở DB.) Mã vận đơn giả không có ràng buộc unique ở DB (chỉ kiểm trùng ở ứng dụng trong transaction đang giữ khóa đơn); xác suất trùng giữa hai đơn cùng ngày ~ 1/887 triệu, chấp nhận cho demo. Chưa thêm index `trackingNumber`: kiểm trùng quét bảng `Order` tại thời điểm chuyển SHIPPING, đủ nhanh ở quy mô demo.
   - `shipment` tính theo đồng hồ máy chủ khi gọi API (không lưu): cùng một đơn hiện nhiều mốc hơn theo thời gian; test dùng đồng hồ tiêm.
   - Staff đã nhập mã/hãng thật vẫn thấy khối hành trình mô phỏng (cùng nhãn "giả lập").
-- **Docs bị ảnh hưởng:** `api-contract.md` 0.21 (§9, §9.1, §9.5, §9.7, §10, §11, §12.1, §14.9), `db-schema.md` 0.11, `testing.md`, `wave2-plan.md`.
+- **Docs bị ảnh hưởng:** `api-contract.md` 0.21 (§9, §9.1, §9.5, §9.7, §10, §11, §12.1, §14.9), `db-schema.md` 0.11, `testing.md`.
 
 
 ## D-063 Xác thực 2 lớp (TOTP) cho Staff và Admin
@@ -1077,7 +1078,7 @@
   - Mã sai ở `disable`/`backup-codes` cũng cộng `failedLoginCount`: người dùng gõ sai nhiều lần có thể bị khóa đăng nhập tạm 15 phút (cân bằng với việc chặn đoán mã).
   - Cửa sổ +-1 bước nghĩa là mã sống tối đa ~90 giây; `lastStep` chỉ chặn dùng lại bước đã dùng, không chặn dùng bước kế tiếp từ máy khác.
   - E2E có thể phải chờ tới ~30 giây cho bước TOTP kế tiếp (do chống dùng lại); đã giảm bằng cách dùng bước hiện tại hoặc bước kế (trong cửa sổ).
-- **Docs bị ảnh hưởng:** `api-contract.md` 0.22 (§2, §5, §5.2, §5.9, §6.5, §12.0, §14.4, §14.10), `db-schema.md` 0.12, `architecture.md` §8, `deployment.md` (biến môi trường), `testing.md`, `wave2-plan.md`, `README.md`, `backend/.env.example`, `.env.production.example`, `docker-compose*.yml`, `.gitleaks.toml`.
+- **Docs bị ảnh hưởng:** `api-contract.md` 0.22 (§2, §5, §5.2, §5.9, §6.5, §12.0, §14.4, §14.10), `db-schema.md` 0.12, `architecture.md` §8, `deployment.md` (biến môi trường), `testing.md`, `README.md`, `backend/.env.example`, `.env.production.example`, `docker-compose*.yml`, `.gitleaks.toml`.
 
 ## D-064 SEO kỹ thuật: trang chủ ISR, ảnh OG, sitemap lastmod, canonical/noindex, JSON-LD
 
@@ -1092,7 +1093,7 @@
   6. **JSON-LD:** Organization thêm `logo` (`<SITE_URL>/opengraph-image`, ảnh OG mặc định, chưa có file logo riêng) và `url`; Product có `url`, `image` tuyệt đối (bỏ khóa khi không có ảnh), `brand`, `sku`, `offers` AggregateOffer (`lowPrice`, `highPrice`, `offerCount`, `availability`, `priceCurrency: VND`, thêm `itemCondition: NewCondition`), `aggregateRating` chỉ khi `ratingCount > 0`; BreadcrumbList giữ; danh mục thêm `ItemList` (`position` liên tục theo trang, `url` tuyệt đối, `name`) cho các sản phẩm trên trang. **KHÔNG** thêm `shippingDetails`/`hasMerchantReturnPolicy`: phí/thời gian vận chuyển và đổi trả là dữ liệu demo (D-062), khai báo sai trong dữ liệu có cấu trúc rủi ro hơn lợi; thêm khi có chính sách thật. `<` vẫn được escape thành `\u003c`.
   7. **Không đổi:** 404 cho slug không tồn tại và 308 cho slug cũ (đo lại bằng production build + `curl -sI`: sản phẩm/danh mục lạ 404, slug cũ 308 `location` đúng, slug đúng 200); không thêm `loading.tsx` ở route slug (D-059); CSP và security header không đổi (meta OG không chịu CSP, route ảnh cùng origin).
 - **Hệ quả/rủi ro:** HTML trang chủ cũ tối đa ~60 giây; ảnh OG sản phẩm có thể cũ tới 1 giờ ở CDN/cache; dữ liệu OG lấy qua `getProduct` (cache 60 giây); thêm ~273 KB font vào repo; `updatedAt` công khai lộ thời điểm sửa sản phẩm (không nhạy cảm).
-- **Docs bị ảnh hưởng:** `api-contract.md` 0.23 (§4), `testing.md`, `roadmap-next.md` (R-10, R-11), `wave2-plan.md`, `README.md`.
+- **Docs bị ảnh hưởng:** `api-contract.md` 0.23 (§4), `testing.md`, `roadmap-next.md` (R-10, R-11), `README.md`.
 
 ## D-065 Quyền dữ liệu cá nhân: khách tự xóa (ẩn danh hóa) tài khoản và xuất dữ liệu
 
@@ -1108,7 +1109,7 @@
   7. **Xuất dữ liệu `GET /me/export`** (mọi role): file JSON `formatVersion: 1` (profile, addresses, orders kèm items/lịch sử/payments tóm tắt không `rawPayload`, reviews, wishlist, contactMessages, `exportedAt`, `truncated`), tối đa 1000 đơn; không có `passwordHash`, cột 2FA, token. `Content-Disposition` tên theo ngày Việt Nam, `Cache-Control: no-store`. Limiter riêng 5 lần/giờ khóa theo `userId` (đặt sau `requireAuth`; `createRateLimiter` nhận `keyGenerator`), fallback IP. Audit `user.export`; `user.self_delete` không chứa email cũ.
   8. **FE:** `/tai-khoan` thêm mục "Dữ liệu cá nhân" (nút tải; nút "Xóa tài khoản" chỉ CUSTOMER mở hộp thoại nêu hậu quả, ô mật khẩu + ô gõ cụm xác nhận, nút bật khi khớp, lỗi `ACTIVE_ORDERS_EXIST` liệt kê mã đơn có liên kết). Thành công: dọn phiên cục bộ (`endSession`, không gọi lại `/auth/logout`) và về `/?tai-khoan=da-xoa` hiện thông báo đóng được. Admin danh sách/chi tiết người dùng hiện nhãn "Đã xóa" (thay "Đã khóa"), ẩn các nút khóa/đổi vai trò; thao tác ghi của Admin trên tài khoản đã xóa -> 409 `ACCOUNT_DELETED`.
 - **Hệ quả/rủi ro:** doanh thu/số khách/cơ cấu tỉnh trong analytics KHÔNG đổi (kiểm bằng test so trước/sau), top khách hiện "Người dùng đã xóa"; đơn guest cùng SĐT cũ không bị chạm (không có liên kết tài khoản); bản sao lưu DB cũ vẫn chứa dữ liệu trước khi xóa (ngoài phạm vi); `AuditLog.ip` giữ nguyên (chưa có chính sách thời hạn, thuộc phần pháp lý của R-03); GET /me/export dùng bộ nhớ khi có nhiều đơn nên giới hạn 1000.
-- **Docs bị ảnh hưởng:** `api-contract.md` 0.24 (§2, §6.6, §14.4, §14.10), `db-schema.md` 0.13, `testing.md`, `roadmap-next.md` (R-03), `wave2-plan.md`, `README.md`.
+- **Docs bị ảnh hưởng:** `api-contract.md` 0.24 (§2, §6.6, §14.4, §14.10), `db-schema.md` 0.13, `testing.md`, `roadmap-next.md` (R-03), `README.md`.
 
 
 ## D-066 Demo chạy bằng một lệnh (docker-compose.demo.yml)
@@ -1127,7 +1128,7 @@
   8. **Cấu hình demo** (đều trong compose, tiền tố `demo-only-`, công khai): `JWT_ACCESS_SECRET`, `INTERNAL_API_SECRET`, `PAYMENT_MOCK_SECRET`, mật khẩu DB, mật khẩu seed `Demo-only-{Admin,Staff,Customer}-2026`, `TOTP_ENCRYPTION_KEY` = base64 của `demo-only-totp-key-0123456789abc` (32 byte; production chỉ từ chối tiền tố `beanbox-dev-`). `PAYMENT_MOCKS_ENABLED`, `BANK_TRANSFER_ENABLED`, `JOBS_ENABLED` bật; không đặt `STRIPE_*`, `VNPAY_*`, `TURNSTILE_*`; `REQUIRE_ADMIN_2FA=false`; `AUTH_RATE_LIMIT_PER_MIN=20`; SMTP tới `mailpit:1025`. `.gitleaks.toml` thêm allowlist theo cặp đường dẫn + giá trị (`demo-only-...`, khóa TOTP demo).
   9. **CI:** job `ops-lint` chạy `docker compose -f docker-compose.demo.yml config -q`.
 - **Hệ quả/rủi ro:** Stripe vẫn hiện ở checkout nhưng bị khóa với nhãn "Chưa khả dụng" (hành vi UI sẵn có, D-060), không chọn được. Backend khởi động lại vẫn chạy `migrate deploy` (idempotent; init đã xong nên không đụng nhau). Seed upsert lại sản phẩm mỗi lần `up` nên dữ liệu sản phẩm seed về giá trị seed; đơn demo của người thử giữ nguyên. Mật khẩu công khai: KHÔNG dùng stack này để phục vụ người dùng thật. Mailpit dùng tag `latest` như compose dev.
-- **Docs bị ảnh hưởng:** `testing.md`, `deployment.md`, `wave3-plan.md`, `README.md`, `.gitleaks.toml`, `.github/workflows/ci.yml`.
+- **Docs bị ảnh hưởng:** `testing.md`, `deployment.md`, `README.md`, `.gitleaks.toml`, `.github/workflows/ci.yml`.
 
 ## D-067 CI supply-chain: ghim SHA Actions và Trivy chỉ báo cáo
 
@@ -1262,7 +1263,7 @@
 - **File nguồn còn > 500 dòng** (không tính `src/generated` và test): `frontend/src/types/admin.ts` 884 (chỉ kiểu), `backend/.../orders/orders.service.ts` 713, `frontend/.../admin/components/ProductForm.tsx` 677, `backend/.../catalog/catalog.service.ts` 668, `backend/.../cart/cart.service.ts` 633, `frontend/.../admin/components/AdminOrders.tsx` 606, `backend/.../admin/products/productsCsv.ts` 585, `backend/.../admin/orders/orders.service.ts` 567, `backend/.../auth/auth.service.ts` 539. Sát ngưỡng: `TwoFactorSection.tsx` 521, `PaymentResultView.tsx` 473.
 - **Chưa làm (thuộc R-16, ngoài lượt này):** `server.ts` xử lý `unhandledRejection`/`uncaughtException` và shutdown chờ job đang chạy.
 - **Hệ quả/rủi ro:** hành vi Tab/inert/focus của native `<dialog>` phụ thuộc trình duyệt (đã kiểm Edge/Chromium; chưa kiểm Safari, Firefox); polyfill jsdom không bắt được lỗi native (bài học ở mục 3); bố cục hộp đổi từ "lớp phủ + hộp" sang chính `<dialog>` (margin auto, bottom sheet trên mobile bằng `mt-auto mb-4 sm:my-auto`).
-- **Docs bị ảnh hưởng:** `testing.md`, `roadmap-next.md` (R-13, R-16), `wave4-plan.md`. Không đổi `api-contract.md`, `db-schema.md`.
+- **Docs bị ảnh hưởng:** `testing.md`, `roadmap-next.md` (R-13, R-16). Không đổi `api-contract.md`, `db-schema.md`.
 
 ## D-075 Cache HTTP cho catalog, ảnh và cài đặt
 
@@ -1323,7 +1324,7 @@
 - **Không làm:** giá vốn theo lô/nhà cung cấp/phiếu nhập (R-23 gốc), backfill đơn cũ, tính lại giá vốn khi hủy/hoàn nhập, phí cổng thanh toán và phí ship vào lãi, xuất giá vốn ở API đơn hàng.
 - **Hệ quả/rủi ro:** bình quân di động khiến giá vốn "trôi" theo từng lần nhập; hàng nhập trước ngày bật tính năng chưa có giá vốn cho tới khi Admin nhập tay (CSV là cách nhanh nhất). Tồn âm không xảy ra (CHECK `stock >= 0`), nhưng công thức vẫn xử lý `max(tồn, 0)`. Đánh đổi đã chốt (Tech Lead): Staff nhập hàng (RESTOCK) không kèm đơn giá -> `avgCost` giữ nguyên, có thể làm giá bình quân kém chính xác (tồn tăng nhưng giá vốn không phản ánh lô mới); Admin bắt buộc nhập đơn giá. Giữ như vậy. Giá vốn chụp lúc đặt nên đơn đặt trước khi sửa tay giá vốn giữ giá cũ (đúng ý đồ "báo cáo không đổi ngược"). Hủy đơn không hoàn nhập giá vốn nên đơn hủy không có trong báo cáo (đã loại theo D-019).
 - **Migration:** `d078_avg_cost`: 3 cột nullable (`ProductVariant.avgCost`, `InventoryMovement.unitCost`, `OrderItem.unitCost`), không enum mới, không đổi dữ liệu cũ.
-- **Docs bị ảnh hưởng:** `api-contract.md` 0.28 (§12.2, §12.4, §12.4b, §16.1-16.4), `db-schema.md` 0.16, `testing.md`, `README.md`, `overview.md`, `roadmap-next.md` (R-23), `wave4-plan.md`.
+- **Docs bị ảnh hưởng:** `api-contract.md` 0.28 (§12.2, §12.4, §12.4b, §16.1-16.4), `db-schema.md` 0.16, `testing.md`, `README.md`, `overview.md`, `roadmap-next.md` (R-23).
 
 ## D-079 Tắt êm và lỗi tiến trình
 
@@ -1338,7 +1339,7 @@
   5. **Job nền:** `startBackgroundJobs()` trả `void`; mỗi lượt được theo dõi trong một `Set` promise; `stopBackgroundJobs(): Promise<void>` chờ `Promise.allSettled`. Sau khi dừng, timer đã xóa và lượt mới không được lên lịch.
 - **Kiểm thật (image runtime tạm, DB tạm):** `docker stop` khi có 1 kết nối keep-alive nhàn rỗi: log "Tắt êm: SIGTERM" rồi "Đã tắt êm (exit 0)", mã thoát 0, 0,49 giây. Ép `unhandledRejection` sau khởi động: log `fatal` (level 60) kèm stack, tắt êm, mã thoát 1.
 - **Không làm:** hạn chế request mới bằng 503 trong lúc tắt (server đã ngừng nhận kết nối mới; `/health` không phân biệt "đang tắt"); retry lượt job bị cắt giữa chừng khi hết timeout (job idempotent, lượt sau tự nhặt, D-015).
-- **Docs bị ảnh hưởng:** `backend/.env.example`, `.env.production.example`, compose, `testing.md`, `roadmap-next.md` (R-16), `wave5-plan.md`.
+- **Docs bị ảnh hưởng:** `backend/.env.example`, `.env.production.example`, compose, `testing.md`, `roadmap-next.md` (R-16).
 
 ## D-080 Làm mới minPrice theo mốc sale
 
@@ -1396,4 +1397,24 @@
   5. **Đo tải:** `backend/scripts/load-order-concurrency.ts` (chỉ `fetch`, không phụ thuộc mới), chỉ chạy với `LOAD_API_URL` trỏ backend tạm và `LOAD_DATABASE_URL` trỏ DB tạm; từ chối cổng API 4000/4100 và DB localhost:5432 trừ khi có `LOAD_ALLOW_PROTECTED=1`. Không thêm test integration mới vì `orders.integration.test.ts` đã có "race tồn kho: stock 3, 5 giỏ guest -> đúng 3 đơn, 2 x OUT_OF_STOCK, stock = 0" cùng các ca song song khác; phần thuần của script có test (`loadOrderConcurrency.test.ts`).
 - **Kết quả đo (bảng và cấu hình ở `testing.md`):** 100 đơn song song vào 1 SKU tồn 20, C = 25/50/100, 3 lần mỗi mức: 9/9 lượt đúng 20 đơn 201 và 80 đơn 409 `OUT_OF_STOCK`, 0 lỗi 5xx, tồn cuối 0, 20 `ORDER_RESERVE`, 0 deadlock (`pg_stat_database.deadlocks` không đổi, log Postgres không có `deadlock`). Độ trễ tăng gần tuyến tính theo C do pool `pg` mặc định 10 kết nối và khóa dòng biến thể; throughput quanh 40 đơn/giây không phụ thuộc C.
 - **Không làm:** Firefox (WebKit smoke đã thêm một engine khác Chromium; engine thứ ba tốn thêm thời gian CI mà dự án localhost không cần), chạy cả bộ spec trên WebKit, k6/autocannon (thêm công cụ ngoài; script `fetch` đủ), test CheckoutForm riêng và cô lập DB test mỗi worker (phần còn lại của R-14, chốt dự án không làm).
-- **Docs bị ảnh hưởng:** `testing.md` (E2E, warm-up, project mobile/WebKit, chạy WebKit qua Docker, bảng đo tải, kết quả), `roadmap-next.md` (R-12, R-13, R-14), `wave5-plan.md`.
+- **Docs bị ảnh hưởng:** `testing.md` (E2E, warm-up, project mobile/WebKit, chạy WebKit qua Docker, bảng đo tải, kết quả), `roadmap-next.md` (R-12, R-13, R-14).
+
+## D-084 Seed "nhiều" cho demo/dev (`seed:rich`)
+
+- **Ngày:** 2026-11-24 · **Người chốt:** Tech Lead
+- **Trạng thái:** Áp dụng. Không đổi schema, API hay mã nguồn sản phẩm; chỉ thêm dữ liệu mẫu, một lệnh, test và tài liệu.
+- **Bối cảnh:** Seed cơ bản (`prisma:seed`, 41 sản phẩm, 3 tài khoản, 4 mã giảm giá) vừa đủ cho test/E2E nhưng giao diện demo trông thưa: ít sản phẩm, gần như không có đánh giá, danh mục con ít. Demo một lệnh có 1.500 đơn nhưng do generator SQL sinh và chỉ dùng biến thể của seed cơ bản.
+- **Quyết định:**
+  1. **Hai bộ dữ liệu tách bạch.** `npm run prisma:seed` giữ NGUYÊN (số lượng, slug, SKU; test, E2E và CI phụ thuộc). `npm run seed:rich` (`backend/prisma/seed-rich.ts`, mã ở `prisma/seed-data/rich/`) chạy SAU seed cơ bản và CỘNG THÊM: không xóa, không đổi bản ghi của seed cơ bản. Chỉ thêm `export` và tham số `rootOf` mặc định cho `seedOne` (seed-products.ts) để tái dùng, hành vi cũ không đổi.
+  2. **Quy mô:** 120 sản phẩm (43 cà phê có CoffeeProfile + 77 dụng cụ/phụ kiện/quà tặng; tổng khoảng 161), 9 danh mục con mới, 20 thương hiệu minh họa (tên bịa, không nhãn hiệu thật), 150 khách CUSTOMER (+25 danh tính vãng lai), 0-2 địa chỉ mỗi khách (tỉnh/phường có thật từ `data/provinces-wards.json`), khoảng 139 dòng wishlist, 300 đơn trong 120 ngày, hơn 300 đánh giá, 30 mã giảm giá, 40 tin nhắn liên hệ, khoảng 46 ghi chú nội bộ.
+  3. **Idempotent không xóa gì:** danh mục/thương hiệu/sản phẩm/biến thể/mã giảm giá upsert theo slug/SKU/code; mọi bản ghi khác có id cố định tiền tố `rich` (`richo0001`, `richu000`...) ghi bằng `createMany({ skipDuplicates })`, nên chạy lại tạo 0 bản ghi mới (in "Bản ghi MỚI ... 0"). Đổi thay duy nhất khi chạy lại: sản phẩm rich được đặt lại theo giá trị mẫu (giá, tồn, ngày rang, sale), đúng như seed cơ bản làm với sản phẩm của nó.
+  4. **Tất định:** PRNG mulberry32 theo khóa (`hashString("rich:order:17")`...), không `Math.random`; mỗi đơn/khách/đánh giá có luồng ngẫu nhiên riêng nên thêm bớt bản ghi không làm lệch các bản ghi khác. Phần phụ thuộc thời điểm chạy chỉ là ngày: ngày rang (2-28 ngày trước, nên mọi lô luôn `FRESH` theo D-082), cửa sổ sale, mốc đơn/đánh giá/liên hệ và hiệu lực mã giảm giá.
+  5. **Tiền khớp công thức hệ thống:** tổng đơn dùng chính `computeTotals` (`lib/quote.ts`) với cấu hình giống seed (mã giảm giá được đánh giá lại bằng `evaluateCoupon` tại thời điểm tạo đơn, phí ship theo vùng, phụ phí khối lượng, freeship theo ngưỡng), nên thỏa CHECK `Order_grand_total_formula`. `OrderItem.unitCost` = `avgCost` của biến thể (55-65% giá, từ `seedAvgCost`). Trạng thái, lịch sử và payment sinh theo máy trạng thái đúng cách mã thật/`generate-demo-orders.ts` ghi (đa số DELIVERED, CANCELLED có 3 loại: khách, cửa hàng, hết hạn thanh toán; RETURNED ít; COD/VNPAY/MOMO/BANK_TRANSFER; hoàn tiền Payment cho đơn online đã thu bị hủy/trả).
+  6. **Không trừ tồn kho thật** cho đơn lịch sử và không tạo `InventoryMovement` (giống generator: dữ liệu demo, không khớp sổ kho). `soldCount` của sản phẩm rich = số bán mẫu + số lượng ở đơn DELIVERED rich.
+  7. **Đánh giá:** chỉ cho dòng hàng của đơn DELIVERED của chính người mua (1/người/sản phẩm, `orderItemId` duy nhất), điểm nghiêng về 4-5 (khoảng 81 % từ 4 sao), nội dung ghép từ kho câu theo nhóm hàng, một số có trả lời admin, vài cái `HIDDEN`. `ratingAvg/ratingCount` tính lại cho mọi sản phẩm có đánh giá bằng cùng công thức `recomputeRating`: không import trực tiếp vì `reviews.shared.ts` kéo theo `lib/prisma` cần cấu hình server (JWT...), mà container `init` của demo không có. Hệ quả: sản phẩm của seed cơ bản có đánh giá rich sẽ hiện điểm thật thay cho số giả của seed cơ bản (chỉ trên DB đã chạy `seed:rich`).
+  8. **Rào an toàn:** từ chối khi `NODE_ENV=production` (không có cờ cho phép, khác `seed` cơ bản vì dữ liệu này không bao giờ thuộc về production); cần `SEED_CUSTOMER_PASSWORD` hợp lệ (băm argon2id một lần, dùng chung cho 150 khách). Không có rào "chỉ DB tạm" như generator: mục đích chính là chủ dự án nạp thêm vào DB dev của họ (hướng dẫn sao lưu và khôi phục ở README, "Dữ liệu mẫu").
+  9. **Demo một lệnh:** `scripts/demo-init.sh` chạy 4 bước: migrate, seed cơ bản, `seed:rich`, generator (`--skip-if-exists`). Stage `demo-tools` đã có đủ file cần (`COPY prisma`, `src`, `data`, `scripts`), không phải sửa Dockerfile. Generator vẫn chạy được sau `seed:rich` (mã đơn trùng thì bỏ đơn đó; `idempotencyKey` `demo-*` và `rich-*` không đụng nhau); các đơn demo giờ cũng chọn biến thể của sản phẩm rich.
+  10. **Test:** `tests/seedRichData.test.ts` (thuần: PRNG, guard, sản phẩm/mã giảm giá/khách/đơn/đánh giá hợp lệ và tất định, không đụng slug/SKU của seed cơ bản) và `tests/seedRich.integration.test.ts` (DB test: chạy 2 lần, lần 2 tạo 0 bản ghi và số lượng không đổi; đánh giá chỉ của người mua đơn DELIVERED; tổng đơn khớp dòng; roastDate hợp lệ D-082; mã giảm giá, SĐT hợp lệ; mật khẩu khớp; dọn sạch sau khi xong). Test/E2E hiện có vẫn chạy trên seed cơ bản. Không assertion trên giá trị ngẫu nhiên.
+- **Không làm:** seed rich cho production hoặc có cờ ghi đè; xóa/reset dữ liệu cũ (`db:reset` đã có); ảnh sản phẩm riêng (dùng lại ảnh seed theo danh mục gốc, nên mọi sản phẩm cùng nhóm cùng ảnh); thay generator SQL bằng seed này (generator vẫn cần cho 100.000 đơn đo hiệu năng, D-054).
+- **Đánh đổi:** đơn lịch sử của seed rich nằm trên cả sản phẩm cơ bản và rich nhưng không trừ tồn, nên số tồn và lịch sử đơn không khớp (đã ghi ở README/testing). Mã giảm giá "hết lượt" (`LIMIT50`...) có `usedCount = usageLimit` mà không có `CouponRedemption` tương ứng.
+- **Docs bị ảnh hưởng:** `README.md` (Dữ liệu mẫu, hướng dẫn áp lên DB dev), `testing.md`, `overview.md`.

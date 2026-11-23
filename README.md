@@ -24,7 +24,7 @@ Mọi thanh toán và vận chuyển trong bản demo đều là giả lập (c�
 
 ## Chạy demo bằng một lệnh
 
-Chỉ cần Docker (Compose v2), không cần cài Node hay Postgres. Lệnh dưới dựng sẵn DB, migrate, seed, khoảng 1.500 đơn demo trong 90 ngày, backend, frontend và một Mailpit riêng (D-066).
+Chỉ cần Docker (Compose v2), không cần cài Node hay Postgres. Lệnh dưới dựng sẵn DB, migrate, seed cơ bản, seed nhiều (khoảng 160 sản phẩm, 150 khách, 300 đơn kèm đánh giá, D-084), khoảng 1.500 đơn demo trong 90 ngày, backend, frontend và một Mailpit riêng (D-066).
 
 ```bash
 docker compose -f docker-compose.demo.yml up --build     # PowerShell và Git Bash giống nhau
@@ -115,7 +115,7 @@ Mở <http://localhost:3300> sau khi chạy demo. Mỗi bước ghi tài khoản
 - Dashboard, quản lý đơn theo máy trạng thái (xác nhận, giao, hủy, ghi nhận hoàn tiền thủ công, xác nhận chuyển khoản), sản phẩm/biến thể/ảnh, danh mục, thương hiệu, tồn kho kèm lịch sử, mã giảm giá, đánh giá, liên hệ, nhật ký thao tác, cài đặt cửa hàng, quản lý người dùng.
 - Công cụ vận hành (D-071..D-073): ghi chú nội bộ trên đơn (khách không thấy), chọn nhiều đơn để in phiếu giao hàng loạt (tối đa 50 đơn), xuất/nhập CSV sản phẩm (xem trước từng dòng, áp dụng trong một transaction, không bao giờ đổi slug/SKU).
 - Giá vốn và lợi nhuận gộp (D-078): nhập hàng kèm đơn giá tính giá vốn bình quân gia quyền di động theo biến thể, chụp vào dòng đơn lúc đặt; `/admin/phan-tich` có lợi nhuận gộp, biên và độ phủ giá vốn (chỉ Admin; đơn cũ chưa có giá vốn, không đoán).
-- Phân tích kinh doanh (chỉ Admin, `/admin/phan-tich`; kế hoạch ở [docs/admin-dashboard-plan.md](docs/admin-dashboard-plan.md), API ở [api-contract §16](docs/api-contract.md)): KPI so với kỳ trước, doanh thu theo ngày/tuần/tháng (có bảng thay thế cho trình đọc màn hình), cơ cấu theo danh mục, thương hiệu, thanh toán, giao hàng, tỉnh; top sản phẩm, top khách, khách mới/quay lại; vận hành, tồn kho, hiệu quả mã giảm giá; xuất CSV (chống CSV injection, có audit và rate limit) và bản in.
+- Phân tích kinh doanh (chỉ Admin, `/admin/phan-tich`; định nghĩa chỉ số ở [D-049](docs/decisions.md#d-049-khu-phân-tích-kinh-doanh-chỉ-admin), API ở [api-contract §16](docs/api-contract.md)): KPI so với kỳ trước, doanh thu theo ngày/tuần/tháng (có bảng thay thế cho trình đọc màn hình), cơ cấu theo danh mục, thương hiệu, thanh toán, giao hàng, tỉnh; top sản phẩm, top khách, khách mới/quay lại; vận hành, tồn kho, hiệu quả mã giảm giá; xuất CSV (chống CSV injection, có audit và rate limit) và bản in.
 
 | Phân tích kinh doanh                                                                                              | Cơ cấu doanh thu                                                                  |
 | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
@@ -214,7 +214,8 @@ cp .env.example .env          # PowerShell: Copy-Item .env.example .env
 npm install
 npm run prisma:generate       # Prisma 7 bắt buộc (D-036): sinh client vào src/generated, không commit
 npm run prisma:deploy         # áp migration (hoặc npm run prisma:migrate khi phát triển schema)
-npm run prisma:seed           # tài khoản, danh mục, sản phẩm, cài đặt, mã giảm giá mẫu
+npm run prisma:seed           # tài khoản, danh mục, sản phẩm, cài đặt, mã giảm giá mẫu (bộ cơ bản, 41 sản phẩm)
+# npm run seed:rich           # tùy chọn: dữ liệu mẫu nhiều cho demo/dev (xem "Dữ liệu mẫu" bên dưới)
 npm run dev                   # http://localhost:4000/api/v1/health
 
 # 3. Frontend (terminal khác)
@@ -236,6 +237,42 @@ docker compose --profile app up -d --build
 Tài khoản từ seed: `admin@beanbox.local` (Admin), `staff@beanbox.local` (Staff), `customer@beanbox.local` (Khách hàng). Mật khẩu lấy từ các biến `SEED_ADMIN_PASSWORD`, `SEED_STAFF_PASSWORD`, `SEED_CUSTOMER_PASSWORD` trong `backend/.env` (giá trị dev mặc định nằm trong [backend/.env.example](backend/.env.example), chỉ dùng cho môi trường dev). Seed từ chối chạy khi `NODE_ENV=production`, trừ khi đặt `SEED_ALLOW_PRODUCTION=true` có chủ ý (xem [docs/deployment.md](docs/deployment.md)).
 
 Reset DB dev (xóa sạch dữ liệu, migrate lại và seed lại): `npm run db:reset` trong `backend/`. Cổng thanh toán giả và chuyển khoản demo ở môi trường dev bật bằng `PAYMENT_MOCKS_ENABLED=true`, `BANK_TRANSFER_ENABLED=true` và `TOTP_ENCRYPTION_KEY` trong `backend/.env` (mẫu trong `.env.example`).
+
+### Dữ liệu mẫu
+
+BeanBox có hai bộ dữ liệu mẫu (D-084), cả hai đều giả, tất định và chạy lại an toàn:
+
+| Lệnh (trong `backend/`) | Nội dung | Dùng cho |
+| ------------------------ | -------- | -------- |
+| `npm run prisma:seed` | Bộ **cơ bản**: 3 tài khoản, 41 sản phẩm, danh mục, thương hiệu, cài đặt, 4 mã giảm giá | Test, E2E, CI (số lượng/slug/SKU được test phụ thuộc, không đổi) |
+| `npm run seed:rich` | Bộ **nhiều**, chạy SAU bộ cơ bản và CỘNG THÊM: 120 sản phẩm (tổng khoảng 160), 9 danh mục con, 20 thương hiệu minh họa, 150 khách (mật khẩu = `SEED_CUSTOMER_PASSWORD`), 300 đơn trong 120 ngày gần nhất, hơn 300 đánh giá, 30 mã giảm giá, 40 tin nhắn liên hệ, ghi chú nội bộ | Demo, chụp ảnh, xem giao diện với dữ liệu đầy đặn |
+
+`seed:rich` chỉ cộng thêm và không xóa dữ liệu nào, upsert theo slug/SKU/email/mã cố định nên chạy lại không nhân bản, từ chối khi `NODE_ENV=production`, mất khoảng 5 giây. Đơn lịch sử không trừ tồn kho thật (dữ liệu demo, giống `generate-demo-orders.ts`). Khách rich có email `rich.khachNNN@example.com` (NNN từ 000 đến 149). Demo một lệnh tự chạy cả hai bộ.
+
+#### Áp dữ liệu mẫu nhiều lên DB dev
+
+Làm trong `backend/`, **bạn tự chạy** các bước sau (không script nào làm thay). Giả định DB dev là container `db` của `docker-compose.yml` (user `beanbox`, DB `beanbox`, đúng như `backend/.env.example`); nếu `backend/.env` của bạn khác thì thay cho khớp.
+
+```bash
+# 1. Sao lưu trước (từ thư mục gốc repo; thư mục backups/ đã được .gitignore). Git Bash/macOS/Linux:
+mkdir -p backups
+docker compose exec -T db pg_dump -U beanbox -Fc beanbox > backups/beanbox-dev-truoc-seed-rich.dump
+#    PowerShell: dùng cmd để không làm hỏng dữ liệu nhị phân (mkdir backups trước nếu chưa có):
+#    cmd /c "docker compose exec -T db pg_dump -U beanbox -Fc beanbox > backups/beanbox-dev-truoc-seed-rich.dump"
+
+# 2. Kiểm migration (không reset, không xóa dữ liệu)
+cd backend
+npx prisma migrate status
+npx prisma migrate deploy     # chỉ khi status báo còn migration chưa áp
+
+# 3. Bộ cơ bản (idempotent) rồi bộ nhiều
+npm run prisma:seed
+npm run seed:rich
+```
+
+- `seed:rich` in tóm tắt số bản ghi; chạy lần 2 phải báo "Bản ghi MỚI ... 0". Nó cần tài khoản STAFF/ADMIN và danh mục gốc có sẵn (do `prisma:seed` tạo) và `SEED_CUSTOMER_PASSWORD` trong `backend/.env`.
+- Sản phẩm rich được đặt lại theo giá trị mẫu mỗi lần chạy (giá, tồn, ngày rang, sale) như bộ cơ bản; sản phẩm và đơn bạn tự tạo không bị đụng. Các sản phẩm của bộ cơ bản có đánh giá rich sẽ có điểm đánh giá tính lại theo đánh giá thật trong DB (thay cho số giả của bộ cơ bản).
+- Khôi phục nếu cần (xóa dữ liệu hiện tại và nạp lại bản sao lưu). Git Bash: `docker compose exec -T db pg_restore -U beanbox -d beanbox --clean --if-exists < backups/beanbox-dev-truoc-seed-rich.dump`. PowerShell: `cmd /c "docker compose exec -T db pg_restore -U beanbox -d beanbox --clean --if-exists < backups/beanbox-dev-truoc-seed-rich.dump"`. Dừng backend đang chạy trước khi khôi phục.
 
 ## Kiểm thử và CI
 
@@ -331,9 +368,8 @@ Dự án này là portfolio chạy localhost, không có bản demo công khai. 
 - [Nhật ký quyết định](docs/decisions.md)
 - [API contract](docs/api-contract.md) (nguồn sự thật cho FE và BE)
 - [Thiết kế DB](docs/db-schema.md)
-- [Kế hoạch khu Phân tích kinh doanh (Admin)](docs/admin-dashboard-plan.md)
 - [Kiểm thử](docs/testing.md)
 - [Triển khai](docs/deployment.md)
 - [Cấu hình thanh toán sandbox](docs/payments-setup.md)
 - [Hướng dẫn chụp lại ảnh màn hình](docs/screenshots/README.md)
-- Kế hoạch theo đợt: [Đợt 2](docs/wave2-plan.md), [Đợt 3](docs/wave3-plan.md), [Đợt 4](docs/wave4-plan.md), [Đợt 5](docs/wave5-plan.md); [roadmap đã đóng](docs/roadmap-next.md)
+- [Tổng quan và lịch sử phát triển theo đợt](docs/overview.md); [roadmap đã đóng](docs/roadmap-next.md)

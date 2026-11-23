@@ -44,19 +44,21 @@ const ALT_BY_ROOT: Record<string, (name: string) => string> = {
   'qua-tang-combo': (name) => `${name} - quà tặng và combo cà phê`,
 };
 
-async function seedOne(
+export async function seedOne(
   prisma: PrismaClient,
   p: ProductSeed,
   index: number,
   now: Date,
   categoryIds: Map<string, string>,
   brandIds: Map<string, string>,
+  /** Tìm slug danh mục gốc (seed nhiều truyền hàm biết cả danh mục con của nó). */
+  rootOf: (slug: string) => string | undefined = rootCategorySlug,
 ): Promise<void> {
   const categoryId = categoryIds.get(p.categorySlug);
   if (!categoryId) throw new Error(`Không tìm thấy danh mục ${p.categorySlug} cho ${p.slug}`);
   const brandId = p.brandSlug ? (brandIds.get(p.brandSlug) ?? null) : null;
   if (p.brandSlug && !brandId) throw new Error(`Không tìm thấy thương hiệu ${p.brandSlug}`);
-  const root = rootCategorySlug(p.categorySlug);
+  const root = rootOf(p.categorySlug);
   if (!root) throw new Error(`Danh mục ${p.categorySlug} không nằm trong CATEGORIES`);
 
   const [soldCount, ratingAvg, ratingCount] = p.stats;

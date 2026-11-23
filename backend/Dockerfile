@@ -32,6 +32,7 @@ USER node
 CMD ["node_modules/.bin/tsx", "prisma/seed.ts"]
 
 # Khởi tạo demo một lệnh (D-066): tools + scripts/ (generator, demo-init.sh). Chỉ docker-compose.demo.yml dùng.
+# Seed nhiều (D-084, prisma/seed-rich.ts + prisma/seed-data/rich/) đã nằm sẵn trong prisma/ và src/ của stage tools.
 # scripts/ chỉ được COPY ở stage này, nên image runtime production không chứa nó (kiểm bằng docker run ... ls).
 FROM tools AS demo-tools
 COPY scripts ./scripts

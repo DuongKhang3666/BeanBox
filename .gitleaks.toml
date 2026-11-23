@@ -73,7 +73,7 @@ condition = "AND"
 paths = [
   '''^docker-compose\.demo\.yml$''',
   '''^README\.md$''',
-  '''^docs/(decisions|deployment|testing|wave3-plan)\.md$''',
+  '''^docs/(decisions|deployment|testing)\.md$''',
 ]
 regexes = [
   '''[Dd]emo-only-[A-Za-z0-9-]+''',

@@ -7,7 +7,18 @@
 - Docker Postgres chạy (`docker compose up -d db`), đã migrate: `npm run prisma:migrate` (hoặc `prisma migrate deploy`) trong `backend/`.
 - Prisma 7 không còn tự generate hay seed sau `migrate dev`/`migrate reset`: `npm run prisma:migrate` đã nối thêm `prisma generate`, `npm run db:reset` nối thêm `prisma generate` và `prisma db seed`; nếu gọi `npx prisma migrate ...` trực tiếp thì tự chạy `npx prisma generate` và `npm run prisma:seed`.
 - Dữ liệu seed cho E2E: `npm run prisma:seed` trong `backend/` (idempotent; từ chối chạy khi `NODE_ENV=production`).
+- Test, E2E và CI luôn dùng seed CƠ BẢN (`prisma:seed`). Seed nhiều (`npm run seed:rich`, D-084) chỉ cho demo/dev, xem mục "Dữ liệu mẫu: seed cơ bản và seed nhiều" bên dưới.
 - `backend/.env` có `SEED_ADMIN_PASSWORD`, `SEED_STAFF_PASSWORD`, `SEED_CUSTOMER_PASSWORD` (xem `.env.example`).
+
+## Nguyên tắc kiểm thử
+
+- Mỗi thay đổi: lint, typecheck, `format:check`, test kèm coverage (ngưỡng D-055), build ở cả backend và frontend; E2E khi đụng luồng người dùng; migration mới thì deploy và kiểm drift trên Postgres tạm.
+- Không dùng giá trị ngẫu nhiên không kiểm soát trong assertion: tiêm đồng hồ hoặc bộ sinh số, hoặc kiểm tính chất đúng với mọi giá trị. Ví dụ tạo mã sai phải tất định (không "mã 000000, nếu trùng thì 000001").
+- Không dùng `instanceof`/`toBeInstanceOf` với `Blob`/`Response`/`File`/`Request` (jsdom và undici dùng lớp khác nhau); kiểm `headers.get(...)` và nội dung.
+- Test tích hợp và E2E chỉ chạy trên DB tạm có tên kết thúc bằng `_test` hoặc DB riêng của E2E, không dùng DB dev; công cụ sinh dữ liệu và chụp ảnh từ chối chạy khi trỏ `localhost:5432`.
+- Cổng thanh toán giả và vận chuyển giả chỉ bật bằng cờ tường minh, không bao giờ ở production, và đi qua đúng logic xử lý như bản thật (không đường tắt DB).
+- Docker: chỉ thao tác đúng project/volume của mình (`-p`, `down -v --rmi local`), không dùng lệnh prune toàn cục.
+- Số liệu và kết quả trong tài liệu phải là số đã đo; không ước lượng hay bịa.
 
 ## Unit / integration
 
@@ -193,6 +204,51 @@ Ghi chú (2026-11-21): vitest frontend chạy mặc định 16 worker trên máy
 - Docker: build backend `--target runtime` và frontend thành công; `docker compose -f docker-compose.prod.yml config -q` (cả `--profile backup --profile tools`) với env giả như CI: 0; `actionlint` (Docker): 0; `.github/dependabot.yml` parse YAML được (7 mục cập nhật).
 - Chạy tay trên DB tạm (không có test tự động): giới hạn 3 đơn COD guest (409, thay đổi sau khi staff xác nhận, replay Idempotency-Key trả 200 đơn cũ, khách đăng nhập không bị giới hạn); job hết hạn 48 giờ (chỉ đơn guest 49 giờ bị hủy, tồn kho +1 đúng, lý do "Quá hạn xác nhận đơn", history `actorId` null, chạy lần 2 không đổi, analytics vận hành "Hết hạn tự động" ở JSON, CSV và UI); captcha Turnstile bằng khóa thử công khai của Cloudflare (thiếu/sai token -> 400 `CAPTCHA_FAILED`, khách đăng nhập không cần); mailer (SMTP đóng: đơn vẫn 201, 3 lần thử cách 1 giây và 4 giây rồi bỏ, log không có email người nhận; mailpit nhận mail; `SMTP_REQUIRE_TLS=true` với mailpit không TLS: log lỗi STARTTLS, đơn vẫn 201); analytics 250.000 đơn với `ANALYTICS_STATEMENT_TIMEOUT_MS=1000` dưới tải 6-8 request breakdown song song: 503 `ANALYTICS_TIMEOUT` tiếng Việt, UI khối lỗi có "Thử lại", đặt hàng song song vẫn 201, timeout mặc định -> 200. Ghi chú: một request breakdown 365 ngày đơn lẻ trên 100.000 đơn chỉ khoảng 0,85 giây nên không chạm 1 giây; cần tải song song hoặc dữ liệu lớn hơn để gây timeout.
 - Frontend trên production build: header mobile, chỉ báo tải (`aria-busy` true rồi false khi đổi sắp xếp và phân trang, chiều cao vùng lưới không đổi), giờ VN khi trình duyệt ở `America/Los_Angeles`, thông báo 409 ở checkout; slug không tồn tại -> 404, slug cũ -> 308. `global-error.tsx` chỉ có test render (ép lỗi layout gốc cần sửa mã nguồn).
+
+## Dữ liệu mẫu: seed cơ bản và seed nhiều (D-084)
+
+| Bộ | Lệnh | Dùng cho test nào |
+| -- | ---- | ----------------- |
+| Cơ bản | `npm run prisma:seed` | E2E (Playwright), job `e2e` của CI, `seedProducts.integration.test.ts`, mọi chỗ nói "DB tạm + seed" trong tài liệu này. Số lượng, slug, SKU của bộ này được test phụ thuộc nên KHÔNG đổi. |
+| Nhiều | `npm run seed:rich` | Demo một lệnh, chụp ảnh, xem tay giao diện với dữ liệu đầy đặn. Chỉ có test riêng của nó (bên dưới), không có E2E nào phụ thuộc. |
+
+`seed:rich` chạy SAU seed cơ bản, chỉ cộng thêm, idempotent (id/slug/SKU/mã cố định, `createMany` bỏ qua bản ghi đã có), tất định (mulberry32, không `Math.random`), từ chối khi `NODE_ENV=production`, không xóa dữ liệu. Chạy thử trên DB tạm (không dùng DB dev) và đo thời gian:
+
+```bash
+docker run -d --name bb-seed-tmp --shm-size=256m -e POSTGRES_USER=beanbox -e POSTGRES_PASSWORD=tmp-pw -e POSTGRES_DB=beanbox_rich -p 127.0.0.1:55460:5432 postgres:17
+cd backend
+export DATABASE_URL=postgresql://beanbox:tmp-pw@127.0.0.1:55460/beanbox_rich   # PowerShell: $env:DATABASE_URL="..."
+npx prisma migrate deploy && npm run prisma:seed
+time npm run seed:rich     # lần 1: tạo mới; lần 2: "Bản ghi MỚI trong lần chạy này: 0"
+docker rm -fv bb-seed-tmp
+```
+
+Test của seed nhiều (chạy trong `npm test` thường; tổng 2 file, không assertion trên giá trị ngẫu nhiên):
+
+- `tests/seedRichData.test.ts` (thuần, không DB): PRNG tất định; guard từ chối `NODE_ENV=production`; 120 sản phẩm, slug/SKU duy nhất và không trùng seed cơ bản, giá/sale hợp lệ, ngày rang 2-28 ngày, tồn kho đa dạng; 30 mã giảm giá đủ trạng thái, code không bắt đầu bằng `-`; khách/SĐT theo regex hệ thống; kế hoạch đơn tất định, mã đơn khớp `ORDER_CODE_REGEX` và duy nhất, tổng khớp dòng, chuỗi lịch sử liền mạch và kết thúc đúng trạng thái; đánh giá chỉ từ đơn DELIVERED của người mua, 1/người/sản phẩm, điểm nghiêng về 4-5.
+- `tests/seedRich.integration.test.ts` (DB test `beanbox_test`): dựng điều kiện giống sau `prisma:seed` (danh mục gốc, 1 nhân viên), chạy `seedRich` hai lần; lần 2 `inserted = 0` và mọi số đếm không đổi; kiểm bằng SQL: đánh giá chỉ của người mua đơn DELIVERED, không trùng người/sản phẩm, denorm `ratingAvg/ratingCount` khớp đánh giá PUBLISHED; `grandTotal = subtotal - discountTotal + shippingFee - shippingDiscount`, `subtotal` = tổng dòng, mã đơn hợp lệ, idempotency key cố định, mọi dòng có `unitCost`, không có `InventoryMovement`; `roastDate` mọi lô cà phê `FRESH` (D-082), `avgCost` 55-70 % giá, sale hợp lệ; mã giảm giá hợp lệ và đủ trạng thái; 150 khách chung một mật khẩu băm (argon2 verify đúng), SĐT hợp lệ. Dọn sạch mọi bản ghi `rich*` sau khi xong.
+
+### Áp dữ liệu mẫu nhiều lên DB dev (chủ dự án tự chạy)
+
+Đây là hướng dẫn cho người dùng DB dev thật (container `db` của `docker-compose.yml`, user `beanbox`, DB `beanbox`, đúng `backend/.env.example`); tài liệu và agent KHÔNG chạy các lệnh này thay bạn. `seed:rich` chỉ CỘNG THÊM, idempotent và không xóa dữ liệu nào, nhưng vẫn nên sao lưu trước.
+
+1. **Sao lưu** (thư mục gốc repo; `backups/` đã nằm trong `.gitignore`). Git Bash: `mkdir -p backups && docker compose exec -T db pg_dump -U beanbox -Fc beanbox > backups/beanbox-dev-truoc-seed-rich.dump`. PowerShell dùng `cmd /c "docker compose exec -T db pg_dump -U beanbox -Fc beanbox > backups/beanbox-dev-truoc-seed-rich.dump"` để dữ liệu nhị phân không bị PowerShell làm hỏng.
+2. **Kiểm migration** (trong `backend/`): `npx prisma migrate status`; chỉ khi báo còn migration chưa áp thì `npx prisma migrate deploy`. Không dùng `db:reset`/`migrate reset` (xóa sạch dữ liệu).
+3. **Seed cơ bản** (tạo tài khoản STAFF/ADMIN và danh mục gốc mà seed nhiều cần): `npm run prisma:seed`.
+4. **Seed nhiều**: `npm run seed:rich`. Cần `SEED_CUSTOMER_PASSWORD` trong `backend/.env`. Kết quả mong đợi: khoảng 5 giây, tóm tắt số bản ghi. Chạy lại lần nữa phải in "Bản ghi MỚI trong lần chạy này: 0".
+5. **Khôi phục nếu cần** (dừng backend trước; lệnh này xóa dữ liệu hiện tại và nạp lại bản sao lưu): Git Bash `docker compose exec -T db pg_restore -U beanbox -d beanbox --clean --if-exists < backups/beanbox-dev-truoc-seed-rich.dump`; PowerShell `cmd /c "docker compose exec -T db pg_restore -U beanbox -d beanbox --clean --if-exists < backups/beanbox-dev-truoc-seed-rich.dump"`.
+
+Lưu ý: sản phẩm rich được đặt lại theo giá trị mẫu mỗi lần chạy (giá, tồn, ngày rang, sale); dữ liệu bạn tự tạo không bị đụng; sản phẩm của seed cơ bản có đánh giá rich sẽ hiện điểm tính từ đánh giá thật trong DB thay cho số giả của seed cơ bản; đơn lịch sử không trừ tồn kho.
+
+### Kết quả kiểm seed nhiều (D-084) (2026-11-24, Windows, Postgres 17 tạm `--shm-size=256m`, Edge)
+
+- **Backend** (`TEST_DATABASE_URL` trỏ DB test của container tạm): lint, typecheck, `format:check`, build đạt; `test:coverage` 115 file, 2202 test đạt (thêm `seedRichData.test.ts`, `seedRich.integration.test.ts`: 29 test); statements 96,28 %, branches 89,13 %, functions 97,80 %, lines 97,80 % (ngưỡng D-055: 94/87/95/95). File seed không nằm trong phạm vi coverage (chỉ `src/`).
+- **Frontend** (không đổi mã): lint, typecheck, `format:check` đạt.
+- **E2E** (`E2E_API_PORT=4150 E2E_WEB_PORT=3150 E2E_BROWSER_CHANNEL=msedge`, DB tạm migrate + seed CƠ BẢN một lần, SMTP trỏ Mailpit tạm): 39/39 đạt (38 `chromium` + 1 `mobile-390`; `webkit-smoke` bỏ qua vì dùng Edge), 3,3 phút.
+- **`seed:rich` trên DB tạm đã có seed cơ bản:** lần 1 5,4 giây (wall 6,9 giây; lần chạy khác 5,5 giây): 120 sản phẩm, 150 khách, 163 địa chỉ, 139 wishlist, 300 đơn (696 dòng hàng, 1.389 dòng lịch sử, 178 payment, 46 lượt dùng mã, 46 ghi chú), 354-358 đánh giá, 40 tin nhắn liên hệ, 3.501-3.507 bản ghi mới; lần 2 4,4-4,9 giây, **0 bản ghi mới**. Chạy lại seed cơ bản sau seed nhiều vẫn thành công (161 sản phẩm, 300 đơn rich, không đổi). `NODE_ENV=production` bị từ chối (mã thoát 1). Phân bố đơn: 237 DELIVERED, 39 CANCELLED, 8 SHIPPING, 5 RETURNED, 4 FAILED_DELIVERY, 3 PROCESSING, 2 RETURN_REQUESTED, 1 CONFIRMED, 1 PENDING_PAYMENT; đánh giá: 180 năm sao, 108 bốn sao, 42 ba sao, 16 hai sao, 8 một sao (7 ẩn).
+- **Demo một lệnh** (`docker compose -f docker-compose.demo.yml up --build -d`, có cache lớp build): 2 phút 32 giây tới khi backend khỏe và frontend chạy; `init` thoát 0 (migrate, seed cơ bản, seed nhiều 3,1 giây, generator 1.500 đơn trong 1 giây). Qua <http://localhost:3300>: `/api/v1/products` tổng 158 sản phẩm hiển thị (161 trừ 3 bản nháp/lưu trữ/xóa mềm của seed cơ bản), 25 danh mục, trang chủ và `/danh-muc/ca-phe-hat` 200, `GET /products/am-rot-co-ngong-inox/reviews` trả đánh giá thật (4,6 sao, 5 đánh giá), `/admin/analytics/overview` có số (30 ngày: doanh thu 486.964.000 VND, 508 đơn đã thanh toán, 597 đơn đặt). `down -v --rmi local` mất 2,7 giây, không còn container, volume, mạng hay image `beanbox-demo*`. Chưa kiểm bằng trình duyệt hiển thị đánh giá ở trang sản phẩm (đánh giá nạp phía client; chỉ kiểm API).
+- **gitleaks** v8.30.0: `git` toàn bộ lịch sử (33 commit) 0 phát hiện, kể cả sau khi bỏ `wave3-plan` khỏi regex allowlist đường dẫn (`docs/wave3-plan.md` vẫn còn trong lịch sử nhưng không gây phát hiện nào, nên không cần khôi phục mục allowlist đó); `dir` trên bản sao cây làm việc (file đã theo dõi và chưa theo dõi, không ignore, đường dẫn tương đối) 0. Quét `dir` thẳng thư mục thật tìm thấy 33 mục giả trong file bị ignore (`.next/`, `backend/.env` của người dùng) và trong các file fixture vì đường dẫn tuyệt đối `/repo/...` không khớp regex `^backend/...` của allowlist; không phải rò rỉ mới.
+- `docker compose config -q` đạt cho dev (`--profile app`), prod (env giả như CI, cả hai profile `backup`/`tools`) và demo.
 
 ## E2E (Playwright: chromium desktop, mobile-390, webkit-smoke; chạy cục bộ và trong CI)
 

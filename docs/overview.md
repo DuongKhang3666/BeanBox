@@ -2,11 +2,11 @@
 
 > Trang này dành cho người muốn nắm nhanh dự án trong vài phút (ví dụ người phỏng vấn). Chi tiết từng quyết định ở [decisions.md](decisions.md); cách chạy demo ở [README](../README.md).
 
-BeanBox là web thương mại điện tử bán hạt cà phê, dụng cụ pha chế và phụ kiện (giao diện tiếng Việt, tiền VND). Dự án gồm storefront Next.js, REST API Express + Prisma + PostgreSQL và khu quản trị có phân tích kinh doanh. Dự án chạy trên localhost: thanh toán (VNPay giả, MoMo giả, chuyển khoản VietQR demo) và vận chuyển (mã vận đơn, hành trình) đều là giả lập, nhưng được viết để đi qua đúng logic như khi nối nhà cung cấp thật: giá tính ở server, đặt đơn idempotent, giữ tồn kho trong transaction, callback thanh toán có chữ ký, phiên đăng nhập với refresh token xoay vòng và xác thực 2 lớp. Có 83 quyết định kỹ thuật (D-001 đến D-083) được ghi lại cùng đánh đổi. **Trạng thái dự án: đã hoàn thiện và đóng roadmap (2026-11-23); chỉ bảo trì** (sửa lỗi, cập nhật phụ thuộc), xem [roadmap-next.md](roadmap-next.md).
+BeanBox là web thương mại điện tử bán hạt cà phê, dụng cụ pha chế và phụ kiện (giao diện tiếng Việt, tiền VND). Dự án gồm storefront Next.js, REST API Express + Prisma + PostgreSQL và khu quản trị có phân tích kinh doanh. Dự án chạy trên localhost: thanh toán (VNPay giả, MoMo giả, chuyển khoản VietQR demo) và vận chuyển (mã vận đơn, hành trình) đều là giả lập, nhưng được viết để đi qua đúng logic như khi nối nhà cung cấp thật: giá tính ở server, đặt đơn idempotent, giữ tồn kho trong transaction, callback thanh toán có chữ ký, phiên đăng nhập với refresh token xoay vòng và xác thực 2 lớp. Có 84 quyết định kỹ thuật (D-001 đến D-084) được ghi lại cùng đánh đổi. **Trạng thái dự án: đã hoàn thiện và đóng roadmap (2026-11-23); chỉ bảo trì** (sửa lỗi, cập nhật phụ thuộc), xem [roadmap-next.md](roadmap-next.md).
 
 ## Quyết định theo chủ đề
 
-Mỗi dòng trỏ tới mục tương ứng trong [decisions.md](decisions.md). Phần cuối liệt kê các quyết định còn lại để bảng phủ đủ D-001 đến D-083.
+Mỗi dòng trỏ tới mục tương ứng trong [decisions.md](decisions.md). Phần cuối liệt kê các quyết định còn lại để bảng phủ đủ D-001 đến D-084.
 
 ### Bảo mật và phiên đăng nhập
 
@@ -94,6 +94,7 @@ Mỗi dòng trỏ tới mục tương ứng trong [decisions.md](decisions.md). 
 | [D-056](decisions.md#d-056-mailer-bền-vững)                                                                                                        | Mailer bền vững: thử lại, không chặn đặt hàng, log không chứa email người nhận. |
 | [D-066](decisions.md#d-066-demo-chạy-bằng-một-lệnh-docker-composedemoyml)                                                                          | Demo chạy bằng một lệnh (`docker-compose.demo.yml`).                            |
 | [D-083](decisions.md#d-083-e2e-mobile-390-px-smoke-webkit-warm-up-khởi-động-nguội-đo-tải-đặt-hàng-đồng-thời) | E2E luồng mua ở 390 px và smoke WebKit, warm-up khởi động nguội, đo tải đặt hàng đồng thời cùng SKU (không oversell, không deadlock). |
+| [D-084](decisions.md#d-084-seed-nhiều-cho-demodev-seedrich) | Seed "nhiều" (`npm run seed:rich`): thêm 120 sản phẩm, 150 khách, 300 đơn, hơn 300 đánh giá cho demo/dev; tất định, idempotent, chạy sau seed cơ bản. |
 
 ### Các quyết định còn lại
 
@@ -178,10 +179,24 @@ sequenceDiagram
   end
 ```
 
+## Lịch sử phát triển
+
+Kế hoạch từng đợt đã được gỡ khỏi repo khi chốt dự án (còn trong lịch sử git); nội dung giữ lại ở decisions.md, testing.md và [roadmap-next.md](roadmap-next.md).
+
+| Đợt                        | Phạm vi chính                                                                                                                                         | Quyết định   |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| Khu phân tích (2026-11-20) | `/admin/phan-tich` chỉ Admin: KPI so kỳ trước, cơ cấu, khách hàng, vận hành, tồn kho, mã giảm giá, CSV, đo hiệu năng 100.000 đơn                      | D-049..D-054 |
+| 1 (2026-11-21)             | Coverage và CI, mailer bền, đơn COD khách vãng lai, pool analytics, lớp lỗi FE                                                                        | D-055..D-059 |
+| 2 (2026-11-22)             | Thanh toán giả (VNPay, MoMo, VietQR), vận chuyển giả lập, 2FA TOTP, SEO, xóa/xuất dữ liệu tài khoản                                                   | D-060..D-065 |
+| 3 (2026-11-23)             | Demo một lệnh, README có ảnh, overview, ghim SHA Actions và Trivy, `trackingNumber` unique, `robots.txt`, `REQUIRE_ADMIN_2FA`                         | D-066..D-070 |
+| 4 (2026-11-23)             | Ghi chú nội bộ, in phiếu hàng loạt, CSV sản phẩm, tách file lớn và hộp thoại chung, cache HTTP, khóa theo mã đơn, "Mua lại", giá vốn và lợi nhuận gộp | D-071..D-078 |
+| 5 (2026-11-23)             | Tắt êm server, đối soát giá sale, avatar an toàn, độ tươi hạt, E2E mobile và WebKit, đo tải; chốt dự án                                               | D-079..D-083 |
+
 ## Đọc tiếp
 
 - [README](../README.md): chạy demo một lệnh, kịch bản demo 5 phút, tour tính năng có ảnh.
 - [architecture.md](architecture.md): kiến trúc, xác thực, giá và đơn hàng, thanh toán.
 - [api-contract.md](api-contract.md) và [db-schema.md](db-schema.md): nguồn sự thật cho API và DB.
 - [testing.md](testing.md): kết quả kiểm thử, đo hiệu năng 100.000 đơn.
-- [wave2-plan.md](wave2-plan.md), [wave3-plan.md](wave3-plan.md), [roadmap-next.md](roadmap-next.md): kế hoạch theo đợt và việc còn lại.
+- [roadmap-next.md](roadmap-next.md): roadmap đã đóng, việc đã làm và việc chủ dự án chốt không làm.
+- [payments-setup.md](payments-setup.md): cấu hình sandbox và chế độ thanh toán giả.

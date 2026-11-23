@@ -1,6 +1,6 @@
 # BeanBox – Hướng dẫn cấu hình thanh toán sandbox
 
-> Áp dụng cho M5 (D-014). Chỉ dùng môi trường thử nghiệm (VNPay sandbox, Stripe Test mode). Thiết kế chi tiết: [`api-contract.md`](api-contract.md) §13.
+> Áp dụng cho M5 (D-014) và chế độ giả lập (D-060, D-061). Mục 2-5 là sandbox thật (VNPay sandbox, Stripe Test mode); mục 6 là cổng giả cho demo localhost không cần tài khoản nào (demo một lệnh trong README đã bật sẵn). Thiết kế chi tiết: [`api-contract.md`](api-contract.md) §13.
 > Khi chưa cấu hình, ứng dụng vẫn chạy bình thường với COD; phương thức online sẽ bị tắt.
 
 ## 1. Cảnh báo an toàn

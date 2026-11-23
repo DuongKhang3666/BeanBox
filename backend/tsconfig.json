@@ -22,6 +22,7 @@
     "tests",
     "prisma.config.ts",
     "prisma/seed.ts",
+    "prisma/seed-rich.ts",
     "prisma/seedGuard.ts",
     "prisma/seed-data",
     "vitest.config.ts",
